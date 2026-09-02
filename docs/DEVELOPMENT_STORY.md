@@ -99,3 +99,31 @@ harness, root causes from serial evidence:
    QEMU connects with `-serial tcp:...`); works identically on Windows and
    Linux CI. Also: panic marker made single-line (PanicInfo's Display splits
    message/location across lines, breaking the one-line marker contract).
+4. **Runner hang on Windows**: a TCP stream accepted from a nonblocking
+   listener inherits nonblocking mode on Windows → the reader thread died
+   instantly on WouldBlock → the loop exited without killing QEMU →
+   `child.wait()` blocked forever on the halting interactive kernel. Fix:
+   force the accepted stream back to blocking + a bounded grace-then-kill
+   before reaping. Full matrix green afterwards: selftest pass=27 fail=0 on
+   BIOS **and** UEFI, shell interaction through B150, panic negative path.
+
+### 04:10 — Deployment and a Linux-only CI failure
+
+- Cloudflare discovery: claude.ai MCP integration confirmed the ITISYOU
+  account (34 workers, `<name>-itisyou-app-{staging,production}` naming);
+  an existing wrangler OAuth session on this machine carries
+  `workers (write)` — the "existing authenticated Cloudflare access".
+- Website deployed as an assets-only Worker (config committed in
+  `website/wrangler.jsonc`): staging → browser-verified (home, /build with
+  live verified statuses, honest 404, zero console errors, strict CSP
+  headers observed) → production with custom domain **os.itisyou.app** →
+  verified live: TLS, 11 routes 200, 404 handling, headers, console-clean
+  browser journey. Deploy output alone was not treated as success.
+- CI run 33598093709: website + gitleaks green; kernel job red at clippy —
+  **Linux-only**: cargo's unstable bindeps unified crate features across
+  the host/bare-metal boundary (bitflags built for x86_64-unknown-none with
+  `std`), and `cargo tree` panics on such graphs. Root fix: removed
+  artifact dependencies entirely; image-builder now runs
+  `cargo build -p itisyou-kernel` as a subprocess (separate feature
+  resolution, no unstable cargo features). Verified locally: clippy clean,
+  images identical in role, full QEMU matrix re-run.

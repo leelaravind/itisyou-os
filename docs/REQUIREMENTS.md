@@ -13,10 +13,10 @@ labels, commit SHAs, CI run links, or file paths.
 | ID | Requirement | Status | Evidence |
 |---|---|---|---|
 | GOV-001 | Agent rules loaded and referenced | IMPLEMENTED+VERIFIED | `AGENT_OPERATING_RULES.md`, `CLAUDE.md`, `docs/IMPLEMENTATION_PLAN.md` in repo |
-| GOV-002 | No intentional project writes to C:/D:/F: | IN PROGRESS | `scripts/env.ps1` + `doctor.ps1` storage checks; RUSTUP_HOME/CARGO_HOME on E:; QEMU on E:; scratch on G: |
-| GIT-001 | Recoverable private repo created/reused | IN PROGRESS | local git initialized; GitHub repo pending first push |
-| GIT-002 | Secret scan before pushes | IN PROGRESS | `scripts/secret-scan.ps1` |
-| ENV-001 | Toolchain verified | IN PROGRESS | `scripts/doctor.ps1`; nightly-2026-09-01 + x86_64-unknown-none on E:; QEMU 11.1.0 at E:\tools\qemu |
+| GOV-002 | No intentional project writes to C:/D:/F: | IMPLEMENTED+VERIFIED | `scripts/env.ps1` routes RUSTUP_HOME/CARGO_HOME/TEMP/TMP to E:/G:; doctor checks enforce it; npm cache redirected per-command; QEMU extracted to E: without elevation |
+| GIT-001 | Recoverable private repo created/reused | IMPLEMENTED+VERIFIED | https://github.com/leelaravind/itisyou-os (private); checkpoint commits pushed (caae006, a0d5d33, 26d6948, …) |
+| GIT-002 | Secret scan before pushes | IMPLEMENTED+VERIFIED | `scripts/secret-scan.ps1` clean before each push (109 → 144 files); gitleaks job in CI |
+| ENV-001 | Toolchain verified | IMPLEMENTED+VERIFIED | doctor.ps1 all-OK; nightly-2026-08-01 + x86_64-unknown-none on E:; QEMU 11.1.0 + OVMF at E:\tools\qemu; VS2022 MSVC host linker |
 
 ## Kernel
 
@@ -58,11 +58,11 @@ labels, commit SHAs, CI run links, or file paths.
 
 | ID | Requirement | Status | Evidence |
 |---|---|---|---|
-| WEB-001 | Website implements approved Stitch design | PLANNED | `design/stitch/` preserved as source of truth |
-| WEB-002 | Status is evidence-backed | PLANNED | `status/current.json` generated from verification |
-| WEB-003 | Responsive/accessibility gate | PLANNED | automated + browser evidence |
-| CF-001 | os.itisyou.app deployed & verified | PLANNED | production browser verification required; Cloudflare auth to be discovered |
-| CI-001 | CI checks repo on push/PR | PLANNED | GitHub Actions |
+| WEB-001 | Website implements approved Stitch design | IMPLEMENTED+VERIFIED | 20 routes from the preserved `design/stitch/` export; browser-reviewed on staging + production (home, build, 404 screenshots; design tokens per DESIGN.md); deviations recorded in `website/DESIGN_DEVIATIONS.md` |
+| WEB-002 | Status is evidence-backed | IMPLEMENTED+VERIFIED | `sync-status.mjs` copies + vocabulary-validates `status/current.json` on every build (build fails on drift); /build states the truth policy; commit field renders "—" until stamped |
+| WEB-003 | Responsive/accessibility gate | IMPLEMENTED+VERIFIED (with noted limit) | astro check 0 errors; semantic landmarks/skip link/focus states/contrast computed ≥4.5:1/reduced-motion in build output; zero client JS; live mobile-viewport screenshot not capturable (maximized-window environment prevented browser resize) — responsive breakpoints verified in built CSS |
+| CF-001 | os.itisyou.app deployed & verified | IMPLEMENTED+VERIFIED | Worker os-itisyou-app-production + custom domain; verified live: HTTP 200 + TLS, 11 routes 200, /nope → 404, strict CSP/nosniff/DENY headers observed, browser journey with zero console errors (staging identically verified first) |
+| CI-001 | CI checks repo on push/PR | IN PROGRESS | run 33598093709: website + secret-scan jobs green; kernel job failed at clippy (Linux-only bindeps feature-unification) — fixed by removing artifact deps (subprocess kernel build); re-verification on next push |
 
 Update this file as evidence lands. Never delete an original requirement
 because it is difficult (plan §19).

@@ -4,11 +4,18 @@
 //! Produces `<variant>-bios.img` and `<variant>-uefi.img` plus a small
 //! manifest with sizes and SHA-256 checksums for release evidence.
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use bootloader::DiskImageBuilder;
 use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
+
+const VARIANTS: [&str; 3] = [
+    "itisyou-kernel",
+    "itisyou-kernel-selftest",
+    "itisyou-kernel-panictest",
+];
 
 fn main() -> Result<()> {
     let out_dir = std::env::args()
@@ -18,25 +25,30 @@ fn main() -> Result<()> {
     fs::create_dir_all(&out_dir)
         .with_context(|| format!("creating output dir {}", out_dir.display()))?;
 
-    let variants: [(&str, &str); 3] = [
-        (
-            "itisyou-kernel",
-            env!("CARGO_BIN_FILE_ITISYOU_KERNEL_itisyou-kernel"),
-        ),
-        (
-            "itisyou-kernel-selftest",
-            env!("CARGO_BIN_FILE_ITISYOU_KERNEL_itisyou-kernel-selftest"),
-        ),
-        (
-            "itisyou-kernel-panictest",
-            env!("CARGO_BIN_FILE_ITISYOU_KERNEL_itisyou-kernel-panictest"),
-        ),
-    ];
+    // Workspace root, independent of the invocation directory.
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .context("resolving workspace root")?;
 
+    // Build the kernel in its own cargo invocation (see Cargo.toml note).
+    let status = Command::new("cargo")
+        .args(["build", "-p", "itisyou-kernel"])
+        .current_dir(&root)
+        .status()
+        .context("running cargo build for the kernel")?;
+    if !status.success() {
+        bail!("kernel build failed with {status}");
+    }
+
+    let bin_dir = root.join("target/x86_64-unknown-none/debug");
     let mut manifest = String::new();
-    for (name, kernel_path) in variants {
-        let kernel_path = Path::new(kernel_path);
-        let builder = DiskImageBuilder::new(kernel_path.to_path_buf());
+    for name in VARIANTS {
+        let kernel_path = bin_dir.join(name);
+        if !kernel_path.is_file() {
+            bail!("expected kernel binary missing: {}", kernel_path.display());
+        }
+        let builder = DiskImageBuilder::new(kernel_path.clone());
 
         let bios = out_dir.join(format!("{name}-bios.img"));
         builder

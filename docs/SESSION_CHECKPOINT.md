@@ -19,19 +19,24 @@
   account a0365f6aaae5fe32b3fdb8fa08fd000c). Deploy config committed at
   `website/wrangler.jsonc` (os-itisyou-app-{staging,production}).
 
+## Deployment state (verified)
+
+- **https://os.itisyou.app LIVE**: Worker `os-itisyou-app-production` +
+  custom domain; TLS, 11 routes 200, 404 handling, strict security headers,
+  console-clean browser journey. Staging at
+  `os-itisyou-app-staging.kpleelaaravind.workers.dev` (same checks).
+- CI: website + secret-scan jobs green; kernel job was red at clippy
+  (Linux-only bindeps feature-unification) — fixed by replacing artifact
+  deps with a subprocess kernel build; re-run pending on next push.
+
 ## Next actions (exact order)
 
-1. Confirm re-run of scripts/test.ps1 is fully green (in progress).
-2. Commit Phase 2 kernel + docs; commit website; secret-scan; push.
-3. `cd website; npx wrangler deploy --env staging` → browser-verify staging
-   (routes, console, mobile, headers).
-4. `npx wrangler deploy --env production` → verify https://os.itisyou.app
-   (DNS/TLS/routes/headers/404) with browser automation.
-5. Verify GitHub Actions CI green on the pushed commits; fix if red.
-6. Stamp `status/current.json` commit field + site rebuild/redeploy.
-7. Full `scripts/verify.ps1` end-to-end; reconcile docs/REQUIREMENTS.md;
-   final report + this checkpoint updated.
+1. Confirm test.ps1 fully green after bindeps removal (running).
+2. Commit CI fix + docs; secret-scan; push; watch `gh run` until green.
+3. Stamp `status/current.json` commit field; rebuild + redeploy production.
+4. Full `scripts/verify.ps1` end-to-end (TEST-001 evidence).
+5. Reconcile docs/REQUIREMENTS.md; final report; update this checkpoint.
 
 ## Blockers
 
-None. (Usage-limit wake-up timer armed for 06:52 local; work continues.)
+None. (Usage-limit wake-up timer armed for 06:52 local.)
