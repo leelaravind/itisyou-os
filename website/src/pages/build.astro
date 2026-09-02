@@ -91,6 +91,51 @@ const outcomes = [
       </p>
     </section>
 
+    <!-- ============ V0.6 hardware evidence ============ -->
+    <section class="mb-16" aria-labelledby="hw-title">
+      <h2 id="hw-title" class="font-sans text-headline-md text-ink border-b border-line-soft pb-4 mb-8">
+        Detected hardware (V0.6)
+      </h2>
+      <p class="text-body-base text-meta-bright text-sm mb-4 max-w-3xl">
+        The V0.6 device model enumerates PCI into device records (sized BARs +
+        capability list) and binds drivers by probing. This is the OS's own
+        enumeration inside QEMU — the same data the <span class="font-mono text-mono-data">lsdev</span>
+        command and the Ring 3 <span class="font-mono text-mono-data">devinfo</span> syscall expose:
+      </p>
+      <div class="table-scroll panel mb-6">
+        <pre class="font-mono text-mono-data text-meta text-sm p-4 overflow-x-auto">7 device(s):
+  00:00.0  8086:1237  class 0x06/0x00  host bridge
+  00:01.0  8086:7000  class 0x06/0x01  ISA bridge
+  00:01.1  8086:7010  class 0x01/0x01  IDE controller
+  00:01.3  8086:7113  class 0x06/0x80  bridge
+  00:02.0  1234:1111  class 0x03/0x00  display controller
+  00:03.0  8086:100e  class 0x02/0x00  network controller
+  00:04.0  1b36:0010  class 0x01/0x08  NVMe controller  caps: MSI-X PCIe PM  driver: nvme</pre>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="panel p-5">
+          <p class="font-mono text-mono-data text-meta text-sm mb-1">USB — UHCI + HID keyboard</p>
+          <p class="text-body-base text-meta-bright text-sm">
+            The OS resets the root port, enumerates the device over control
+            transfers (read its descriptor: <span class="font-mono text-mono-data">0627:0001</span>,
+            a real QEMU keyboard), finds the HID interrupt endpoint, and reads a
+            keypress off it. An injected key arrives as
+            <span class="font-mono text-mono-data">key=g src=usb</span> — real USB HID input.
+          </p>
+        </div>
+        <div class="panel p-5">
+          <p class="font-mono text-mono-data text-meta text-sm mb-1">Audio — AC97 output</p>
+          <p class="text-body-base text-meta-bright text-sm">
+            The OS initializes the codec and DMAs a synthesized tone through the
+            PCM-Out bus master until every buffer is consumed
+            (<span class="font-mono text-mono-data">halted=true</span>). Captured to a WAV via QEMU's
+            <span class="font-mono text-mono-data">wav</span> backend and asserted non-silent — the
+            samples reach the output, not just the driver.
+          </p>
+        </div>
+      </div>
+    </section>
+
     <!-- ============ Status vocabulary ============ -->
     <section class="mb-16" aria-labelledby="vocab-title">
       <h2 id="vocab-title" class="font-sans text-headline-md text-ink border-b border-line-soft pb-4 mb-8">

@@ -59,7 +59,6 @@ export const MILESTONES: Milestone[] = [
     id: 'V0.5',
     name: 'Graphics + Input + Basic Desktop/Compositor',
     status: 'verified',
-    current: true,
     summary:
       'A real graphical environment produced by the OS inside QEMU: a bootloader framebuffer with a back buffer + bitmap font; a window compositor with per-window backing stores and ownership/bounds isolation; GUI syscalls so Ring 3 renders a window with no direct framebuffer access; PS/2 keyboard (IRQ1) + mouse (IRQ12); and an interactive desktop that reacts to real input. Proven by in-kernel pixel read-backs and a QEMU-monitor input-injection test that screendumps the OS-rendered desktop.',
     components: [
@@ -70,6 +69,19 @@ export const MILESTONES: Milestone[] = [
   },
   {
     id: 'V0.6',
+    name: 'Hardware Expansion',
+    status: 'verified',
+    current: true,
+    summary:
+      'A generic device/driver model over an enriched PCI foundation (BAR sizing, capability-list walking with MSI/MSI-X/PCIe/PM detection); a USB UHCI host controller with full device enumeration over control transfers and verified HID keyboard input; an AC97 audio driver whose generated PCM samples are proven to traverse driver -> codec -> output (captured to a WAV); a unified input subsystem (PS/2 + USB HID behind one event stream, delivered to the GUI); and a devinfo syscall giving userspace device access without hardware authority. Drivers are polled, keeping the verified PIC timer/PS-2 interrupt path intact.',
+    components: [
+      'Device/driver model + PCI depth (BARs, capabilities)',
+      'USB UHCI + HID keyboard; AC97 audio (samples verified)',
+      'Unified input; userspace device access (least authority)',
+    ],
+  },
+  {
+    id: 'V0.7',
     name: 'Networking',
     status: 'planned',
     summary:
@@ -77,15 +89,15 @@ export const MILESTONES: Milestone[] = [
     components: ['NIC driver (VM target first)', 'IPv4/IPv6, UDP/TCP, DNS', 'Strict network permission model'],
   },
   {
-    id: 'V0.7',
-    name: 'Hardware Expansion',
+    id: 'V0.8',
+    name: 'Advanced Hardware + Interrupt Modernization',
     status: 'planned',
     summary:
-      'USB, audio, device manager, ACPI/power foundations, laptop hardware research, targeted driver strategy.',
-    components: ['USB & audio', 'Device manager, ACPI/power foundations', 'Targeted driver strategy'],
+      'USB xHCI, APIC/IOAPIC/MSI interrupt routing, ACPI/power foundations, additional device classes, laptop hardware research, targeted driver strategy.',
+    components: ['USB xHCI', 'APIC/IOAPIC/MSI', 'ACPI/power foundations'],
   },
   {
-    id: 'V0.8',
+    id: 'V0.9',
     name: 'System Platform',
     status: 'planned',
     summary:
@@ -93,7 +105,7 @@ export const MILESTONES: Milestone[] = [
     components: ['Signed/atomic updates', 'Sandboxing + capability/permission engine', 'Recovery and rollback'],
   },
   {
-    id: 'V0.9',
+    id: 'V0.10',
     name: 'AI-Native System Layer',
     status: 'concept',
     summary:
@@ -105,7 +117,7 @@ export const MILESTONES: Milestone[] = [
     ],
   },
   {
-    id: 'V0.10',
+    id: 'V0.11',
     name: 'Daily-Driver Research',
     status: 'concept',
     summary:

@@ -80,6 +80,23 @@ lock a `composite()` may hold). The `desktop` shell command enters an
 interactive loop that applies input and re-composites. Pure logic (8×8 font,
 scancode + mouse decoders) lives in `kernel-core` and is host-tested.
 
+## Device model, USB & audio (V0.6, ADR-0011)
+
+A generic device model sits over PCI: every function is probed into a `Device`
+(identity + sized BARs + capability list, walked with a bounded loop-guarded
+walker that detects MSI/MSI-X/PCIe/PM), and registered `Driver`s (`probe` →
+`attach`) bind deterministically. The device table drives serial diagnostics
+(B190), the `lsdev` shell command, and a `devinfo` syscall. Two real class
+drivers bind through it: **AC97** audio, which plays a synthesized PCM tone
+through a bus-master BDL and is proven end-to-end by capturing the samples to a
+WAV; and **UHCI** USB, which enumerates a device over polled control transfers
+(descriptors parsed by host-tested `kernel_core::usb`) and reads **HID keyboard
+input** off the interrupt endpoint. USB HID and PS/2 decode into one unified
+`InputEvent` stream the desktop consumes. Every V0.6 driver is **polled**, so
+the verified PIC timer/PS-2 IRQ path is untouched; MSI/MSI-X is detected but
+APIC/MSI routing is deferred. Userspace reaches devices only through `devinfo`
+— no direct config/MMIO/port access.
+
 ## Crate boundaries
 
 - **`kernel/`** — the only privileged code. Library + two binaries:
@@ -103,9 +120,9 @@ scancode + mouse decoders) lives in `kernel-core` and is host-tested.
 The bootloader hands the kernel a typed `BootInfo` (memory regions, physical
 memory mapping offset, framebuffer, RSDP). Kernel code consumes it through
 `itisyou_kernel::early_init` so subsystems never depend on third-party boot
-structures directly. Boot stages B000–B180 (defined in
-`kernel-core::stage`, through B170 graphics + B180 desktop) each emit one
-machine-parseable serial marker; the harness asserts them in order.
+structures directly. Boot stages B000–B190 (defined in
+`kernel-core::stage`, through B170 graphics, B180 desktop, B190 device model)
+each emit one machine-parseable serial marker; the harness asserts them in order.
 
 ## Observability
 

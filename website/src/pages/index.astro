@@ -33,7 +33,7 @@ const layers = [
   {
     code: 'L3',
     name: 'Userspace',
-    note: 'ring 3, per-process isolation, preemptive scheduling, GUI syscalls (V0.5)',
+    note: 'ring 3, per-process isolation, preemptive scheduling, GUI + device syscalls (V0.6)',
     tag: 'verified',
     tagLabel: 'Verified',
     accent: true,
@@ -41,7 +41,7 @@ const layers = [
   {
     code: 'L2',
     name: 'Kernel',
-    note: 'Rust no_std, x86_64, ring 0',
+    note: 'Rust no_std, x86_64, ring 0; device model, PCI, USB, audio, NVMe (V0.6)',
     tag: 'verified',
     tagLabel: 'Verified',
     accent: false,

@@ -300,3 +300,43 @@ the host.
   monitor-injection leg passes identically under Linux QEMU); tagged `v0.5.0`
   on commit `5be3c0c`; os.itisyou.app redeployed and browser+HTTP verified
   (v0.5.0-dev, OS-rendered desktop screendump on /build, zero console errors).
+
+### 12:40 — V0.6 Hardware Expansion
+
+Baseline preserved as tag `v0.5.0`. Goal: turn the QEMU desktop OS into a real
+hardware platform — a device/driver model, PCI depth, USB, audio, input
+unification (ADR-0011).
+
+**Device model + PCI** (committed a180298): every PCI function is probed into a
+`Device` (identity + sized BARs + capability list). BAR sizing writes all-ones
+and restores (non-destructive, verified). The capability walker is bounded and
+loop-guarded; host tests cover circular/self-loop/out-of-range chains. A
+`Driver` trait + explicit registry binds drivers deterministically at a new
+B190. QEMU showed 7 real devices; the NVMe controller's caps decoded as
+`[MSI-X,PCIe,PM]`. `lsdev` shell command + selftest pass=83/0.
+
+**Audio** (committed 2ae29e5): an AC97 driver — codec reset/unmute, a bus-master
+BDL over DMA frames of a synthesized 440 Hz tone. The insight that made audio
+*honest*: QEMU's `wav` audio backend writes played samples to a file, so the
+harness asserts the captured WAV is **non-silent**. `ac97 play bufs=8 civ=7
+halted=true` (all buffers DMA-consumed) + a WAV full of `0x1fff` tone samples =
+real end-to-end audio, not init-only.
+
+**USB** (committed e089fb3): a UHCI driver. The biggest lift — frame list, QH,
+TDs, control transfers. Chose UHCI over xHCI precisely because it's the smallest
+controller QEMU emulates fully with `usb-kbd`, so HID input could be *verified*.
+It enumerated the real QEMU keyboard (`usb device vendor=0x0627 product=0x0001`),
+parsed its config descriptor to find the HID interrupt endpoint, set address +
+configuration + boot protocol, then read a report off the interrupt endpoint:
+injected `sendkey a` → `[ITISYOU:INPUT] usb key=a`. Real USB HID input.
+
+**Input unification + userspace** (committed 1a5e7d8): USB HID and PS/2 now
+decode into one `InputEvent` queue; the desktop pumps USB each loop and reacts
+to `key=g src=usb` identically to PS/2. A `devinfo` syscall gives Ring 3 the
+device table without any hardware authority; a userspace `/bin/lsdev` proved it
+(`RING3-LSDEV-OK count=7`). Selftest pass=84/0.
+
+- Decision: every V0.6 driver is **polled**. MSI/MSI-X capabilities are detected
+  and reported, but wiring APIC/MSI would mean rewriting the verified PIC
+  timer/PS-2 interrupt path's tests — a regression risk, not progress. IRQ
+  modernization is deferred to V0.8 with that rationale recorded (ADR-0011).
