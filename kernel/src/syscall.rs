@@ -38,6 +38,7 @@ pub const SYS_GUI_CREATE: u64 = 8;
 pub const SYS_GUI_FILL: u64 = 9;
 pub const SYS_GUI_TEXT: u64 = 10;
 pub const SYS_GUI_PRESENT: u64 = 11;
+pub const SYS_DEVINFO: u64 = 12;
 
 pub const ERR_NOSYS: u64 = u64::MAX;
 pub const ERR_FAULT: u64 = u64::MAX - 1;
@@ -168,6 +169,7 @@ extern "C" fn syscall_dispatch(a1: u64, a2: u64, a3: u64, nr: u64) -> u64 {
         SYS_GUI_FILL => sys_gui_fill(a1, a2, a3),
         SYS_GUI_TEXT => sys_gui_text(a1, a2, a3),
         SYS_GUI_PRESENT => sys_gui_present(a1),
+        SYS_DEVINFO => sys_devinfo(a1, a2, a3),
         _ => {
             NOSYS_COUNT.fetch_add(1, Ordering::SeqCst);
             ERR_NOSYS
@@ -214,6 +216,43 @@ pub fn copy_to_user(ptr: u64, data: &[u8]) -> Result<u64, u64> {
     let dst = unsafe { core::slice::from_raw_parts_mut(ptr as *mut u8, data.len()) };
     dst.copy_from_slice(data);
     Ok(data.len() as u64)
+}
+
+/// devinfo(index, buf_ptr, buf_len): copy a fixed 16-byte record for device
+/// `index` into the validated user buffer. Returns 1 if a device exists there,
+/// 0 past the end, or an ERR_*. This is the *only* device access Ring 3 gets —
+/// enumeration/BAR/config port I/O stays in the kernel (least authority).
+///
+/// Record layout (16 bytes, little-endian):
+/// `[bus, slot, func, class, subclass, has_driver, vendor:u16, device:u16,
+///   num_caps, reserved×5]`.
+fn sys_devinfo(index: u64, buf_ptr: u64, buf_len: u64) -> u64 {
+    if buf_len < 16 {
+        return ERR_INVAL;
+    }
+    let record = crate::device::with_devices(|devs| {
+        devs.get(index as usize).map(|d| {
+            let id = d.id();
+            let mut r = [0u8; 16];
+            r[0] = d.pci.bus;
+            r[1] = d.pci.slot;
+            r[2] = d.pci.func;
+            r[3] = id.class;
+            r[4] = id.subclass;
+            r[5] = d.driver.is_some() as u8;
+            r[6..8].copy_from_slice(&id.vendor.to_le_bytes());
+            r[8..10].copy_from_slice(&id.device.to_le_bytes());
+            r[10] = d.caps.len().min(255) as u8;
+            r
+        })
+    });
+    match record {
+        Some(r) => match copy_to_user(buf_ptr, &r) {
+            Ok(_) => 1,
+            Err(e) => e,
+        },
+        None => 0,
+    }
 }
 
 fn le32(b: &[u8], o: usize) -> u32 {

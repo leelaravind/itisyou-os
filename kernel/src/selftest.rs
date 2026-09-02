@@ -102,6 +102,14 @@ fn device_tests(suite: &mut Suite) {
             .unwrap_or(false);
         suite.check("device_bar_probe_nondestructive", restored);
     });
+
+    // Ring 3 device access via the devinfo syscall only (no hardware authority):
+    // the userspace lsdev tool enumerates the kernel device table and exits 0.
+    let lsdev_ok = matches!(
+        crate::user::run_path("/bin/lsdev"),
+        Ok(crate::user::UserExit::Exit(0))
+    );
+    suite.check("device_userspace_lsdev", lsdev_ok);
 }
 
 /// V0.5: framebuffer, compositor, GUI syscalls, input decoding.
