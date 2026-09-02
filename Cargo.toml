@@ -6,6 +6,17 @@ members = [
     "tools/image-builder",
     "tools/qemu-runner",
 ]
+# The kernel must NEVER share a cargo invocation with host packages: cargo
+# resolves features once per invocation across all compile targets, so a
+# host-only dependency enabling e.g. `bitflags/std` (Linux dep graph) would
+# poison the x86_64-unknown-none build. Bare `cargo build`/`clippy` operate
+# on the host packages; the kernel builds via `-p itisyou-kernel` alone
+# (image-builder does this as a subprocess).
+default-members = [
+    "crates/kernel-core",
+    "tools/image-builder",
+    "tools/qemu-runner",
+]
 
 [workspace.package]
 version = "0.1.0"

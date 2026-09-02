@@ -17,7 +17,9 @@ function Stage($name, $script) {
 
 Stage 'doctor' { & "$root\scripts\doctor.ps1" }
 Stage 'format' { cargo fmt --all -- --check }
-Stage 'clippy' { cargo clippy --workspace --all-targets -- -D warnings }
+# Host and kernel are linted separately on purpose (Cargo.toml note).
+Stage 'clippy-host' { cargo clippy --all-targets -- -D warnings }
+Stage 'clippy-kernel' { cargo clippy -p itisyou-kernel -- -D warnings }
 Stage 'host-tests + qemu-matrix' { & "$root\scripts\test.ps1" }
 
 if (Test-Path "$root\website\package.json") {

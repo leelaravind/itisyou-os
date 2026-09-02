@@ -4,8 +4,8 @@
   "architecture": "x86_64",
   "environment": "QEMU",
   "milestone": "Kernel Foundation",
-  "commit": null,
-  "lastVerifiedAt": "2026-09-02T03:40:00Z",
+  "commit": "ceb24f9",
+  "lastVerifiedAt": "2026-09-02T06:35:00Z",
   "verification": "locally-verified",
   "modules": [
     { "id": "boot", "name": "Boot path (BIOS + UEFI via bootloader crate)", "status": "verified" },

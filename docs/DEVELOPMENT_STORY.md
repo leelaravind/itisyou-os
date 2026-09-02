@@ -120,10 +120,17 @@ harness, root causes from serial evidence:
   verified live: TLS, 11 routes 200, 404 handling, headers, console-clean
   browser journey. Deploy output alone was not treated as success.
 - CI run 33598093709: website + gitleaks green; kernel job red at clippy —
-  **Linux-only**: cargo's unstable bindeps unified crate features across
-  the host/bare-metal boundary (bitflags built for x86_64-unknown-none with
-  `std`), and `cargo tree` panics on such graphs. Root fix: removed
-  artifact dependencies entirely; image-builder now runs
-  `cargo build -p itisyou-kernel` as a subprocess (separate feature
-  resolution, no unstable cargo features). Verified locally: clippy clean,
-  images identical in role, full QEMU matrix re-run.
+  **Linux-only**: bitflags was built for x86_64-unknown-none with `std`
+  enabled. First hypothesis (bindeps unification) was only part of it:
+  removing artifact deps (subprocess kernel build — kept, it also fixed a
+  `cargo tree` panic) did NOT fix CI. Actual root cause: **cargo resolves
+  features once per invocation across all compile targets**, so any single
+  command mixing the forced-target kernel with host packages
+  (`clippy --workspace`) lets a host-only dep (present in the Linux graph,
+  absent on Windows — hence the local/CI split) enable `bitflags/std` for
+  the bare-metal build. Fix: `default-members` excludes the kernel from
+  bare cargo commands, and every clippy/test path lints host packages and
+  the kernel in **separate invocations** (ci.yml + verify.ps1).
+- Full `scripts/verify.ps1` executed end-to-end afterwards: doctor, fmt,
+  clippy, 41 host tests, 6/6 QEMU legs, website check+build (0 errors),
+  secret scan — "VERIFY: OK".

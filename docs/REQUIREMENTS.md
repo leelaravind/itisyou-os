@@ -42,7 +42,7 @@ labels, commit SHAs, CI run links, or file paths.
 
 | ID | Requirement | Status | Evidence |
 |---|---|---|---|
-| TEST-001 | One-command verification gate exists | IN PROGRESS | `scripts/verify.ps1` (full end-to-end run pending final phase) |
+| TEST-001 | One-command verification gate exists | IMPLEMENTED+VERIFIED | `scripts/verify.ps1` full run 2026-09-02: doctor OK, fmt OK, clippy OK, 41 host tests, 6/6 QEMU legs Success, website 0 errors, secret scan clean → "VERIFY: OK" |
 | TEST-002 | QEMU timeout/failure classification works | IMPLEMENTED+VERIFIED | classifications observed operating correctly during real debugging: Timeout (interactive halt), Panic (UEFI TooManyRegions), MissingMarkers (FIFO stall), Success; negative leg panic-test-bios green |
 | SEC-001 | Unsafe inventory exists | IMPLEMENTED+VERIFIED | `docs/UNSAFE_INVENTORY.md` — 12 documented unsafe contracts |
 | SEC-002 | No host disk passthrough | IMPLEMENTED+VERIFIED | qemu-runner `build_command` + run-qemu.ps1 attach only `target/images/*.img`; no passthrough flags anywhere |
