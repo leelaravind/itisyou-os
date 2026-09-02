@@ -14,7 +14,7 @@ const { class: extraClass } = Astro.props;
 const fields = [
   { label: 'VERSION', value: `v${status.version}` },
   { label: 'MATURITY', value: status.maturity },
-  { label: 'MILESTONE', value: `V0.1 — ${status.milestone}` },
+  { label: 'MILESTONE', value: status.milestone },
   { label: 'ARCH', value: status.architecture },
   { label: 'ENVIRONMENT', value: `${status.environment} (BIOS + UEFI/OVMF)` },
   { label: 'COMMIT', value: orDash(status.commit) },
