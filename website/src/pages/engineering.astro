@@ -1,0 +1,171 @@
+---
+import Base from '../layouts/Base.astro';
+import Breadcrumbs from '../components/Breadcrumbs.astro';
+import StatusTag from '../components/StatusTag.astro';
+import VerificationLoop from '../components/VerificationLoop.astro';
+import { JOURNAL } from '../lib/journal';
+
+const description =
+  'How ITISYOU OS is engineered: the verification loop, the deterministic QEMU test harness, requirement traceability with evidence, and the running development story.';
+
+const traceability = [
+  { id: 'BOOT-001', req: 'QEMU reaches kernel entry (B010)', status: 'in-development', evidence: 'qemu-runner label boot-smoke-*' },
+  { id: 'BOOT-002', req: 'Serial logging works (B020)', status: 'in-development', evidence: 'qemu-runner label boot-smoke-*' },
+  { id: 'MEM-001', req: 'Physical memory manager works', status: 'planned', evidence: 'unit + QEMU selftests' },
+  { id: 'INT-001', req: 'Exceptions/IDT installed', status: 'planned', evidence: 'controlled exception test' },
+  { id: 'TASK-001', req: 'Scheduler runs multiple tasks', status: 'planned', evidence: 'deterministic task output tests' },
+  { id: 'DIAG-001', req: 'Panic produces useful serial evidence', status: 'in-development', evidence: 'panic handler emits [ITISYOU:PANIC]; negative test pending' },
+];
+
+const pyramid = [
+  {
+    level: '1 · HOST UNIT TESTS',
+    text: 'cargo test on kernel-core, image-builder, qemu-runner — pure logic: stage/marker contract, SHA-256 vectors, and (as subsystems land) memory-map normalization, allocator logic, parsing. Fast, deterministic, no QEMU.',
+  },
+  {
+    level: '2 · QEMU BOOT SMOKE',
+    text: 'Boots the interactive kernel (BIOS and UEFI), asserts stages B010/B020/B030 appear within the timeout.',
+  },
+  {
+    level: '3 · QEMU SELFTEST SUITE',
+    text: 'Boots itisyou-kernel-selftest; requires all expected stages, fail=0, pass>0, and QEMU exit code 33. A hang, panic, or missing summary can never pass.',
+  },
+  {
+    level: '4 · NEGATIVE CASES',
+    text: 'Grown alongside subsystems: intentional panic, allocator exhaustion, malformed inputs, timeout classification.',
+  },
+];
+---
+
+<Base title="Engineering Process" description={description}>
+  <div class="max-w-(--container-max) mx-auto px-4 sm:px-margin pt-12 pb-8 flex flex-col gap-16">
+    <header>
+      <Breadcrumbs class="mb-4" crumbs={[{ label: 'SYSTEM', href: '/' }, { label: 'KERNEL' }, { label: 'BUILD_LOG' }]} />
+      <h1 class="font-sans font-light text-[36px] sm:text-display-lg text-ink mb-4">Engineering Process</h1>
+      <p class="text-body-base text-meta-bright max-w-2xl">
+        Every requirement ends in exactly one state — implemented + verified, blocked, or not applicable — with
+        evidence. Failure is data: panic output, QEMU exit codes, timeouts, and serial tails are captured as
+        structured evidence, not discarded.
+      </p>
+    </header>
+
+    <!-- ============ Lifecycle ============ -->
+    <section aria-labelledby="lifecycle-title">
+      <h2 id="lifecycle-title" class="font-sans text-headline-md text-ink border-b border-line-soft pb-4 mb-8">
+        Development lifecycle
+      </h2>
+      <VerificationLoop />
+    </section>
+
+    <!-- ============ Test pyramid + harness ============ -->
+    <section class="grid grid-cols-1 lg:grid-cols-12 gap-gutter" aria-labelledby="pyramid-title">
+      <div class="lg:col-span-6">
+        <h2 id="pyramid-title" class="font-sans text-headline-md text-ink border-b border-line-soft pb-4 mb-6">
+          Test pyramid
+        </h2>
+        <ol class="flex flex-col gap-px bg-line border border-line list-none">
+          {
+            pyramid.map((tier) => (
+              <li class="bg-surface p-5">
+                <p class="font-mono text-mono-label text-ink tracking-widest mb-2">{tier.level}</p>
+                <p class="text-sm text-meta-bright">{tier.text}</p>
+              </li>
+            ))
+          }
+        </ol>
+      </div>
+      <div class="lg:col-span-6">
+        <h2 class="font-sans text-headline-md text-ink border-b border-line-soft pb-4 mb-6">The QEMU harness</h2>
+        <p class="text-body-base text-meta-bright mb-4">
+          <span class="font-mono text-mono-data">tools/qemu-runner</span> launches QEMU with project-generated
+          disposable images, watches the serial stream for the boot-stage markers, and classifies every run:
+          success, selftest-failed, panic, timeout, missing-markers, launch-failure, or unexpected-exit.
+        </p>
+        <div class="log-block mb-4" aria-label="Marker grammar specification with example">
+          <p class="text-muted mb-2">// serial marker grammar (specification — not a boot capture)</p>
+          <p class="text-meta-bright">[ITISYOU:B010] kernel entry reached in 64-bit mode</p>
+          <p class="text-meta-bright">[ITISYOU:B020] early serial console ready</p>
+          <p class="text-meta-bright">[ITISYOU:SELFTEST] pass=N fail=M</p>
+          <p class="text-muted mt-2">// harness gate: all stages ∧ fail=0 ∧ pass&gt;0 ∧ exit=33</p>
+        </div>
+        <p class="font-mono text-mono-data text-muted">
+          Evidence per run: artifacts/qemu/&lt;label&gt;.serial.log + &lt;label&gt;.result.json. Rules: no skipped
+          tests to obtain green status; a bug fix lands with a regression test; “passing” is only claimed from an
+          actual run’s evidence.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============ Requirement traceability ============ -->
+    <section aria-labelledby="trace-title">
+      <div class="flex flex-wrap items-end justify-between gap-4 border-b border-line-soft pb-4 mb-8">
+        <h2 id="trace-title" class="font-sans text-headline-md text-ink">Requirement traceability</h2>
+        <p class="font-mono text-mono-data text-meta">Excerpt — full matrix lives in docs/REQUIREMENTS.md</p>
+      </div>
+      <div class="table-scroll panel">
+        <table class="w-full border-collapse min-w-[640px]">
+          <caption class="sr-only">Requirement traceability excerpt with status and evidence convention</caption>
+          <thead>
+            <tr>
+              {['ID', 'Requirement', 'Status', 'Evidence convention'].map((h) => (
+                <th scope="col" class="text-left font-mono text-[11px] font-medium tracking-widest uppercase text-muted bg-log border-b border-line px-4 py-3">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {
+              traceability.map((row) => (
+                <tr class="border-b border-line last:border-b-0 align-top">
+                  <td class="font-mono text-mono-data text-meta px-4 py-3 whitespace-nowrap">{row.id}</td>
+                  <td class="text-body-base text-body px-4 py-3">{row.req}</td>
+                  <td class="px-4 py-3">
+                    <StatusTag status={row.status} />
+                  </td>
+                  <td class="font-mono text-xs text-meta px-4 py-3">{row.evidence}</td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </div>
+      <p class="font-mono text-mono-data text-muted mt-4">
+        A requirement is never deleted because it is difficult. Statuses collapse to implemented+verified / blocked /
+        not-applicable at reporting time.
+      </p>
+    </section>
+
+    <!-- ============ Development journal ============ -->
+    <section aria-labelledby="journal-title">
+      <div class="flex flex-wrap items-end justify-between gap-4 border-b border-line-soft pb-4 mb-8">
+        <h2 id="journal-title" class="font-sans text-headline-md text-ink">Development journal</h2>
+        <p class="font-mono text-mono-data text-meta">Latest entries — full ledger at /changelog</p>
+      </div>
+      <div class="flex flex-col gap-6">
+        {
+          JOURNAL.map((entry) => (
+            <article class="border-l border-line-soft pl-5">
+              <div class="flex flex-wrap items-center gap-2 mb-2 font-mono text-mono-label text-muted">
+                <span>{entry.date}</span>
+                <span aria-hidden="true">/</span>
+                <span>{entry.time}</span>
+                <span aria-hidden="true">/</span>
+                <span>{entry.session}</span>
+                <StatusTag status={entry.status} class="sm:ml-auto" />
+              </div>
+              <h3 class="text-body-base text-ink font-medium mb-2">{entry.title}</h3>
+              <p class="text-body-base text-meta-bright mb-2 max-w-3xl">{entry.what}</p>
+              <p class="text-sm text-meta mb-3 max-w-3xl">{entry.detail}</p>
+              {entry.evidence && (
+                <p class="log-block text-[11px] leading-relaxed inline-block">{entry.evidence}</p>
+              )}
+            </article>
+          ))
+        }
+      </div>
+      <div class="mt-8 flex flex-wrap gap-4">
+        <a href="/changelog" class="btn btn-primary">Full ledger</a>
+        <a href="/docs/testing" class="btn">Testing doc</a>
+      </div>
+    </section>
+  </div>
+</Base>

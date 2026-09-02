@@ -1,0 +1,27 @@
+{
+  "name": "itisyou-os-website",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Public engineering website for ITISYOU OS (os.itisyou.app). Static Astro site; all status claims are generated from status/current.json.",
+  "scripts": {
+    "sync": "node scripts/sync-status.mjs && node scripts/sync-docs.mjs",
+    "predev": "npm run sync",
+    "dev": "astro dev",
+    "prebuild": "npm run sync",
+    "build": "astro build",
+    "preview": "astro preview",
+    "verify": "npm run sync && astro check && astro build"
+  },
+  "dependencies": {
+    "@astrojs/check": "^0.9.4",
+    "@astrojs/sitemap": "^3.2.1",
+    "@fontsource-variable/geist": "^5.2.5",
+    "@fontsource-variable/jetbrains-mono": "^5.2.5",
+    "@tailwindcss/vite": "^4.1.4",
+    "astro": "^5.7.0",
+    "tailwindcss": "^4.1.4",
+    "typescript": "^5.8.3",
+    "vite": "^6.4.3"
+  }
+}

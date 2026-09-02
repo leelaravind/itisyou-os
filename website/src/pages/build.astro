@@ -1,0 +1,161 @@
+---
+import Base from '../layouts/Base.astro';
+import Breadcrumbs from '../components/Breadcrumbs.astro';
+import StatusTag from '../components/StatusTag.astro';
+import BuildCard from '../components/BuildCard.astro';
+import { status, STATUS_LABELS } from '../lib/status';
+
+const description =
+  'Current build status of ITISYOU OS, generated from status/current.json: per-module statuses with the verification rules that decide when a status may change.';
+
+const outcomes = [
+  ['success', 'expected markers + clean exit (selftest: exit 33, fail=0)'],
+  ['selftest-failed', 'in-kernel test failure (or exit 35)'],
+  ['panic', '[ITISYOU:PANIC] observed'],
+  ['timeout', 'deadline exceeded; QEMU killed; serial tail preserved'],
+  ['missing-markers', 'exited without required stage/summary markers'],
+  ['launch-failure', 'QEMU process could not start'],
+  ['unexpected-exit', 'exit status outside the contract (e.g. reset loop)'],
+];
+---
+
+<Base title="Build Status" description={description}>
+  <div class="max-w-(--container-max) mx-auto px-4 sm:px-margin pt-12 pb-8">
+    <header class="mb-12">
+      <Breadcrumbs class="mb-4" crumbs={[{ label: 'SYSTEM', href: '/' }, { label: 'BUILD' }, { label: 'STATUS' }]} />
+      <h1 class="font-sans font-light text-[36px] sm:text-display-lg text-ink mb-4">Current Build</h1>
+      <p class="text-body-base text-meta-bright max-w-2xl">
+        This page is generated from <span class="font-mono text-mono-data">status/current.json</span> at build time. A
+        status is derived from evidence, not marketing intent — the website cannot display claims the repository does
+        not record.
+      </p>
+    </header>
+
+    <BuildCard class="mb-16" />
+
+    <!-- ============ Module table ============ -->
+    <section class="mb-16" aria-labelledby="modules-title">
+      <h2 id="modules-title" class="font-sans text-headline-md text-ink border-b border-line-soft pb-4 mb-8">
+        V0.1 modules
+      </h2>
+      <div class="table-scroll panel">
+        <table class="w-full border-collapse min-w-[560px]">
+          <caption class="sr-only">Kernel modules for milestone V0.1 with their current evidence-backed status</caption>
+          <thead>
+            <tr>
+              <th scope="col" class="text-left font-mono text-[11px] font-medium tracking-widest uppercase text-muted bg-log border-b border-line px-4 py-3">Module</th>
+              <th scope="col" class="text-left font-mono text-[11px] font-medium tracking-widest uppercase text-muted bg-log border-b border-line px-4 py-3">Subsystem</th>
+              <th scope="col" class="text-left font-mono text-[11px] font-medium tracking-widest uppercase text-muted bg-log border-b border-line px-4 py-3">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {
+              status.modules.map((mod) => (
+                <tr class="border-b border-line last:border-b-0">
+                  <td class="font-mono text-mono-data text-meta px-4 py-3 whitespace-nowrap">{mod.id}</td>
+                  <td class="text-body-base text-body px-4 py-3">{mod.name}</td>
+                  <td class="px-4 py-3">
+                    <StatusTag status={mod.status} />
+                  </td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ============ Status vocabulary ============ -->
+    <section class="mb-16" aria-labelledby="vocab-title">
+      <h2 id="vocab-title" class="font-sans text-headline-md text-ink border-b border-line-soft pb-4 mb-8">
+        What the statuses mean
+      </h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-px bg-line border border-line">
+        {
+          [
+            ['concept', 'Documented direction only. No active work; exists to constrain interface design.'],
+            ['planned', 'Committed for the milestone, not started.'],
+            ['research', 'Under active investigation; outcome may change the plan.'],
+            ['in-development', 'Work ongoing in the current session/phase.'],
+            ['implemented', 'Code exists and builds, but automated verification has not yet passed.'],
+            ['verified', 'An actual QEMU/host test run proved it, with retained evidence (serial log + JSON result).'],
+            ['experimental', 'Works in narrow conditions; deliberately outside the release-critical path.'],
+            ['blocked', 'Cannot proceed without an external input; reason is recorded.'],
+          ].map(([key, text]) => (
+            <div class="bg-surface p-5 flex items-start gap-4">
+              <StatusTag status={key} label={STATUS_LABELS[key]} class="mt-0.5 shrink-0" />
+              <p class="text-body-base text-meta-bright text-sm">{text}</p>
+            </div>
+          ))
+        }
+      </div>
+      <p class="font-mono text-mono-data text-muted mt-6">
+        “Implemented” and “Verified” are not interchangeable. Nothing on this site is marked Verified until the
+        harness has produced evidence for it.
+      </p>
+    </section>
+
+    <!-- ============ How verification works ============ -->
+    <section class="mb-16 grid grid-cols-1 lg:grid-cols-12 gap-gutter" aria-labelledby="verify-title">
+      <div class="lg:col-span-5">
+        <h2 id="verify-title" class="font-sans text-headline-md text-ink border-b border-line-soft pb-4 mb-6">
+          How a status becomes Verified
+        </h2>
+        <p class="text-body-base text-meta-bright mb-4 max-w-prose">
+          The QEMU harness boots the selftest kernel, which runs in-kernel checks, emits
+          <span class="font-mono text-mono-data">[ITISYOU:TEST]</span> events and a
+          <span class="font-mono text-mono-data">[ITISYOU:SELFTEST] pass=N fail=M</span> summary, then exits QEMU
+          through <span class="font-mono text-mono-data">isa-debug-exit</span>.
+        </p>
+        <p class="text-body-base text-meta-bright mb-4 max-w-prose">
+          The harness requires all expected stages, <span class="font-mono text-mono-data">fail=0</span>,
+          <span class="font-mono text-mono-data">pass&gt;0</span>, and QEMU exit code 33. A hang, panic, or missing
+          summary can never pass.
+        </p>
+        <div class="log-block" aria-label="Evidence artifacts per run">
+          <p class="text-muted mb-1">// evidence retained per run</p>
+          <p>artifacts/qemu/&lt;label&gt;.serial.log</p>
+          <p>artifacts/qemu/&lt;label&gt;.result.json</p>
+          <p class="text-muted mt-2">// outcome, exit code, stages seen/missing,</p>
+          <p class="text-muted">// test events, duration, full command line</p>
+        </div>
+      </div>
+      <div class="lg:col-span-7">
+        <h3 class="font-mono text-mono-label text-ink uppercase tracking-widest mb-4">
+          Failure classification (tools/qemu-runner)
+        </h3>
+        <div class="table-scroll panel">
+          <table class="w-full border-collapse min-w-[480px]">
+            <caption class="sr-only">QEMU harness outcome classification</caption>
+            <thead>
+              <tr>
+                <th scope="col" class="text-left font-mono text-[11px] font-medium tracking-widest uppercase text-muted bg-log border-b border-line px-4 py-3">Outcome</th>
+                <th scope="col" class="text-left font-mono text-[11px] font-medium tracking-widest uppercase text-muted bg-log border-b border-line px-4 py-3">Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              {
+                outcomes.map(([outcome, meaning]) => (
+                  <tr class="border-b border-line last:border-b-0">
+                    <td class="font-mono text-mono-data text-meta-bright px-4 py-3 whitespace-nowrap">{outcome}</td>
+                    <td class="text-body-base text-meta-bright px-4 py-3">{meaning}</td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </div>
+        <p class="font-mono text-mono-data text-muted mt-4">
+          No QEMU verification matrix has completed yet for this build — which is why every field above that depends on
+          it reads “—” or Not Yet Verified.
+        </p>
+      </div>
+    </section>
+
+    <div class="flex flex-wrap gap-4">
+      <a href="/docs/build-and-run" class="btn btn-primary">Build &amp; run instructions</a>
+      <a href="/docs/testing" class="btn">Testing doc</a>
+      <a href="/engineering" class="btn">Engineering process</a>
+    </div>
+  </div>
+</Base>

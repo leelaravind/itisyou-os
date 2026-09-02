@@ -1,0 +1,113 @@
+---
+/**
+ * Fixed header per Stitch: ITISYOU_OS wordmark, primary nav, "Engineering"
+ * disclosure for secondary routes, real version badge from status.json.
+ * Mobile nav is a no-JS <details> disclosure (keyboard accessible natively).
+ */
+import { NAV_PRIMARY, NAV_ENGINEERING, NAV_ALL } from '../lib/site';
+import { status } from '../lib/status';
+import StatusTag from './StatusTag.astro';
+
+const currentPath = Astro.url.pathname.replace(/\/$/, '') || '/';
+const isCurrent = (href: string) =>
+  href === '/' ? currentPath === '/' : currentPath === href || currentPath.startsWith(href + '/');
+const inEngineering = NAV_ENGINEERING.some((item) => isCurrent(item.href));
+---
+
+<header class="fixed top-0 inset-x-0 z-50 bg-surface border-b border-line">
+  <div class="max-w-(--container-max) mx-auto flex items-center justify-between gap-4 px-4 sm:px-margin py-3 min-h-[57px]">
+    <a
+      href="/"
+      class="font-mono text-mono-label font-bold tracking-tighter text-ink hover:text-meta-bright transition-colors py-3"
+      aria-label="ITISYOU OS home"
+    >
+      ITISYOU_OS
+    </a>
+
+    <nav class="hidden lg:flex items-center gap-6" aria-label="Primary">
+      {
+        NAV_PRIMARY.map((item) => (
+          <a
+            href={item.href}
+            aria-current={isCurrent(item.href) ? 'page' : undefined}
+            class:list={[
+              'font-mono text-mono-label uppercase tracking-wider py-2 transition-colors',
+              isCurrent(item.href)
+                ? 'text-ink border-b border-ink'
+                : 'text-meta hover:text-ink',
+            ]}
+          >
+            {item.label}
+          </a>
+        ))
+      }
+      <details class="nav-details relative">
+        <summary
+          class:list={[
+            'font-mono text-mono-label uppercase tracking-wider py-2 transition-colors inline-flex items-center gap-1',
+            inEngineering ? 'text-ink border-b border-ink' : 'text-meta hover:text-ink',
+          ]}
+        >
+          Engineering
+          <span aria-hidden="true" class="nav-icon-open">+</span>
+          <span aria-hidden="true" class="nav-icon-close">−</span>
+        </summary>
+        <div class="absolute right-0 top-full mt-3 w-52 bg-surface-2 border border-line flex flex-col">
+          {
+            NAV_ENGINEERING.map((item) => (
+              <a
+                href={item.href}
+                aria-current={isCurrent(item.href) ? 'page' : undefined}
+                class:list={[
+                  'font-mono text-mono-label uppercase tracking-wider px-4 py-3 border-b border-line last:border-b-0 transition-colors',
+                  isCurrent(item.href)
+                    ? 'text-ink bg-surface'
+                    : 'text-meta hover:text-ink hover:bg-surface',
+                ]}
+              >
+                {item.label}
+              </a>
+            ))
+          }
+        </div>
+      </details>
+    </nav>
+
+    <div class="flex items-center gap-3">
+      <span class="hidden sm:inline font-mono text-mono-label text-meta" title="Current version from status/current.json">
+        v{status.version}
+      </span>
+      <StatusTag status="pre-alpha" label="PRE-ALPHA" />
+
+      <details class="nav-details lg:hidden">
+        <summary
+          class="flex items-center justify-center min-w-11 min-h-11 border border-line-soft text-ink font-mono text-mono-label uppercase"
+          aria-label="Menu"
+        >
+          <span class="nav-icon-open" aria-hidden="true">≡</span>
+          <span class="nav-icon-close" aria-hidden="true">✕</span>
+        </summary>
+        <nav
+          class="absolute left-0 right-0 top-full bg-surface-2 border-b border-line flex flex-col max-h-[calc(100vh-57px)] overflow-y-auto"
+          aria-label="Mobile"
+        >
+          {
+            NAV_ALL.map((item) => (
+              <a
+                href={item.href}
+                aria-current={isCurrent(item.href) ? 'page' : undefined}
+                class:list={[
+                  'font-mono text-mono-label uppercase tracking-wider px-6 py-4 min-h-11 border-b border-line flex items-center transition-colors',
+                  isCurrent(item.href) ? 'text-ink bg-surface' : 'text-meta hover:text-ink hover:bg-surface',
+                ]}
+              >
+                {item.label}
+              </a>
+            ))
+          }
+          <span class="font-mono text-mono-label text-muted px-6 py-4">v{status.version}</span>
+        </nav>
+      </details>
+    </div>
+  </div>
+</header>

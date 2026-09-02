@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" fill="#050505"/>
+  <rect x="1.5" y="1.5" width="29" height="29" fill="none" stroke="#1a1a1a" stroke-width="1"/>
+  <text x="16" y="21" text-anchor="middle" font-family="'JetBrains Mono','Consolas',monospace" font-size="13" font-weight="700" fill="#f2f2f2">IO</text>
+  <rect x="6" y="25" width="20" height="2" fill="#7a8c99"/>
+</svg>

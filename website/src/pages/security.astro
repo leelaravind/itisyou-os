@@ -1,0 +1,220 @@
+---
+import Base from '../layouts/Base.astro';
+import Breadcrumbs from '../components/Breadcrumbs.astro';
+import StatusTag from '../components/StatusTag.astro';
+
+const description =
+  'ITISYOU OS security and authority model: AI has intelligence, not authority. Trust boundaries, V0.1 concrete security requirements, the future capability model, and the V0.1 threat model.';
+
+const boundaries = [
+  {
+    n: 1,
+    name: 'Firmware/bootloader boundary',
+    now: true,
+    text: 'SeaBIOS/OVMF + the rust-osdev bootloader run before the kernel; boot-provided data (memory map, framebuffer, RSDP) is validated before broad use. Boot-time-only code is not part of the OS runtime.',
+  },
+  {
+    n: 2,
+    name: 'Kernel trusted boundary',
+    now: true,
+    text: 'All Rust no_std code in kernel/ — the trusted computing base for V0.1.',
+  },
+  {
+    n: 3,
+    name: 'Userspace boundary',
+    now: false,
+    text: 'Stretch/planned: ring 3 with validated syscalls; user pointers checked before any kernel dereference; no user mapping of kernel pages.',
+  },
+  { n: 4, name: 'Privileged system-service boundary', now: false, text: 'Future.' },
+  { n: 5, name: 'Untrusted application boundary', now: false, text: 'Future.' },
+  { n: 6, name: 'AI/agent boundary', now: false, text: 'Future — governed by the authority principle above.' },
+  { n: 7, name: 'External network boundary', now: false, text: 'Future — no network stack exists in V0.1.' },
+];
+
+const threats = [
+  ['Host damage from OS testing', 'misconfigured VM (disk passthrough, raw device writes)', 'QEMU launches only project-generated images; no passthrough flags anywhere in scripts/harness; physical-hardware boot is out of scope'],
+  ['Kernel bug corrupting its own state silently', 'logic errors, bad unsafe', 'panic-on-invariant-violation; boot-stage markers; selftests; unsafe inventory'],
+  ['Malformed boot data', 'firmware/bootloader handoff anomalies', 'validate memory map/pointers before use; reject overlapping regions'],
+  ['Malformed initramfs', 'corrupt/hostile archive bytes', 'strict bounds-checked parsing with negative-case tests (planned with FS-001)'],
+  ['Supply-chain drift', 'dependencies with unexpected code', 'small pinned dependency set, Cargo.lock committed, rationale per kernel dependency'],
+  ['Secret leakage', 'tokens in commits/logs/CI', 'secret scan before pushes; env-var/platform secret stores only'],
+  ['Fake completion', 'claims without evidence', 'requirement matrix + machine-readable QEMU evidence; website generated from status/current.json'],
+];
+---
+
+<Base title="Security & Authority Model" description={description}>
+  <div class="max-w-(--container-max) mx-auto px-4 sm:px-margin pt-12 pb-8 flex flex-col gap-16">
+    <header class="border-b border-line-soft pb-12">
+      <Breadcrumbs
+        class="mb-6"
+        crumbs={[{ label: 'SYSTEM', href: '/' }, { label: 'ARCHITECTURE', href: '/architecture' }, { label: 'SECURITY_POLICY' }]}
+      />
+      <h1 class="font-sans font-light text-[36px] sm:text-display-lg text-ink uppercase mb-6">
+        System Security &amp;<br />Authority Model
+      </h1>
+      <p class="font-sans text-headline-md text-meta-bright max-w-2xl border-l-2 border-ink pl-4 py-1">
+        AI has intelligence, not authority.
+      </p>
+    </header>
+
+    <!-- ============ 01 authority boundaries ============ -->
+    <section class="grid grid-cols-1 md:grid-cols-12 gap-gutter" aria-labelledby="s1-title">
+      <div class="md:col-span-4 flex flex-col gap-4">
+        <h2 id="s1-title" class="font-mono text-mono-label text-ink tracking-widest">01 // THE CENTRAL PRINCIPLE</h2>
+        <p class="text-body-base text-meta-bright">
+          Any future AI/agent layer reasons about the system and proposes actions; it never executes privileged kernel
+          operations directly. Nothing in the V0.1 runtime contains an AI component — the principle exists now because
+          it constrains interface design: kernel APIs must remain callable only through narrow, deterministic,
+          auditable paths.
+        </p>
+        <div class="log-block mt-4" aria-label="Intended authority pipeline">
+          <p class="text-muted mb-2">// intended pipeline (design, not implemented)</p>
+          <p>agent intent → policy engine</p>
+          <p>&nbsp;&nbsp;→ risk/permission evaluation</p>
+          <p>&nbsp;&nbsp;→ user approval (where required)</p>
+          <p>&nbsp;&nbsp;→ deterministic privileged service</p>
+          <p>&nbsp;&nbsp;→ kernel operation → verification</p>
+          <p>&nbsp;&nbsp;→ audit → rollback/recovery</p>
+        </div>
+      </div>
+      <div class="md:col-span-8 panel p-6 md:p-8 relative">
+        <div class="absolute top-0 right-0 p-4"><StatusTag status="concept" /></div>
+        <h3 class="font-sans text-headline-md text-ink mb-6 pr-24">Intelligence / authority separation</h3>
+        <div class="flex flex-col md:flex-row gap-6 mt-4">
+          <div class="flex-1 border border-line p-6 bg-log">
+            <p class="font-mono text-mono-label text-meta border-b border-line pb-2 mb-4">FUTURE AI / AGENT LAYER</p>
+            <ul class="font-mono text-mono-data text-meta space-y-2 list-none">
+              <li>− no raw hardware access</li>
+              <li>− no direct kernel calls</li>
+              <li>− proposes, never executes</li>
+            </ul>
+          </div>
+          <div class="flex items-center justify-center relative md:w-10 shrink-0 py-2" aria-hidden="true">
+            <span class="hidden md:block absolute inset-y-0 left-1/2 w-px bg-red-deep"></span>
+            <span class="font-mono text-red bg-surface px-1 z-10 text-sm">⊘</span>
+          </div>
+          <div class="flex-1 border border-ink p-6 bg-base">
+            <p class="font-mono text-mono-label text-ink border-b border-ink pb-2 mb-4">DETERMINISTIC SYSTEM SIDE</p>
+            <ul class="font-mono text-mono-data text-ink space-y-2 list-none">
+              <li>+ policy &amp; permission evaluation</li>
+              <li>+ narrow privileged services</li>
+              <li>+ verification, audit, rollback</li>
+            </ul>
+          </div>
+        </div>
+        <p class="mt-6 border-t border-line pt-4 font-mono text-mono-data text-meta text-xs">
+          Kernel APIs are designed so privileged operations can later sit behind this layer rather than being callable
+          by an agent directly.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============ 02 trust boundaries ============ -->
+    <section aria-labelledby="s2-title">
+      <h2 id="s2-title" class="font-mono text-mono-label text-ink tracking-widest mb-6">02 // TRUST BOUNDARIES</h2>
+      <ol class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-px bg-line border border-line list-none">
+        {
+          boundaries.map((b) => (
+            <li class="bg-surface p-6 flex flex-col gap-3">
+              <div class="flex items-center justify-between gap-3">
+                <span class="font-mono text-mono-label text-muted tracking-widest">BOUNDARY_{String(b.n).padStart(2, '0')}</span>
+                <StatusTag status={b.now ? 'in-development' : b.n === 3 ? 'planned' : 'concept'} label={b.now ? 'V0.1' : b.n === 3 ? 'Planned' : 'Future'} />
+              </div>
+              <h3 class="font-sans text-body-base font-medium text-ink">{b.name}</h3>
+              <p class="text-sm text-meta-bright">{b.text}</p>
+            </li>
+          ))
+        }
+      </ol>
+    </section>
+
+    <!-- ============ 03 V0.1 concrete requirements ============ -->
+    <section class="grid grid-cols-1 md:grid-cols-12 gap-gutter" aria-labelledby="s3-title">
+      <div class="md:col-span-4">
+        <h2 id="s3-title" class="font-mono text-mono-label text-ink tracking-widest mb-4">03 // V0.1 IN PRACTICE</h2>
+        <p class="text-body-base text-meta-bright">
+          The V0.1 security posture is honest about its stage: everything runs ring 0 inside QEMU, and isolation
+          research starts at the boundary definitions, not premature claims. These are the concrete requirements in
+          force now.
+        </p>
+      </div>
+      <ul class="md:col-span-8 flex flex-col gap-px bg-line border border-line list-none">
+        {
+          [
+            ['UNSAFE MINIMIZED', 'unsafe localized and documented with invariants; inventory tracked in docs/UNSAFE_INVENTORY.md (SEC-001).'],
+            ['PAGE PERMISSIONS', 'NX / page-permission separation where the boot path permits; no writable+executable mappings by design once paging is owned by the kernel.'],
+            ['PANIC ON VIOLATION', 'Panic on violated kernel invariants rather than continuing corrupted.'],
+            ['VM CONTAINMENT', 'No network services. No host filesystem sharing into the guest. QEMU launches attach only project-generated disposable images (SEC-002).'],
+            ['SECRET HYGIENE', 'Dependency and secret scans before pushes; secrets never in source, logs, or history.'],
+          ].map(([label, text]) => (
+            <li class="bg-surface p-5 flex flex-col sm:flex-row sm:items-start gap-3">
+              <span class="font-mono text-mono-label text-ink tracking-widest sm:w-56 shrink-0">{label}</span>
+              <p class="text-sm text-meta-bright">{text}</p>
+            </li>
+          ))
+        }
+      </ul>
+    </section>
+
+    <!-- ============ 04 threat model ============ -->
+    <section aria-labelledby="s4-title">
+      <div class="flex flex-wrap items-end justify-between gap-4 mb-6">
+        <h2 id="s4-title" class="font-mono text-mono-label text-ink tracking-widest">04 // THREAT MODEL (V0.1 SCOPE)</h2>
+        <p class="font-mono text-mono-data text-meta">
+          Scoped to development reality: a pre-alpha kernel running only inside QEMU on the developer’s machine.
+        </p>
+      </div>
+      <div class="table-scroll panel mb-6">
+        <table class="w-full border-collapse min-w-[720px]">
+          <caption class="sr-only">V0.1 risks, vectors and mitigations</caption>
+          <thead>
+            <tr>
+              {['Risk', 'Vector', 'Mitigation'].map((h) => (
+                <th scope="col" class="text-left font-mono text-[11px] font-medium tracking-widest uppercase text-muted bg-log border-b border-line px-4 py-3">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {
+              threats.map((row) => (
+                <tr class="border-b border-line last:border-b-0 align-top">
+                  <td class="text-body-base text-ink px-4 py-3">{row[0]}</td>
+                  <td class="text-sm text-meta-bright px-4 py-3">{row[1]}</td>
+                  <td class="text-sm text-meta-bright px-4 py-3">{row[2]}</td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </div>
+      <div class="panel p-6">
+        <h3 class="font-mono text-mono-label text-ink uppercase tracking-widest mb-3">Explicit non-threats for V0.1</h3>
+        <p class="text-body-base text-meta-bright max-w-3xl">
+          Remote attackers (no network stack), malicious local users (single-developer VM), physical attacks, and side
+          channels are out of scope until the relevant subsystems exist. Each later milestone — userspace, storage,
+          networking — must extend the threat model before shipping the feature. The highest-value asset is the
+          developer’s host machine: the OS must never touch it.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============ 05 capability model ============ -->
+    <section class="panel p-gutter" aria-labelledby="s5-title">
+      <div class="flex items-start justify-between gap-4 flex-wrap mb-4">
+        <h2 id="s5-title" class="font-mono text-mono-label text-ink tracking-widest">05 // FUTURE CAPABILITY MODEL</h2>
+        <StatusTag status="concept" />
+      </div>
+      <div class="log-block mb-4" aria-label="Capability model shape">
+        <p>subject → capability → object → permitted operation → constraints → provenance</p>
+      </div>
+      <p class="text-body-base text-meta-bright max-w-3xl">
+        Capabilities explicit, inspectable, revocable, and narrower than blanket administrator privilege. Recorded now
+        — as documented direction, not implementation — so V0.2+ interfaces grow toward it instead of retrofitting.
+      </p>
+      <div class="mt-6 flex flex-wrap gap-4">
+        <a href="/docs/security-model" class="btn btn-primary">Full security model</a>
+        <a href="/docs/threat-model" class="btn">Full threat model</a>
+      </div>
+    </section>
+  </div>
+</Base>

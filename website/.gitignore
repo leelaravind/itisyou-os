@@ -1,0 +1,14 @@
+# build output
+dist/
+.astro/
+
+# dependencies
+node_modules/
+
+# generated at build time by scripts/sync-*.mjs (source of truth lives outside website/)
+src/data/status.json
+src/content/docs/
+
+# environment
+.env
+.env.*

@@ -1,0 +1,175 @@
+---
+import Base from '../layouts/Base.astro';
+import Breadcrumbs from '../components/Breadcrumbs.astro';
+import StatusTag from '../components/StatusTag.astro';
+
+const description =
+  'Why build another OS? The ITISYOU OS product vision and engineering principles: explicit authority, small trusted core, deterministic observability, failure as data, reproducibility — and honest positioning next to Linux.';
+
+const principles = [
+  {
+    title: 'Safety by isolation',
+    text: 'V0.1 executes only in QEMU with project-generated disposable images — never pass-through host disks. The blast radius of a kernel bug is a throwaway VM.',
+    status: 'in-development',
+  },
+  {
+    title: 'Intelligence is not authority',
+    text: 'Future AI agents must not execute privileged kernel operations directly. Agent intent flows through policy, permission evaluation, user approval and deterministic services — the kernel API is shaped for that now.',
+    status: 'concept',
+  },
+  {
+    title: 'Small trusted core',
+    text: 'Kernel responsibilities are explicit; clear subsystem boundaries and narrow interfaces are preferred over hidden global state. Pure logic lives outside the kernel where it can be host-tested.',
+    status: 'in-development',
+  },
+  {
+    title: 'Deterministic observability',
+    text: 'Every boot stage is observable through serial output even if the framebuffer or keyboard path fails. One stage, one machine-parseable marker.',
+    status: 'in-development',
+  },
+  {
+    title: 'Failure is data',
+    text: 'Panic output, QEMU exit codes, timeouts, exception vectors, failing assertions and serial tails are captured as structured evidence wherever possible.',
+    status: 'in-development',
+  },
+  {
+    title: 'Reproducibility',
+    text: 'A fresh authorized developer or agent should be able to reconstruct the environment from versioned documentation and scripts alone — toolchain pinned, commands documented, builds repeatable.',
+    status: 'in-development',
+  },
+];
+
+const vision = [
+  'explicit privilege and authority boundaries',
+  'strong kernel/user isolation',
+  'capability-oriented security',
+  'recoverable and auditable system changes',
+  'deterministic privileged services',
+  'local-first intelligence',
+  'AI that reasons about the system without unrestricted kernel authority',
+  'reproducible configuration and builds',
+  'transparent resource ownership',
+  'minimal trusted computing base where practical',
+  'automatic diagnosis and verification',
+  'safe rollback and recovery',
+  'modern hardware assumptions over universal legacy compatibility',
+];
+---
+
+<Base title="Philosophy & Vision" description={description}>
+  <div class="max-w-(--container-max) mx-auto px-4 sm:px-margin pt-12 pb-8 flex flex-col gap-20">
+    <header class="max-w-4xl">
+      <Breadcrumbs class="mb-6" crumbs={[{ label: 'SYSTEM', href: '/' }, { label: 'DOCS', href: '/docs' }, { label: 'PHILOSOPHY' }]} />
+      <h1 class="font-sans font-light text-[36px] sm:text-display-lg text-ink mb-8">Why build another OS?</h1>
+      <p class="text-body-base text-meta-bright max-w-2xl mb-4">
+        An operating system is not just a resource allocator; it is the boundary of trust for everything a person does
+        on a machine. ITISYOU OS is a long-term research and engineering project exploring what a personal operating
+        system could look like if designed today — from the kernel upward — around a specific set of hypotheses.
+      </p>
+      <p class="text-body-base text-meta-bright max-w-2xl">
+        It is an experiment with evidence attached: nothing on this site is claimed beyond what the repository’s
+        verification gates have recorded.
+      </p>
+    </header>
+
+    <!-- ============ Vision list ============ -->
+    <section class="grid grid-cols-1 md:grid-cols-12 gap-gutter border-t border-line pt-16" aria-labelledby="vision-title">
+      <div class="md:col-span-4">
+        <h2 id="vision-title" class="font-sans text-headline-md text-ink mb-4">The hypotheses</h2>
+        <p class="text-body-base text-meta-bright">
+          What changes for a constrained personal-computing target when these are design inputs from the first boot
+          stage rather than retrofits?
+        </p>
+      </div>
+      <ul class="md:col-span-8 grid grid-cols-1 sm:grid-cols-2 gap-px bg-line border border-line list-none">
+        {
+          vision.map((item, i) => (
+            <li class="bg-surface p-4 flex items-start gap-3">
+              <span class="font-mono text-mono-data text-meta shrink-0">{String(i + 1).padStart(2, '0')}/</span>
+              <span class="text-sm text-body">{item}</span>
+            </li>
+          ))
+        }
+      </ul>
+    </section>
+
+    <!-- ============ Principles grid ============ -->
+    <section class="grid grid-cols-1 md:grid-cols-12 gap-gutter border-t border-line pt-16" aria-labelledby="principles-title">
+      <div class="md:col-span-4 mb-8 md:mb-0">
+        <h2 id="principles-title" class="font-sans text-headline-md text-ink mb-4">Engineering principles</h2>
+        <p class="text-body-base text-meta-bright">
+          The binding principles from the implementation plan, with the honest status of each — principles are
+          practiced, not just stated.
+        </p>
+      </div>
+      <div class="md:col-span-8 grid grid-cols-1 md:grid-cols-2 gap-gutter">
+        {
+          principles.map((p) => (
+            <article class="panel panel-hover p-6 flex flex-col gap-3">
+              <h3 class="font-mono text-mono-label text-ink uppercase tracking-wider">{p.title}</h3>
+              <p class="text-body-base text-meta-bright text-sm flex-grow">{p.text}</p>
+              <StatusTag status={p.status} class="self-start" />
+            </article>
+          ))
+        }
+      </div>
+    </section>
+
+    <!-- ============ Honest comparison ============ -->
+    <section class="border-t border-line pt-16" aria-labelledby="research-title">
+      <h2 id="research-title" class="font-sans font-light text-[32px] md:text-display-lg text-ink mb-4">
+        Research direction, not rivalry
+      </h2>
+      <p class="text-body-base text-meta-bright max-w-2xl mb-12">
+        This project does not market itself as “better than Linux” — and won’t. The comparison below is about scope
+        and intent, not quality.
+      </p>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-px bg-line border border-line">
+        <div class="p-8 md:p-10 bg-log">
+          <div class="flex justify-between items-start mb-8 gap-4">
+            <h3 class="font-sans text-headline-md text-ink">Linux</h3>
+            <span class="font-mono text-[10px] font-bold tracking-widest text-muted uppercase border border-line-soft px-2 py-1.5">Production-proven</span>
+          </div>
+          <ul class="space-y-4 font-mono text-mono-data text-meta-bright list-none">
+            <li class="flex items-start gap-4">
+              <span class="text-meta shrink-0">01/</span>
+              <span>Mature, production-proven kernel ecosystem spanning three decades of engineering.</span>
+            </li>
+            <li class="flex items-start gap-4">
+              <span class="text-meta shrink-0">02/</span>
+              <span>Vast hardware support and an ecosystem serving billions of devices.</span>
+            </li>
+            <li class="flex items-start gap-4">
+              <span class="text-meta shrink-0">03/</span>
+              <span>Compatibility guarantees and POSIX heritage that broad software depends on.</span>
+            </li>
+          </ul>
+        </div>
+        <div class="p-8 md:p-10 bg-surface">
+          <div class="flex justify-between items-start mb-8 gap-4">
+            <h3 class="font-sans text-headline-md text-ink">ITISYOU OS</h3>
+            <StatusTag status="experimental" />
+          </div>
+          <ul class="space-y-4 font-mono text-mono-data text-meta-bright list-none">
+            <li class="flex items-start gap-4">
+              <span class="text-amber shrink-0">01/</span>
+              <span>Pre-alpha research kernel testing specific hypotheses for one constrained personal-computing target.</span>
+            </li>
+            <li class="flex items-start gap-4">
+              <span class="text-amber shrink-0">02/</span>
+              <span>QEMU-only, volatile interfaces, no compatibility promises — freedom to redesign boundaries.</span>
+            </li>
+            <li class="flex items-start gap-4">
+              <span class="text-amber shrink-0">03/</span>
+              <span>Explicit authority boundaries and verification evidence as first-class design inputs.</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+      <div class="mt-8 flex flex-wrap gap-4">
+        <a href="/roadmap" class="btn btn-primary">Where this goes</a>
+        <a href="/security" class="btn">The authority model</a>
+      </div>
+    </section>
+  </div>
+</Base>

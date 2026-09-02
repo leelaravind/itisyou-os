@@ -1,0 +1,79 @@
+---
+import Base from '../layouts/Base.astro';
+import Breadcrumbs from '../components/Breadcrumbs.astro';
+import StatusTag from '../components/StatusTag.astro';
+import { JOURNAL } from '../lib/journal';
+import { status, orDash } from '../lib/status';
+
+const description =
+  'The ITISYOU OS system ledger: a chronological record of engineering decisions, failures, root causes and fixes, mirrored from docs/DEVELOPMENT_STORY.md. No releases have shipped yet.';
+---
+
+<Base title="Changelog" description={description}>
+  <div class="max-w-(--container-max) mx-auto px-4 sm:px-margin pt-12 pb-8">
+    <header class="mb-16 border-b border-line pb-8">
+      <Breadcrumbs class="mb-4" crumbs={[{ label: 'SYSTEM', href: '/' }, { label: 'KERNEL' }, { label: 'CHANGELOG' }]} />
+      <h1 class="font-sans font-light text-[36px] sm:text-display-lg text-ink mb-4">System Ledger</h1>
+      <p class="text-body-base text-meta-bright max-w-2xl">
+        Chronological record of engineering changes, decisions and failures, mirrored from
+        <span class="font-mono text-mono-data">docs/DEVELOPMENT_STORY.md</span>. There are no release entries yet — the
+        project is pre-alpha and nothing has shipped. Failures are logged with their root causes, not hidden.
+      </p>
+    </header>
+
+    <div class="flex flex-col gap-12">
+      {
+        JOURNAL.map((entry) => (
+          <article class="panel panel-hover w-full flex flex-col md:flex-row">
+            <div class="w-full md:w-64 border-b md:border-b-0 md:border-r border-line p-6 flex flex-col gap-4 bg-surface-2 shrink-0">
+              <div>
+                <p class="font-mono text-mono-label text-muted mb-1">DATE</p>
+                <p class="font-mono text-mono-data text-body">{entry.date} · {entry.time}</p>
+              </div>
+              <div>
+                <p class="font-mono text-mono-label text-muted mb-1">BUILD</p>
+                <p class="font-mono text-mono-data text-ink">v{status.version}</p>
+              </div>
+              <div>
+                <p class="font-mono text-mono-label text-muted mb-1">COMMIT</p>
+                <p class="font-mono text-mono-data text-meta">{orDash(status.commit)}</p>
+              </div>
+              <div class="mt-2">
+                <StatusTag status={entry.status} />
+              </div>
+            </div>
+            <div class="flex-grow p-6 flex flex-col gap-6 min-w-0">
+              <div>
+                <h2 class="font-sans text-headline-md text-ink mb-2">{entry.title}</h2>
+                <p class="font-mono text-mono-label text-muted border-b border-line pb-2 mb-4 uppercase">
+                  {entry.session}
+                </p>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  <div>
+                    <h3 class="font-mono text-mono-label text-meta-bright mb-2 uppercase tracking-wider">What happened</h3>
+                    <p class="text-sm text-meta-bright">{entry.what}</p>
+                  </div>
+                  <div>
+                    <h3 class="font-mono text-mono-label text-meta-bright mb-2 uppercase tracking-wider">Detail / root cause</h3>
+                    <p class="text-sm text-meta-bright">{entry.detail}</p>
+                  </div>
+                </div>
+              </div>
+              {entry.evidence && (
+                <div class="log-block mt-auto">
+                  <p class="font-mono text-[11px] font-medium tracking-widest text-muted uppercase mb-2">EVIDENCE</p>
+                  <p class="text-[12px] leading-relaxed text-meta-bright">{entry.evidence}</p>
+                </div>
+              )}
+            </div>
+          </article>
+        ))
+      }
+    </div>
+
+    <p class="font-mono text-mono-data text-muted mt-16 max-w-2xl">
+      Release-grade changelog entries (version, commit, checksums, verification evidence) will appear here once the
+      first release exists. See <a href="/releases" class="underline underline-offset-2 hover:text-ink">/releases</a>.
+    </p>
+  </div>
+</Base>

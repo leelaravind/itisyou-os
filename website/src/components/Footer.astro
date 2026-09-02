@@ -1,0 +1,18 @@
+---
+/** Footer per Stitch: "PART OF ITISYOU / <year>" + engineering links. */
+const year = new Date().getFullYear();
+---
+
+<footer class="bg-surface border-t border-line mt-20 relative z-10">
+  <div
+    class="max-w-(--container-max) mx-auto flex flex-col md:flex-row justify-between items-center gap-6 px-4 sm:px-margin py-gutter"
+  >
+    <p class="font-mono text-mono-label font-bold text-ink">PART OF ITISYOU / {year}</p>
+    <nav aria-label="Footer" class="flex flex-wrap justify-center gap-x-6 gap-y-3 font-mono text-mono-label">
+      <a class="text-meta hover:text-ink underline underline-offset-4 transition-colors py-2" href="/build">Experimental Status</a>
+      <a class="text-meta hover:text-ink underline underline-offset-4 transition-colors py-2" href="/source">Source</a>
+      <a class="text-meta hover:text-ink underline underline-offset-4 transition-colors py-2" href="/docs">Kernel Documentation</a>
+      <a class="text-meta hover:text-ink underline underline-offset-4 transition-colors py-2" href="/security">Security Policy</a>
+    </nav>
+  </div>
+</footer>

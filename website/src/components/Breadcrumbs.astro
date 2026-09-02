@@ -1,0 +1,33 @@
+---
+/** Blueprint breadcrumbs: `SYSTEM / KERNEL / ARCH` in JetBrains Mono. */
+interface Crumb {
+  label: string;
+  href?: string;
+}
+interface Props {
+  crumbs: Crumb[];
+  class?: string;
+}
+const { crumbs, class: extraClass } = Astro.props;
+---
+
+<nav aria-label="Breadcrumb" class:list={['font-mono text-mono-label tracking-widest text-muted uppercase', extraClass]}>
+  <ol class="flex flex-wrap items-center gap-2">
+    {
+      crumbs.map((crumb, i) => (
+        <li class="flex items-center gap-2">
+          {i > 0 && <span aria-hidden="true">/</span>}
+          {crumb.href ? (
+            <a href={crumb.href} class="hover:text-ink transition-colors">
+              {crumb.label}
+            </a>
+          ) : (
+            <span class="text-body" aria-current={i === crumbs.length - 1 ? 'page' : undefined}>
+              {crumb.label}
+            </span>
+          )}
+        </li>
+      ))
+    }
+  </ol>
+</nav>

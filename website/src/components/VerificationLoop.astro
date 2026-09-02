@@ -1,0 +1,42 @@
+---
+/**
+ * The development verification loop (engineering_development design):
+ * Specification → Implementation → Compile → QEMU Boot → Verification.
+ */
+interface Props {
+  class?: string;
+}
+const { class: extraClass } = Astro.props;
+
+const steps = [
+  { label: 'Specification', note: 'requirement + gate defined first' },
+  { label: 'Implementation', note: 'Rust no_std, unsafe documented' },
+  { label: 'Compile', note: 'pinned nightly, reproducible' },
+  { label: 'QEMU Boot', note: 'BIOS + UEFI matrix' },
+  { label: 'Verification', note: 'markers, selftests, JSON evidence' },
+];
+---
+
+<div class:list={['panel p-gutter', extraClass]}>
+  <ol class="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+    {
+      steps.map((step, i) => (
+        <>
+          <li class="flex flex-col gap-2 p-4 border border-line bg-surface-2 md:min-w-[140px] md:flex-1">
+            <span class="font-mono text-status-tag text-muted tracking-widest">STEP_{String(i + 1).padStart(2, '0')}</span>
+            <span class="font-mono text-mono-label text-ink uppercase tracking-wider">{step.label}</span>
+            <span class="text-[12px] leading-snug text-meta">{step.note}</span>
+          </li>
+          {i < steps.length - 1 && (
+            <li aria-hidden="true" class="hidden md:block font-mono text-line-soft select-none">
+              →
+            </li>
+          )}
+        </>
+      ))
+    }
+  </ol>
+  <p class="font-mono text-mono-data text-muted mt-4">
+    A hang, panic, or missing marker can never pass. Absence of output is never success.
+  </p>
+</div>

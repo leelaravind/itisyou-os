@@ -1,0 +1,81 @@
+---
+import Base from '../layouts/Base.astro';
+import Breadcrumbs from '../components/Breadcrumbs.astro';
+import StatusTag from '../components/StatusTag.astro';
+import { MILESTONES } from '../lib/roadmap';
+
+const description =
+  'ITISYOU OS roadmap V0.1 through V1.0 — milestones sequenced by dependency, not calendar. No fabricated dates; a milestone is reached when its verification gates pass, never before.';
+---
+
+<Base title="Roadmap" description={description}>
+  <div class="max-w-(--container-max) mx-auto px-4 sm:px-margin pt-12 pb-8">
+    <header class="mb-16 border-b border-line-soft pb-8">
+      <Breadcrumbs class="mb-4" crumbs={[{ label: 'SYSTEM', href: '/' }, { label: 'ROADMAP' }]} />
+      <h1 class="font-sans font-light text-[36px] sm:text-display-lg text-ink mb-4">System Roadmap</h1>
+      <p class="font-mono text-mono-data text-meta-bright max-w-2xl">
+        Milestones are sequenced by dependency, not calendar — this page carries no dates on purpose. A milestone is
+        reached when its verification gates pass, never before. V0.8+ is documented research direction, not active
+        work.
+      </p>
+    </header>
+
+    <div class="relative pl-10 sm:pl-16 md:pl-24">
+      <!-- timeline line -->
+      <span aria-hidden="true" class="absolute left-3 sm:left-7 md:left-11 top-2 bottom-8 w-px bg-line-soft"></span>
+
+      <ol class="list-none flex flex-col gap-16">
+        {
+          MILESTONES.map((m) => (
+            <li class="relative">
+              <span
+                aria-hidden="true"
+                class:list={[
+                  'absolute -left-[34px] sm:-left-[42px] md:-left-[58px] top-1 flex items-center justify-center w-6 h-6 border bg-base z-10',
+                  m.current ? 'border-meta-bright' : m.status === 'concept' ? 'border-line-soft border-dashed' : 'border-line-soft',
+                ]}
+              >
+                {m.current && <span class="w-2 h-2 bg-meta-bright" />}
+              </span>
+
+              <article
+                class:list={[
+                  'panel panel-hover p-6 md:p-8',
+                  m.status === 'concept' && 'border-dashed opacity-90',
+                  m.current && 'border-line-strong bg-surface-2',
+                ]}
+              >
+                <div class="flex flex-col md:flex-row md:items-start justify-between mb-6 gap-4">
+                  <div>
+                    <p class="font-mono text-mono-label text-ink tracking-widest mb-2">
+                      MILESTONE {m.id}
+                      {m.current && <span class="text-meta-bright ml-2">// CURRENT</span>}
+                    </p>
+                    <h2 class="font-sans text-headline-md text-ink">{m.name}</h2>
+                  </div>
+                  <StatusTag status={m.status} class="h-fit" />
+                </div>
+                <p class="text-body-base text-meta-bright max-w-3xl mb-6">{m.summary}</p>
+                <ul class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 list-none">
+                  {m.components.map((component, i) => (
+                    <li class="border border-line bg-log p-4">
+                      <p class="font-mono text-[10px] font-medium tracking-widest text-muted uppercase mb-2">
+                        COMPONENT_{String(i + 1).padStart(2, '0')}
+                      </p>
+                      <p class="font-mono text-mono-data text-body">{component}</p>
+                    </li>
+                  ))}
+                </ul>
+              </article>
+            </li>
+          ))
+        }
+      </ol>
+    </div>
+
+    <p class="font-mono text-mono-data text-muted mt-16 max-w-2xl">
+      Source: <a href="/docs/roadmap" class="underline underline-offset-2 hover:text-ink">docs/ROADMAP.md</a> — “Roadmap
+      — no fabricated dates.”
+    </p>
+  </div>
+</Base>

@@ -1,0 +1,42 @@
+---
+import Base from '../../layouts/Base.astro';
+import Breadcrumbs from '../../components/Breadcrumbs.astro';
+import { DOCS_META } from '../../lib/site';
+
+const description =
+  'ITISYOU OS engineering documentation, rendered from the repository markdown at build time: architecture, build and run, testing, security model, threat model, known limitations, roadmap.';
+---
+
+<Base title="Documentation" description={description}>
+  <div class="max-w-(--container-max) mx-auto px-4 sm:px-margin pt-12 pb-8">
+    <header class="mb-12 border-b border-line-soft pb-8">
+      <Breadcrumbs class="mb-4" crumbs={[{ label: 'SYSTEM', href: '/' }, { label: 'DOCS' }]} />
+      <h1 class="font-sans font-light text-[36px] sm:text-display-lg text-ink mb-4">Documentation</h1>
+      <p class="text-body-base text-meta-bright max-w-2xl">
+        These pages render the actual repository documentation — the same markdown that governs development — copied
+        verbatim at build time. If a doc says something is planned, it is planned.
+      </p>
+    </header>
+
+    <ul class="grid grid-cols-1 md:grid-cols-2 gap-px bg-line border border-line list-none">
+      {
+        DOCS_META.map((doc) => (
+          <li class="bg-surface hover:bg-surface-2 transition-colors">
+            <a href={`/docs/${doc.slug}`} class="flex flex-col gap-3 p-6 h-full group">
+              <span class="flex items-baseline justify-between gap-3 flex-wrap">
+                <span class="font-sans text-headline-md text-ink group-hover:underline underline-offset-4">{doc.title}</span>
+                <span class="font-mono text-[10px] text-muted uppercase tracking-widest">{doc.sourcePath}</span>
+              </span>
+              <span class="text-body-base text-meta-bright text-sm">{doc.description}</span>
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+
+    <p class="font-mono text-mono-data text-muted mt-8 max-w-2xl">
+      Additional internal records (requirement matrix, unsafe inventory, ADRs, session logs) live in the repository and
+      will become browsable when source access opens. See <a href="/source" class="underline underline-offset-2 hover:text-ink">source access</a>.
+    </p>
+  </div>
+</Base>
