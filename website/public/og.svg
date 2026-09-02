@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#050505"/>
+  <g stroke="#1a1a1a" stroke-width="1">
+    <path d="M0 105 H1200 M0 210 H1200 M0 315 H1200 M0 420 H1200 M0 525 H1200"/>
+    <path d="M200 0 V630 M400 0 V630 M600 0 V630 M800 0 V630 M1000 0 V630"/>
+  </g>
+  <rect x="80" y="80" width="1040" height="470" fill="#0c0c0c" stroke="#1a1a1a" stroke-width="2"/>
+  <text x="140" y="200" font-family="'JetBrains Mono','Consolas',monospace" font-size="28" letter-spacing="6" fill="#7a8c99">SYSTEM / ENGINEERING RECORD</text>
+  <text x="136" y="330" font-family="'Segoe UI','Helvetica Neue',Arial,sans-serif" font-size="110" font-weight="300" letter-spacing="-2" fill="#f2f2f2">ITISYOU OS</text>
+  <text x="140" y="410" font-family="'Segoe UI','Helvetica Neue',Arial,sans-serif" font-size="34" font-weight="300" fill="#b6c9d7">Building an operating system from the kernel upward.</text>
+  <rect x="140" y="460" width="260" height="46" fill="none" stroke="#ffb4ab" stroke-width="2"/>
+  <text x="270" y="490" text-anchor="middle" font-family="'JetBrains Mono','Consolas',monospace" font-size="20" letter-spacing="3" fill="#ffb4ab">PRE-ALPHA</text>
+  <text x="440" y="490" font-family="'JetBrains Mono','Consolas',monospace" font-size="20" letter-spacing="2" fill="#8e9192">x86_64 / QEMU / RUST NO_STD</text>
+</svg>

@@ -1,0 +1,82 @@
+---
+import { getCollection, render } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import Breadcrumbs from '../../components/Breadcrumbs.astro';
+import { DOCS_META, docMeta } from '../../lib/site';
+
+export async function getStaticPaths() {
+  const entries = await getCollection('docs');
+  // Only publish docs with registered metadata, in the registry's order.
+  return DOCS_META.flatMap((meta) => {
+    const entry = entries.find((e) => e.id === meta.slug);
+    return entry ? [{ params: { slug: meta.slug }, props: { entry } }] : [];
+  });
+}
+
+const { entry } = Astro.props;
+const meta = docMeta(entry.id)!;
+const { Content } = await render(entry);
+
+const index = DOCS_META.findIndex((d) => d.slug === meta.slug);
+const prev = index > 0 ? DOCS_META[index - 1] : undefined;
+const next = index < DOCS_META.length - 1 ? DOCS_META[index + 1] : undefined;
+---
+
+<Base title={meta.title} description={meta.description}>
+  <div class="max-w-(--container-max) mx-auto px-4 sm:px-margin pt-12 pb-8">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-gutter">
+      <aside class="hidden lg:block lg:col-span-3 border-r border-line pr-gutter">
+        <nav aria-label="Documentation" class="sticky top-[89px] flex flex-col gap-1">
+          <p class="font-mono text-mono-label text-muted uppercase tracking-widest mb-3 px-3">SYSTEM / DOCS</p>
+          {
+            DOCS_META.map((doc) => (
+              <a
+                href={`/docs/${doc.slug}`}
+                aria-current={doc.slug === meta.slug ? 'page' : undefined}
+                class:list={[
+                  'font-mono text-mono-label px-3 py-2.5 border-l-2 transition-colors',
+                  doc.slug === meta.slug
+                    ? 'text-ink border-ink bg-surface-2'
+                    : 'text-meta border-transparent hover:text-ink hover:border-line-strong',
+                ]}
+              >
+                {doc.crumb}
+              </a>
+            ))
+          }
+        </nav>
+      </aside>
+
+      <article class="lg:col-span-9 min-w-0">
+        <Breadcrumbs
+          class="mb-8"
+          crumbs={[{ label: 'SYSTEM', href: '/' }, { label: 'DOCS', href: '/docs' }, { label: meta.crumb }]}
+        />
+        <div class="doc-prose">
+          <Content />
+        </div>
+        <footer class="mt-12 border-t border-line pt-6 flex flex-col gap-6">
+          <p class="font-mono text-mono-data text-muted">
+            Rendered verbatim from <span class="text-meta-bright">{meta.sourcePath}</span> at build time.
+          </p>
+          <nav aria-label="Documentation pagination" class="flex flex-wrap justify-between gap-4">
+            {
+              prev ? (
+                <a href={`/docs/${prev.slug}`} class="btn">
+                  ← {prev.title}
+                </a>
+              ) : (
+                <span />
+              )
+            }
+            {next && (
+              <a href={`/docs/${next.slug}`} class="btn">
+                {next.title} →
+              </a>
+            )}
+          </nav>
+        </footer>
+      </article>
+    </div>
+  </div>
+</Base>

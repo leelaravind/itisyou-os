@@ -1,0 +1,65 @@
+---
+/**
+ * Base layout: fonts (self-hosted, preloaded), SEO/OpenGraph, skip link,
+ * fixed header, footer. Zero client JavaScript.
+ */
+import '@fontsource-variable/geist';
+import '@fontsource-variable/jetbrains-mono';
+import geistWoff2 from '@fontsource-variable/geist/files/geist-latin-wght-normal.woff2?url';
+import jetbrainsWoff2 from '@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2?url';
+import '../styles/global.css';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import { SITE_NAME } from '../lib/site';
+
+interface Props {
+  title: string;
+  description: string;
+  /** Skip the standard header/footer chrome (used by the 404 fault page). */
+  bare?: boolean;
+}
+
+const { title, description, bare = false } = Astro.props;
+const canonical = new URL(Astro.url.pathname, Astro.site);
+const ogImage = new URL('/og.svg', Astro.site);
+const fullTitle = title === SITE_NAME ? title : `${title} — ${SITE_NAME}`;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+    <meta name="generator" content={Astro.generator} />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={SITE_NAME} />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImage} />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content={fullTitle} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#050505" />
+
+    <link rel="preload" as="font" type="font/woff2" href={geistWoff2} crossorigin />
+    <link rel="preload" as="font" type="font/woff2" href={jetbrainsWoff2} crossorigin />
+  </head>
+  <body class="min-h-screen flex flex-col">
+    <a href="#main" class="skip-link">Skip to main content</a>
+    {!bare && <Header />}
+    <main id="main" class:list={['flex-grow w-full', !bare && 'pt-[57px]']}>
+      <slot />
+    </main>
+    {!bare && <Footer />}
+    {bare && <slot name="bare-footer" />}
+  </body>
+</html>

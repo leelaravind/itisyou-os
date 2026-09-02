@@ -1,0 +1,87 @@
+---
+import Base from '../layouts/Base.astro';
+import { status } from '../lib/status';
+
+const description = 'FAULT: PAGE_NOT_PRESENT — the requested page does not exist on os.itisyou.app.';
+---
+
+<Base title="404 — Page Not Present" description={description} bare>
+  <header class="w-full flex justify-between items-center px-4 sm:px-margin py-4 max-w-(--container-max) mx-auto border-b border-line bg-surface relative z-10">
+    <p class="font-mono text-mono-label font-bold tracking-tighter text-ink">
+      ITISYOU_OS <span class="text-meta font-normal">/ FAULT_HANDLER</span>
+    </p>
+    <p class="font-mono text-mono-label text-meta">v{status.version}</p>
+  </header>
+
+  <div class="flex items-center justify-center p-4 sm:p-margin w-full max-w-(--container-max) mx-auto min-h-[70vh]">
+    <div class="w-full max-w-3xl grid grid-cols-12 gap-gutter">
+      <div class="col-span-12 mb-4 border-l-2 border-red pl-6">
+        <p class="flex items-center gap-2 mb-2 text-red font-mono text-mono-label">
+          <span aria-hidden="true">▲</span>
+          <span>SYSTEM FAULT DETECTED</span>
+        </p>
+        <h1 class="font-sans font-light text-[32px] sm:text-display-lg text-ink mb-2">FAULT: PAGE_NOT_PRESENT</h1>
+        <p class="font-mono text-mono-data text-meta-bright">The requested resource endpoint could not be located.</p>
+      </div>
+
+      <div class="col-span-12 md:col-span-8 panel p-6">
+        <h2 class="font-mono text-mono-label text-meta border-b border-line pb-2 mb-4 uppercase tracking-widest">
+          Diagnostic data
+        </h2>
+        <dl class="space-y-4 font-mono text-mono-data">
+          <div class="grid grid-cols-3 gap-2">
+            <dt class="text-meta">Status code:</dt>
+            <dd class="col-span-2 text-red">404 / NOT_FOUND</dd>
+          </div>
+          <div class="grid grid-cols-3 gap-2">
+            <dt class="text-meta">Handler:</dt>
+            <dd class="col-span-2 text-ink">static site — no route matched</dd>
+          </div>
+          <div class="grid grid-cols-3 gap-2">
+            <dt class="text-meta">Kernel involved:</dt>
+            <dd class="col-span-2 text-ink">none — this is the website, not the OS</dd>
+          </div>
+        </dl>
+        <div class="mt-8">
+          <h3 class="font-mono text-mono-label text-meta border-b border-line pb-2 mb-2 uppercase tracking-widest">
+            System log
+          </h3>
+          <div class="log-block h-40 overflow-y-auto" role="log">
+            <p class="text-red mb-1">&gt; fault: requested page not present in the site manifest</p>
+            <p class="mb-1">&gt; resolve_route() ... no match</p>
+            <p class="mb-1">&gt; checked: pages, docs collection, static assets</p>
+            <p class="mb-1 text-ink">&gt; initiating graceful failure mode...</p>
+            <p class="text-muted">&gt; recovery vectors available →</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-span-12 md:col-span-4 flex flex-col gap-4">
+        <div class="panel p-6 flex flex-col h-full justify-between gap-6">
+          <div>
+            <h2 class="font-mono text-mono-label text-meta border-b border-line pb-2 mb-4 uppercase tracking-widest">
+              Recovery actions
+            </h2>
+            <p class="text-body-base text-meta-bright">
+              Select a recovery vector to exit the fault state and resume normal operation.
+            </p>
+          </div>
+          <nav class="flex flex-col gap-3" aria-label="Recovery">
+            <a class="flex items-center justify-between p-3 min-h-11 border border-ink text-ink hover:bg-surface-2 transition-colors group" href="/">
+              <span class="font-mono text-mono-label">REBOOT_TO_HOME</span>
+              <span aria-hidden="true" class="font-mono group-hover:translate-x-1 transition-transform motion-reduce:transition-none">→</span>
+            </a>
+            <a class="flex items-center justify-between p-3 min-h-11 border border-line-soft text-meta-bright hover:border-ink hover:text-ink transition-colors group" href="/docs">
+              <span class="font-mono text-mono-label">RETURN_TO_DOCS</span>
+              <span aria-hidden="true" class="font-mono group-hover:translate-x-1 transition-transform motion-reduce:transition-none">→</span>
+            </a>
+            <a class="flex items-center justify-between p-3 min-h-11 border border-line-soft text-meta-bright hover:border-ink hover:text-ink transition-colors group" href="/build">
+              <span class="font-mono text-mono-label">CHECK_BUILD_STATUS</span>
+              <span aria-hidden="true" class="font-mono group-hover:translate-x-1 transition-transform motion-reduce:transition-none">→</span>
+            </a>
+          </nav>
+        </div>
+      </div>
+    </div>
+  </div>
+</Base>

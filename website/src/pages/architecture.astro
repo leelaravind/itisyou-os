@@ -1,0 +1,218 @@
+---
+import Base from '../layouts/Base.astro';
+import Breadcrumbs from '../components/Breadcrumbs.astro';
+import StatusTag from '../components/StatusTag.astro';
+import BootSequence from '../components/BootSequence.astro';
+import { status } from '../lib/status';
+
+const description =
+  'System architecture of ITISYOU OS V0.1: firmware/bootloader boundary, Rust no_std kernel (ring 0), crate boundaries, boot contract, serial observability — what exists now and what is planned.';
+
+const crates = [
+  {
+    name: 'kernel/',
+    role: 'The only privileged code',
+    text: 'Library + two binaries: itisyou-kernel (interactive) and itisyou-kernel-selftest (boots, runs in-kernel checks, exits QEMU with a deterministic status).',
+  },
+  {
+    name: 'crates/kernel-core',
+    role: 'Pure logic, zero I/O',
+    text: 'Boot-stage contract, serial-marker grammar, and (as subsystems land) memory-map normalization, path handling, parsers. Compiled unchanged into both the kernel and host tools; unit-tested on the host.',
+  },
+  {
+    name: 'tools/image-builder',
+    role: 'Host tool',
+    text: 'Turns kernel ELFs into bootable BIOS/UEFI disk images (pure Rust) plus a SHA-256 manifest.',
+  },
+  {
+    name: 'tools/qemu-runner',
+    role: 'Host test harness',
+    text: 'Launches QEMU, asserts boot-stage markers, classifies panic/timeout/selftest outcomes, writes JSON evidence. Absence of output is never success.',
+  },
+];
+
+const kernelCells = [
+  { label: 'BOOT HANDOFF', value: 'typed BootInfo → early_init', modId: 'boot' },
+  { label: 'SERIAL / STAGES', value: 'COM1 markers, pre-allocator', modId: 'serial' },
+  { label: 'CPU BASELINE', value: 'vendor/features identification', modId: 'cpu' },
+  { label: 'MEMORY', value: 'memory map → PMM → paging → heap', modId: 'memory-physical' },
+  { label: 'DESCRIPTORS / IRQ', value: 'GDT/TSS/IDT → PIC/PIT timer', modId: 'interrupts' },
+  { label: 'TASKS / FS / SHELL', value: 'scheduler → VFS/initramfs → shell', modId: 'scheduler' },
+];
+
+const cellStatus = (id: string) => status.modules.find((m) => m.id === id)?.status ?? 'planned';
+---
+
+<Base title="Architecture" description={description}>
+  <div class="max-w-(--container-max) mx-auto px-4 sm:px-margin pt-12 pb-8">
+    <header class="mb-16">
+      <Breadcrumbs class="mb-4" crumbs={[{ label: 'SYSTEM', href: '/' }, { label: 'KERNEL' }, { label: 'ARCH' }]} />
+      <h1 class="font-sans font-light text-[36px] sm:text-display-lg text-ink mb-4">System Architecture</h1>
+      <p class="text-body-base text-meta-bright max-w-2xl">
+        What exists now and the boundaries later milestones build inside. Anything marked
+        <StatusTag status="planned" /> or <StatusTag status="concept" /> is design intent, not implemented
+        functionality.
+      </p>
+    </header>
+
+    <!-- ============ Layer columns (architecture_overview design) ============ -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-gutter mb-20">
+      <!-- Column 1: platform & boot -->
+      <div class="lg:col-span-4 flex flex-col gap-gutter">
+        <section class="panel panel-hover p-6" aria-labelledby="layer-hw">
+          <p class="font-mono text-mono-label text-ink mb-4 tracking-widest">LAYER 00</p>
+          <h2 id="layer-hw" class="font-sans text-headline-md text-ink mb-2">Virtual Platform</h2>
+          <p class="text-meta-bright text-sm mb-4">
+            QEMU is the only supported execution environment for V0.1. Physical hardware boot is intentionally out of
+            scope and untested.
+          </p>
+          <ul class="font-mono text-mono-data text-meta text-xs space-y-1 list-none">
+            <li>&gt; qemu-system-x86_64 (single CPU, no SMP)</li>
+            <li>&gt; SeaBIOS / OVMF-UEFI firmware</li>
+            <li>&gt; project-generated disposable disk images only</li>
+          </ul>
+        </section>
+        <section class="panel panel-hover p-6" aria-labelledby="layer-boot">
+          <p class="font-mono text-mono-label text-ink mb-4 tracking-widest">LAYER 01</p>
+          <h2 id="layer-boot" class="font-sans text-headline-md text-ink mb-2">Boot Layer</h2>
+          <p class="text-meta-bright text-sm mb-4">
+            rust-osdev <span class="font-mono text-mono-data">bootloader</span> crate (BIOS &amp; UEFI stages) hands the
+            kernel a typed BootInfo: memory regions, physical-memory mapping offset, framebuffer, RSDP. Boot-time-only
+            code — not part of the OS runtime.
+          </p>
+          <StatusTag status={cellStatus('boot')} />
+        </section>
+      </div>
+
+      <!-- Column 2: kernel core -->
+      <section class="lg:col-span-4 border border-ink bg-surface-2 p-6 relative flex flex-col" aria-labelledby="layer-kernel">
+        <span aria-hidden="true" class="absolute top-0 left-0 w-full h-1 bg-ink"></span>
+        <p class="font-mono text-mono-label text-ink mb-4 tracking-widest flex justify-between">
+          <span>LAYER 02</span>
+          <span class="text-red">RING_0</span>
+        </p>
+        <h2 id="layer-kernel" class="font-sans text-headline-md text-ink mb-2">Kernel Space</h2>
+        <p class="text-meta-bright text-sm mb-4">
+          All Rust <span class="font-mono text-mono-data">no_std</span> code in <span class="font-mono text-mono-data">kernel/</span> —
+          the trusted computing base for V0.1. Everything currently runs ring 0 inside QEMU.
+        </p>
+        <div class="space-y-3">
+          {
+            kernelCells.map((cell) => (
+              <div class="bg-log p-3 border border-line flex items-center justify-between gap-3">
+                <div>
+                  <p class="font-mono text-[10px] text-muted tracking-widest mb-1">{cell.label}</p>
+                  <p class="font-mono text-xs text-ink">{cell.value}</p>
+                </div>
+                <StatusTag status={cellStatus(cell.modId)} />
+              </div>
+            ))
+          }
+        </div>
+        <p class="mt-6 pt-4 border-t border-line font-mono text-xs text-meta">
+          Panic on violated invariants; panics emit [ITISYOU:PANIC] and fail test runs deterministically.
+        </p>
+      </section>
+
+      <!-- Column 3: future boundaries -->
+      <div class="lg:col-span-4 flex flex-col gap-gutter">
+        <section class="border border-red-deep bg-log p-6" aria-labelledby="layer-policy">
+          <p class="font-mono text-mono-label text-red mb-2 tracking-widest">FUTURE SECURITY BOUNDARY</p>
+          <h2 id="layer-policy" class="font-sans text-headline-md text-ink mb-2">Policy / Capability Engine</h2>
+          <p class="text-meta-bright text-xs mb-3">
+            Documented direction: privileged operations sit behind a deterministic policy and service layer, so a
+            future AI agent can propose actions but never execute kernel operations directly.
+          </p>
+          <div class="flex items-center gap-3">
+            <StatusTag status="concept" />
+            <span class="font-mono text-[10px] text-muted uppercase tracking-widest">No AI in the V0.1 runtime</span>
+          </div>
+        </section>
+        <section class="panel panel-hover p-6 flex-1" aria-labelledby="layer-user">
+          <p class="font-mono text-mono-label text-ink mb-4 tracking-widest flex justify-between">
+            <span>LAYER 03</span>
+            <span class="text-meta">RING_3</span>
+          </p>
+          <h2 id="layer-user" class="font-sans text-headline-md text-ink mb-2">Userspace</h2>
+          <p class="text-meta-bright text-sm mb-4">
+            Ring 3 with validated syscalls is the V0.1 stretch milestone: user pointers checked before any kernel
+            dereference, no user mapping of kernel pages. Isolation research starts at the boundary definitions, not
+            premature claims.
+          </p>
+          <StatusTag status={cellStatus('userspace')} />
+        </section>
+      </div>
+    </div>
+
+    <!-- ============ Crate boundaries ============ -->
+    <section class="mb-20" aria-labelledby="crates-title">
+      <h2 id="crates-title" class="font-sans text-headline-md text-ink mb-8 border-b border-line-soft pb-4">
+        Crate boundaries
+      </h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-px bg-line border border-line">
+        {
+          crates.map((crate) => (
+            <article class="bg-surface p-6">
+              <div class="flex items-baseline justify-between gap-3 mb-2 flex-wrap">
+                <h3 class="font-mono text-mono-label text-ink">{crate.name}</h3>
+                <span class="font-mono text-[10px] text-muted uppercase tracking-widest">{crate.role}</span>
+              </div>
+              <p class="text-body-base text-meta-bright text-sm">{crate.text}</p>
+            </article>
+          ))
+        }
+      </div>
+    </section>
+
+    <!-- ============ Boot contract & observability ============ -->
+    <section class="mb-20 grid grid-cols-1 lg:grid-cols-12 gap-gutter" aria-labelledby="contract-title">
+      <div class="lg:col-span-5">
+        <h2 id="contract-title" class="font-sans text-headline-md text-ink mb-4 border-b border-line-soft pb-4">
+          Boot contract &amp; observability
+        </h2>
+        <p class="text-body-base text-meta-bright mb-4 max-w-prose">
+          Kernel code consumes boot data through <span class="font-mono text-mono-data">itisyou_kernel::early_init</span>,
+          so subsystems never depend on third-party boot structures directly. Serial (COM1) is the primary channel and
+          works before any allocator exists.
+        </p>
+        <div class="log-block" aria-label="Serial marker grammar specification">
+          <p class="text-muted mb-2">// marker grammar — kernel-core::marker (specification)</p>
+          <p class="text-meta-bright">[ITISYOU:&lt;TAG&gt;] payload</p>
+          <p class="text-meta mt-2">TAG ∈ {'{'} B###, PANIC, SELFTEST, TEST, INFO, MODE {'}'}</p>
+          <p class="text-muted mt-2">// single source of truth shared by emitter and asserter</p>
+        </div>
+      </div>
+      <div class="lg:col-span-7">
+        <BootSequence />
+      </div>
+    </section>
+
+    <!-- ============ Planned next boundaries ============ -->
+    <section class="mb-8 panel p-gutter" aria-labelledby="next-title">
+      <h2 id="next-title" class="font-sans text-headline-md text-ink mb-4">Planned next boundaries</h2>
+      <p class="text-body-base text-meta-bright mb-4 max-w-3xl">
+        Dependency order for the remaining V0.1 subsystems — each lands with host tests and QEMU selftests before the
+        next begins:
+      </p>
+      <ol class="flex flex-wrap items-center gap-x-3 gap-y-2 font-mono text-mono-data list-none">
+        {
+          ['physical memory manager', 'paging abstraction', 'heap', 'descriptors/interrupts', 'scheduler', 'VFS/initramfs', 'shell'].map(
+            (step, i, arr) => (
+              <li class="flex items-center gap-3">
+                <span class="text-meta-bright">{step}</span>
+                {i < arr.length - 1 && (
+                  <span aria-hidden="true" class="text-muted">
+                    →
+                  </span>
+                )}
+              </li>
+            ),
+          )
+        }
+      </ol>
+      <div class="mt-6">
+        <a href="/docs/architecture" class="btn">Full architecture doc</a>
+      </div>
+    </section>
+  </div>
+</Base>

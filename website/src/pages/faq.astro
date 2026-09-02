@@ -1,0 +1,205 @@
+---
+import Base from '../layouts/Base.astro';
+import Breadcrumbs from '../components/Breadcrumbs.astro';
+import { status } from '../lib/status';
+
+const description =
+  'Frequently asked questions about ITISYOU OS: what it is, what it is not, whether you can install it (no), how verification works, and how source access will open.';
+
+interface Faq {
+  q: string;
+  tag: string;
+  a: string[];
+}
+interface FaqSection {
+  id: string;
+  title: string;
+  items: Faq[];
+}
+
+const sections: FaqSection[] = [
+  {
+    id: 'general',
+    title: 'General',
+    items: [
+      {
+        q: 'Is this a Linux distribution?',
+        tag: 'CORE',
+        a: [
+          'No. ITISYOU OS is an independent x86_64 kernel written in Rust (no_std). It contains no Linux kernel code at runtime and no GNU userland. It boots through the rust-osdev bootloader crate, not through a Linux boot chain.',
+        ],
+      },
+      {
+        q: 'Is it better than Linux?',
+        tag: 'CORE',
+        a: [
+          'No, and it does not claim to be. Linux is a mature, production-proven kernel ecosystem. ITISYOU OS is a research project testing different hypotheses — explicit authority boundaries, evidence-gated development, recoverability as architecture — for a constrained personal-computing target.',
+        ],
+      },
+      {
+        q: 'What actually works today?',
+        tag: 'STATUS',
+        a: [
+          `The project is ${status.maturity} at v${status.version}, milestone “V0.1 — ${status.milestone}”. The boot path, serial console/boot stages, CPU identification and QEMU test harness are in development; memory management, interrupts, scheduler, filesystem and shell are planned. The build page shows the live module table; nothing is marked Verified yet.`,
+        ],
+      },
+    ],
+  },
+  {
+    id: 'hardware',
+    title: 'Hardware',
+    items: [
+      {
+        q: 'Can I install it on my laptop?',
+        tag: 'HARDWARE',
+        a: [
+          'No — please don’t. V0.1 runs exclusively inside QEMU (BIOS and UEFI via OVMF) with project-generated disposable disk images. Physical-hardware boot is intentionally out of scope and untested, and the project’s own safety rules forbid pointing it at a real disk. Real hardware appears on the roadmap only for explicitly approved sacrificial devices, much later.',
+        ],
+      },
+      {
+        q: 'What hardware does it support?',
+        tag: 'HARDWARE',
+        a: [
+          'A virtual one: the QEMU x86_64 machine model, single CPU, no SMP. There is no USB, audio, Wi-Fi, Bluetooth, storage or GPU driver support. Claims will expand only when the corresponding milestones pass verification.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'technical',
+    title: 'Technical',
+    items: [
+      {
+        q: 'Why Rust?',
+        tag: 'DESIGN',
+        a: [
+          'The kernel targets memory-safety discipline, testability and a minimal trusted computing base. Rust (no_std, x86_64-unknown-none) removes whole classes of memory errors by construction, keeps unsafe blocks localized and documented, and lets pure kernel logic be unit-tested on the host — the same code that runs in QEMU. See ADR-0001 in the repository.',
+        ],
+      },
+      {
+        q: 'What does “Verified” mean on this site?',
+        tag: 'PROCESS',
+        a: [
+          'A status becomes Verified only when an actual automated run proves it: the QEMU harness requires every expected boot-stage marker, an in-kernel selftest summary with zero failures, and a deterministic exit code — with serial logs and JSON results retained as evidence. “Implemented” (code exists) and “Verified” (evidence exists) are never interchangeable.',
+        ],
+      },
+      {
+        q: 'How does the boot sequence work?',
+        tag: 'KERNEL',
+        a: [
+          'The rust-osdev bootloader hands the kernel a typed BootInfo (memory map, physical-memory mapping offset, framebuffer, RSDP). The kernel then walks a fixed stage contract, B000 through B150, emitting one machine-parseable serial marker per stage — the same contract the test harness asserts.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'security',
+    title: 'Security',
+    items: [
+      {
+        q: 'What does “AI has intelligence, not authority” mean?',
+        tag: 'PRINCIPLE',
+        a: [
+          'Any future AI layer may reason about the system and propose actions, but it never executes privileged kernel operations directly. Proposals flow through a deterministic pipeline — policy engine, risk/permission evaluation, user approval where required, a narrow privileged service — followed by verification, audit and rollback. No AI component exists in the V0.1 runtime; the principle exists now because it constrains kernel interface design.',
+        ],
+      },
+      {
+        q: 'Is it secure?',
+        tag: 'HONESTY',
+        a: [
+          'Not yet, and it does not claim to be. Everything currently runs in ring 0 inside a VM; there is no userspace isolation. The V0.1 security posture is about honest boundaries: documented trust boundaries, minimized and documented unsafe code, panic on violated invariants, and strict VM containment so the host machine is never at risk.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'contribution',
+    title: 'Source & Contribution',
+    items: [
+      {
+        q: 'Where is the source code?',
+        tag: 'ACCESS',
+        a: [
+          'The repository is private during early development while the V0.1 foundation and its verification evidence stabilize. It will open later; when it does, this site will link it directly. Until then the engineering documentation, status data and development ledger on this site are the public record.',
+        ],
+      },
+      {
+        q: 'Can I contribute?',
+        tag: 'ACCESS',
+        a: [
+          'Not yet — contributions become possible when the source opens. The honest groundwork for that is already public here: architecture, security model, testing strategy, roadmap and known limitations.',
+        ],
+      },
+    ],
+  },
+];
+---
+
+<Base title="FAQ" description={description}>
+  <div class="max-w-(--container-max) mx-auto px-4 sm:px-margin pt-12 pb-8">
+    <header class="panel p-gutter md:p-margin mb-margin">
+      <Breadcrumbs class="mb-4" crumbs={[{ label: 'SYSTEM', href: '/' }, { label: 'FAQ' }]} />
+      <h1 class="font-sans font-light text-[36px] sm:text-display-lg text-ink mb-2">FAQ / System Queries</h1>
+      <p class="font-mono text-mono-data text-meta-bright">
+        v{status.version} // answers reflect the current evidence-backed state, nothing more
+      </p>
+    </header>
+
+    <div class="grid grid-cols-1 md:grid-cols-12 gap-gutter">
+      <aside class="md:col-span-3 md:border-r md:border-line md:pr-gutter hidden md:block">
+        <nav class="sticky top-[89px] flex flex-col gap-1" aria-label="FAQ categories">
+          <p class="font-mono text-mono-label text-muted mb-4 uppercase tracking-widest">Categories</p>
+          {
+            sections.map((section) => (
+              <a
+                href={`#${section.id}`}
+                class="font-mono text-mono-label text-meta hover:text-ink border-l-2 border-transparent hover:border-line-strong pl-4 py-2.5 transition-colors"
+              >
+                {section.title}
+              </a>
+            ))
+          }
+        </nav>
+      </aside>
+
+      <div class="md:col-span-9 flex flex-col gap-12">
+        {
+          sections.map((section) => (
+            <section class="scroll-mt-24" id={section.id} aria-labelledby={`${section.id}-title`}>
+              <div class="flex items-center gap-3 mb-6 border-b border-line pb-2">
+                <h2 id={`${section.id}-title`} class="font-sans text-headline-md text-ink">
+                  {section.title}
+                </h2>
+              </div>
+              <div class="flex flex-col gap-3">
+                {section.items.map((item) => (
+                  <details class="panel group">
+                    <summary class="flex items-center justify-between gap-4 p-5 sm:p-6 cursor-pointer hover:bg-surface-2 transition-colors list-none [&::-webkit-details-marker]:hidden min-h-11">
+                      <span class="text-body-base text-body">{item.q}</span>
+                      <span class="flex items-center gap-4 shrink-0">
+                        <span class="border border-line-soft px-2 py-1.5 font-mono text-[10px] font-bold tracking-widest text-muted uppercase hidden sm:inline">
+                          {item.tag}
+                        </span>
+                        <span aria-hidden="true" class="font-mono text-meta group-open:hidden">
+                          +
+                        </span>
+                        <span aria-hidden="true" class="font-mono text-meta hidden group-open:inline">
+                          −
+                        </span>
+                      </span>
+                    </summary>
+                    <div class="bg-log border-t border-line p-5 sm:p-6">
+                      {item.a.map((para) => (
+                        <p class="text-body-base text-meta-bright mb-3 last:mb-0 max-w-3xl">{para}</p>
+                      ))}
+                    </div>
+                  </details>
+                ))}
+              </div>
+            </section>
+          ))
+        }
+      </div>
+    </div>
+  </div>
+</Base>

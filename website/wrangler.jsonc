@@ -1,0 +1,28 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "os-itisyou-app",
+  "compatibility_date": "2026-09-01",
+
+  // Assets-only Worker: the site is fully static (zero client JS). The
+  // _headers file in dist/ carries the CSP + security headers.
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "404-page"
+  },
+
+  // Named environments only, following the account convention
+  // (<name>-itisyou-app-{staging,production}). Deploy with:
+  //   npx wrangler deploy --env staging     -> os-itisyou-app-staging (workers.dev)
+  //   npx wrangler deploy --env production  -> os-itisyou-app-production + os.itisyou.app
+  "env": {
+    "staging": {},
+    "production": {
+      "routes": [
+        {
+          "pattern": "os.itisyou.app",
+          "custom_domain": true
+        }
+      ]
+    }
+  }
+}

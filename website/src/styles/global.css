@@ -1,0 +1,426 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   ITISYOU OS design system — tokens extracted from design/stitch/DESIGN.md
+   "Technical Minimalist": sharp 0px corners, 1px structural lines instead
+   of shadows, obsidian surfaces, Geist + JetBrains Mono.
+   ========================================================================== */
+
+@theme {
+  /* Palette (DESIGN.md "Colors") */
+  --color-base: #050505; /* global background */
+  --color-surface: #0c0c0c; /* level-1 containers */
+  --color-surface-2: #121212; /* level-2 overlays / active surfaces */
+  --color-log: #080808; /* system-log blocks */
+  --color-line: #1a1a1a; /* structural 1px borders */
+  --color-line-strong: #333333; /* hover border */
+  --color-line-soft: #444748; /* outline-variant from Stitch export */
+  --color-ink: #f2f2f2; /* cold white, primary data */
+  --color-body: #e5e2e1; /* long-form body text */
+  --color-meta: #7a8c99; /* blue-grey secondary metadata (5.8:1 on base) */
+  --color-meta-bright: #b6c9d7; /* secondary-fixed-dim from Stitch export */
+  --color-muted: #8e9192; /* outline / muted labels (6.4:1 on base) */
+  --color-amber: #fbbf24; /* Experimental / Research states */
+  --color-red: #ffb4ab; /* Blocked / errors (readable red on dark) */
+  --color-red-deep: #c31f29; /* error accent, borders only */
+  --color-blue: #3b82f6; /* Verified state (5.5:1 on base) */
+
+  /* Typography (DESIGN.md "Typography") */
+  --font-sans: "Geist Variable", "Geist", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", Consolas, "Courier New", monospace;
+
+  --text-display-lg: 48px;
+  --text-display-lg--line-height: 1.1;
+  --text-display-lg--letter-spacing: -0.02em;
+  --text-display-lg--font-weight: 300;
+  --text-headline-md: 24px;
+  --text-headline-md--line-height: 1.2;
+  --text-headline-md--letter-spacing: -0.01em;
+  --text-headline-md--font-weight: 400;
+  --text-body-base: 14px;
+  --text-body-base--line-height: 1.6;
+  --text-mono-label: 12px;
+  --text-mono-label--line-height: 1;
+  --text-mono-label--letter-spacing: 0.05em;
+  --text-mono-label--font-weight: 500;
+  --text-mono-data: 13px;
+  --text-mono-data--line-height: 1.5;
+  --text-status-tag: 10px;
+  --text-status-tag--line-height: 1;
+  --text-status-tag--letter-spacing: 0.1em;
+  --text-status-tag--font-weight: 700;
+
+  /* Layout (DESIGN.md "Layout & Spacing") */
+  --spacing-gutter: 24px;
+  --spacing-margin: 40px;
+  --container-max: 1440px;
+
+  /* Sharp shape language: no radii anywhere */
+  --radius-none: 0px;
+}
+
+/* --------------------------------------------------------------------------
+   Base
+   -------------------------------------------------------------------------- */
+
+html {
+  background-color: var(--color-base);
+  scroll-padding-top: 96px; /* fixed header clearance for anchor targets */
+}
+
+body {
+  background-color: var(--color-base);
+  color: var(--color-body);
+  font-family: var(--font-sans);
+  font-weight: 400;
+  font-size: var(--text-body-base);
+  line-height: 1.6;
+  /* Subtle 4px blueprint grid (homepage_desktop/code.html) */
+  background-image:
+    linear-gradient(to right, #1a1a1a 1px, transparent 1px),
+    linear-gradient(to bottom, #1a1a1a 1px, transparent 1px);
+  background-size: 4px 4px;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+::selection {
+  background-color: #384955;
+  color: #e5e2e1;
+}
+
+/* Visible focus — white 1px outline fits the blueprint language (WCAG 2.4.7) */
+:focus-visible {
+  outline: 1px solid var(--color-ink);
+  outline-offset: 2px;
+}
+
+/* Reduced motion: the site ships no significant animation; gate the few
+   border/color transitions as well. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Structural primitives
+   -------------------------------------------------------------------------- */
+
+/* Level-1 "cell": 1px line instead of a shadow card */
+.panel {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+}
+
+.panel-hover {
+  transition: border-color 150ms ease;
+}
+.panel-hover:hover {
+  border-color: var(--color-line-strong);
+}
+
+/* Monospaced system-log block */
+.log-block {
+  background-color: var(--color-log);
+  border: 1px solid var(--color-line);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-data);
+  line-height: 1.5;
+  color: var(--color-meta);
+  padding: 1rem;
+  overflow-x: auto;
+}
+
+/* Skip link */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  background: var(--color-base);
+  color: var(--color-ink);
+  border: 1px solid var(--color-ink);
+  padding: 12px 24px;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-label);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.skip-link:focus {
+  left: 16px;
+  top: 16px;
+}
+
+/* --------------------------------------------------------------------------
+   Status tags (DESIGN.md "Status Indicators") — one component, one map.
+   Every tag carries its text; color is never the only signal.
+   -------------------------------------------------------------------------- */
+
+.status-tag {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: var(--text-status-tag);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  line-height: 1;
+  text-transform: uppercase;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.status-concept {
+  border: 1px dashed var(--color-line-soft);
+  color: var(--color-muted);
+}
+.status-planned {
+  border-color: var(--color-line-soft);
+  color: var(--color-muted);
+}
+.status-research {
+  border: 1px dotted var(--color-amber);
+  color: var(--color-amber);
+}
+.status-in-development {
+  border-color: var(--color-meta);
+  color: var(--color-meta-bright);
+}
+.status-implemented {
+  border-color: var(--color-ink);
+  color: var(--color-ink);
+}
+.status-verified {
+  border-color: var(--color-blue);
+  color: var(--color-blue);
+}
+.status-experimental {
+  background-color: var(--color-amber);
+  border-color: var(--color-amber);
+  color: #000000;
+  /* 45° chamfered corner — the one sanctioned break from the grid */
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%);
+}
+.status-blocked {
+  border-color: var(--color-red);
+  color: var(--color-red);
+}
+.status-not-yet-verified {
+  border-color: var(--color-line-soft);
+  color: var(--color-muted);
+}
+.status-pre-alpha {
+  border-color: var(--color-red);
+  color: var(--color-red);
+}
+
+/* --------------------------------------------------------------------------
+   Buttons — ghost style, mono uppercase labels
+   -------------------------------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 12px 24px;
+  border: 1px solid var(--color-line-soft);
+  background: transparent;
+  color: var(--color-body);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-label);
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-decoration: none;
+  transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
+}
+.btn:hover {
+  border-color: var(--color-muted);
+  background-color: var(--color-surface-2);
+}
+.btn-primary {
+  border-color: var(--color-ink);
+  color: var(--color-ink);
+}
+.btn-primary:hover {
+  border-color: var(--color-ink);
+  background-color: var(--color-ink);
+  color: var(--color-base);
+}
+
+/* --------------------------------------------------------------------------
+   Mobile navigation (no-JS <details> disclosure)
+   -------------------------------------------------------------------------- */
+
+.nav-details > summary {
+  list-style: none;
+  cursor: pointer;
+}
+.nav-details > summary::-webkit-details-marker {
+  display: none;
+}
+.nav-details[open] > summary .nav-icon-open {
+  display: none;
+}
+.nav-details:not([open]) > summary .nav-icon-close {
+  display: none;
+}
+
+/* --------------------------------------------------------------------------
+   Rendered markdown (/docs/[slug]) — repo docs in the design language
+   -------------------------------------------------------------------------- */
+
+.doc-prose {
+  max-width: 72ch;
+  color: var(--color-body);
+}
+.doc-prose > :first-child {
+  margin-top: 0;
+}
+.doc-prose h1 {
+  font-weight: 300;
+  font-size: 34px;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  color: var(--color-ink);
+  margin: 0 0 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--color-line);
+}
+.doc-prose h2 {
+  font-weight: 400;
+  font-size: 24px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--color-ink);
+  margin: 48px 0 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-line);
+}
+.doc-prose h3 {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-ink);
+  margin: 32px 0 12px;
+}
+.doc-prose h4 {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-meta-bright);
+  margin: 24px 0 8px;
+}
+.doc-prose p {
+  margin: 0 0 16px;
+  color: var(--color-body);
+}
+.doc-prose a {
+  color: var(--color-meta-bright);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.doc-prose a:hover {
+  color: var(--color-ink);
+}
+.doc-prose ul,
+.doc-prose ol {
+  margin: 0 0 16px;
+  padding-left: 22px;
+}
+.doc-prose li {
+  margin-bottom: 6px;
+}
+.doc-prose li::marker {
+  color: var(--color-meta);
+}
+.doc-prose strong {
+  color: var(--color-ink);
+  font-weight: 500;
+}
+.doc-prose em {
+  color: var(--color-meta-bright);
+}
+.doc-prose code {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--color-meta-bright);
+  background: var(--color-log);
+  border: 1px solid var(--color-line);
+  padding: 1px 5px;
+}
+.doc-prose pre {
+  background: var(--color-log);
+  border: 1px solid var(--color-line);
+  padding: 16px;
+  margin: 0 0 20px;
+  overflow-x: auto;
+}
+.doc-prose pre code {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: var(--color-body);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.doc-prose blockquote {
+  border-left: 2px solid var(--color-line-soft);
+  padding-left: 16px;
+  margin: 0 0 16px;
+  color: var(--color-muted);
+}
+.doc-prose hr {
+  border: 0;
+  border-top: 1px solid var(--color-line);
+  margin: 32px 0;
+}
+.doc-prose table {
+  /* display:block lets wide markdown tables scroll inside themselves
+     instead of forcing the page to scroll horizontally */
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 0 0 20px;
+  font-size: 13px;
+}
+.doc-prose .table-scroll {
+  overflow-x: auto;
+  margin: 0 0 20px;
+}
+.doc-prose th {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--color-muted);
+  border: 1px solid var(--color-line);
+  background: var(--color-log);
+  padding: 8px 12px;
+}
+.doc-prose td {
+  border: 1px solid var(--color-line);
+  padding: 8px 12px;
+  vertical-align: top;
+  color: var(--color-body);
+}
+
+/* Tables anywhere else on the site share the same treatment */
+.table-scroll {
+  overflow-x: auto;
+}

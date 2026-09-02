@@ -1,0 +1,22 @@
+---
+/**
+ * Prominent physical-hardware warning (system_releases design, real facts).
+ * Required on homepage + releases (governance rule 4).
+ */
+interface Props {
+  class?: string;
+}
+const { class: extraClass } = Astro.props;
+---
+
+<div class:list={['border border-red-deep bg-log p-gutter flex items-start gap-4', extraClass]} role="note">
+  <span aria-hidden="true" class="font-mono text-red text-lg leading-none mt-0.5 select-none">▲</span>
+  <div>
+    <h2 class="font-mono text-mono-label text-red uppercase tracking-widest mb-2">Physical-Hardware Warning</h2>
+    <p class="font-mono text-mono-data text-body max-w-3xl">
+      ITISYOU OS is an experimental, pre-alpha research kernel. It is developed and verified exclusively inside QEMU
+      with project-generated disposable disk images. Do not install it on physical hardware, point it at a real disk,
+      or expect it to preserve data. There are no production builds.
+    </p>
+  </div>
+</div>

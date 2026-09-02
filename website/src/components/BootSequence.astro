@@ -1,0 +1,56 @@
+---
+/**
+ * Boot-sequence visualization B000 → B150.
+ * Stage list mirrors crates/kernel-core/src/stage.rs; each stage inherits the
+ * real status of the module that implements it (status/current.json), so the
+ * visualization can never show progress the evidence does not record.
+ */
+import { BOOT_STAGES } from '../lib/stages';
+import { status, STATUS_LABELS } from '../lib/status';
+import StatusTag from './StatusTag.astro';
+
+interface Props {
+  class?: string;
+}
+const { class: extraClass } = Astro.props;
+
+const rows = BOOT_STAGES.map((stage) => {
+  const mod = status.modules.find((m) => m.id === stage.moduleId);
+  return { ...stage, status: mod?.status ?? 'planned' };
+});
+---
+
+<figure class:list={['panel', extraClass]}>
+  <figcaption class="flex flex-wrap items-center justify-between gap-3 border-b border-line px-gutter py-4">
+    <span class="font-mono text-mono-label text-ink uppercase tracking-widest">Boot-Stage Contract B000 → B150</span>
+    <span class="font-mono text-status-tag text-muted uppercase tracking-widest">kernel-core::stage · serial markers</span>
+  </figcaption>
+  <div class="bg-log px-gutter py-4 overflow-x-auto">
+    <p class="font-mono text-mono-data text-muted mb-4">
+      Each stage emits one machine-parseable serial marker — <span class="text-meta-bright">[ITISYOU:B0xx] description</span> —
+      asserted in order by the QEMU harness. Stage statuses below are the live module statuses, not a boot capture.
+    </p>
+    <ol class="flex flex-col gap-0 min-w-[560px]">
+      {
+        rows.map((row, i) => (
+          <li
+            class:list={[
+              'grid grid-cols-[64px_1fr_auto] items-center gap-4 py-2 font-mono text-mono-data',
+              i < rows.length - 1 && 'border-b border-line',
+            ]}
+          >
+            <span
+              class:list={[
+                row.status === 'in-development' ? 'text-meta-bright' : 'text-muted',
+              ]}
+            >
+              {row.code}
+            </span>
+            <span class:list={[row.status === 'in-development' ? 'text-body' : 'text-muted']}>{row.describe}</span>
+            <StatusTag status={row.status} label={STATUS_LABELS[row.status]} />
+          </li>
+        ))
+      }
+    </ol>
+  </div>
+</figure>

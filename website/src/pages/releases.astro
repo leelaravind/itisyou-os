@@ -1,0 +1,102 @@
+---
+import Base from '../layouts/Base.astro';
+import Breadcrumbs from '../components/Breadcrumbs.astro';
+import StatusTag from '../components/StatusTag.astro';
+import WarningBanner from '../components/WarningBanner.astro';
+import { status, orDash } from '../lib/status';
+
+const description =
+  'ITISYOU OS releases: none published yet. What a release will contain when it exists — bootable QEMU images, SHA-256 manifest, verification evidence — and why nothing is downloadable today.';
+---
+
+<Base title="Releases" description={description}>
+  <div class="max-w-(--container-max) mx-auto px-4 sm:px-margin pt-12 pb-8 flex flex-col gap-gutter">
+    <header class="border-b border-line-soft pb-gutter mb-4">
+      <Breadcrumbs class="mb-4" crumbs={[{ label: 'SYSTEM', href: '/' }, { label: 'RELEASES' }]} />
+      <h1 class="font-sans font-light text-[36px] sm:text-display-lg text-ink mb-2">System Releases</h1>
+      <p class="font-mono text-mono-data text-meta-bright max-w-2xl">
+        Early development builds are intended exclusively for VM environments. Releases are published only with
+        verification evidence attached.
+      </p>
+    </header>
+
+    <WarningBanner />
+
+    <!-- ============ Honest empty state ============ -->
+    <section class="panel" aria-labelledby="norel-title">
+      <div class="flex flex-col md:flex-row">
+        <div class="md:w-72 border-b md:border-b-0 md:border-r border-line p-gutter bg-surface-2 flex flex-col gap-4">
+          <h2 id="norel-title" class="font-sans text-headline-md text-ink">v{status.version}</h2>
+          <div class="flex flex-wrap gap-2">
+            <StatusTag status={status.maturity} />
+            <StatusTag status={status.verification} />
+          </div>
+        </div>
+        <div class="flex-1 p-gutter grid grid-cols-2 md:grid-cols-4 gap-gutter content-start">
+          <div class="flex flex-col gap-1">
+            <span class="font-mono text-mono-label text-muted uppercase">Published</span>
+            <span class="font-mono text-mono-data text-ink">—</span>
+          </div>
+          <div class="flex flex-col gap-1">
+            <span class="font-mono text-mono-label text-muted uppercase">Commit</span>
+            <span class="font-mono text-mono-data text-ink">{orDash(status.commit)}</span>
+          </div>
+          <div class="flex flex-col gap-1">
+            <span class="font-mono text-mono-label text-muted uppercase">Arch</span>
+            <span class="font-mono text-mono-data text-ink">{status.architecture}</span>
+          </div>
+          <div class="flex flex-col gap-1">
+            <span class="font-mono text-mono-label text-muted uppercase">Environment</span>
+            <span class="font-mono text-mono-data text-ink">{status.environment} / VM only</span>
+          </div>
+          <p class="col-span-2 md:col-span-4 font-mono text-mono-data text-meta border-t border-line pt-4">
+            NO_RELEASES_PUBLISHED — the current version is a development tree, not a release. There are no download
+            links because no artifact has passed the release gate yet; this page will state checksums and evidence
+            when one does.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ Release contract ============ -->
+    <section class="grid grid-cols-1 md:grid-cols-12 gap-gutter mt-8" aria-labelledby="plan-title">
+      <div class="md:col-span-5">
+        <h2 id="plan-title" class="font-sans text-headline-md text-ink border-b border-line-soft pb-4 mb-6">
+          What a release will contain
+        </h2>
+        <p class="text-body-base text-meta-bright mb-4 max-w-prose">
+          The build pipeline already produces the release shape — it just hasn’t earned a release yet. When the V0.1
+          verification gates pass, a release will publish exactly what the gate verified:
+        </p>
+        <ul class="flex flex-col gap-2 font-mono text-mono-data text-meta-bright list-none">
+          <li class="border border-line bg-log p-3">itisyou-kernel-&#123;bios,uefi&#125;.img — interactive kernel</li>
+          <li class="border border-line bg-log p-3">itisyou-kernel-selftest-&#123;bios,uefi&#125;.img — selftest suite</li>
+          <li class="border border-line bg-log p-3">manifest.txt — sizes + SHA-256 for every artifact</li>
+          <li class="border border-line bg-log p-3">QEMU evidence — serial logs + JSON results of the release run</li>
+        </ul>
+      </div>
+      <div class="md:col-span-7">
+        <h2 class="font-sans text-headline-md text-ink border-b border-line-soft pb-4 mb-6">Release rules</h2>
+        <ol class="flex flex-col gap-px bg-line border border-line list-none">
+          {
+            [
+              ['EVIDENCE FIRST', 'A release is cut only from a commit whose full verification gate (build, host tests, 4-way QEMU boot/selftest matrix) passed — and the evidence ships with it.'],
+              ['CHECKSUMS ALWAYS', 'Every artifact is listed in a SHA-256 manifest generated by the same build that produced it. Verify before booting.'],
+              ['QEMU ONLY', 'Artifacts are disk images for virtual machines. They are not installers, and no release will target physical hardware in V0.1.'],
+              ['NO SILENT REPLACEMENT', 'Published artifacts are immutable; a fix means a new version, never an overwritten file.'],
+            ].map(([label, text]) => (
+              <li class="bg-surface p-5 flex flex-col sm:flex-row sm:items-start gap-3">
+                <span class="font-mono text-mono-label text-ink tracking-widest sm:w-52 shrink-0">{label}</span>
+                <p class="text-sm text-meta-bright">{text}</p>
+              </li>
+            ))
+          }
+        </ol>
+        <div class="mt-6 flex flex-wrap gap-4">
+          <a href="/build" class="btn btn-primary">Current build status</a>
+          <a href="/changelog" class="btn">Changelog</a>
+        </div>
+      </div>
+    </section>
+  </div>
+</Base>

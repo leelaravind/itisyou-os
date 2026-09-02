@@ -1,0 +1,357 @@
+---
+import Base from '../layouts/Base.astro';
+import StatusTag from '../components/StatusTag.astro';
+import WarningBanner from '../components/WarningBanner.astro';
+import BuildCard from '../components/BuildCard.astro';
+import BootSequence from '../components/BootSequence.astro';
+import VerificationLoop from '../components/VerificationLoop.astro';
+import { status } from '../lib/status';
+import { MILESTONES } from '../lib/roadmap';
+import { JOURNAL } from '../lib/journal';
+
+const description =
+  'ITISYOU OS is an experimental pre-alpha research operating system: an independently bootable x86_64 kernel in Rust (no_std), developed and verified exclusively inside QEMU. Building an operating system from the kernel upward.';
+
+/** Layered architecture visual — labels mirror docs/ARCHITECTURE.md. */
+const layers = [
+  {
+    code: 'L5',
+    name: 'AI layer',
+    note: 'intelligence, never authority',
+    tag: 'concept',
+    tagLabel: 'Concept',
+    accent: false,
+  },
+  {
+    code: 'L4',
+    name: 'Privileged services / capability engine',
+    note: 'deterministic policy layer',
+    tag: 'concept',
+    tagLabel: 'Concept',
+    accent: false,
+  },
+  {
+    code: 'L3',
+    name: 'Userspace',
+    note: 'ring 3, syscalls — V0.1 stretch',
+    tag: 'planned',
+    tagLabel: 'Planned',
+    accent: false,
+  },
+  {
+    code: 'L2',
+    name: 'Kernel',
+    note: 'Rust no_std, x86_64, ring 0',
+    tag: 'in-development',
+    tagLabel: 'In Development',
+    accent: true,
+  },
+  {
+    code: 'L1',
+    name: 'Bootloader',
+    note: 'rust-osdev crate, BIOS & UEFI stages',
+    tag: 'in-development',
+    tagLabel: 'In Development',
+    accent: false,
+  },
+  {
+    code: 'L0',
+    name: 'Firmware',
+    note: 'SeaBIOS / OVMF-UEFI, inside QEMU',
+    tag: 'planned',
+    tagLabel: 'Environment',
+    accent: false,
+  },
+];
+
+const roadmapTeaser = MILESTONES.map((m) => ({ id: m.id, name: m.name, status: m.status, current: m.current }));
+const latestJournal = JOURNAL.slice(0, 2);
+---
+
+<Base title="ITISYOU OS" description={description}>
+  <div class="max-w-(--container-max) mx-auto px-4 sm:px-margin">
+    <!-- ================= Hero ================= -->
+    <section class="grid grid-cols-1 md:grid-cols-12 gap-gutter items-start pt-16 md:pt-24 pb-16">
+      <div class="md:col-span-6 space-y-8 md:pr-8">
+        <div>
+          <p class="font-mono text-mono-label text-muted uppercase tracking-widest mb-6">
+            SYSTEM / PUBLIC ENGINEERING RECORD
+          </p>
+          <h1 class="font-sans font-light text-[40px] sm:text-display-lg text-ink tracking-tight mb-4">ITISYOU OS</h1>
+          <p class="font-sans text-headline-md text-body mb-6">Building an operating system from the kernel upward.</p>
+          <p class="text-body-base text-meta-bright max-w-lg leading-relaxed">
+            A long-term research and engineering project exploring what a personal operating system could look like if
+            designed today around explicit privilege boundaries, strong kernel/user isolation, recoverable and
+            auditable system changes, reproducible builds, and local-first intelligence — where AI can reason about the
+            system but never holds unrestricted kernel authority.
+          </p>
+        </div>
+        <div class="flex flex-wrap gap-4">
+          <a href="/architecture" class="btn btn-primary">Explore the architecture</a>
+          <a href="/build" class="btn">View current build</a>
+        </div>
+        <div class="font-mono text-mono-data text-meta flex flex-wrap items-center gap-3 pt-2">
+          <span aria-hidden="true" class="text-muted select-none">▚</span>
+          <span>Current milestone — V0.1 {status.milestone}</span>
+          <StatusTag status={status.maturity} />
+        </div>
+      </div>
+
+      <figure class="md:col-span-6 panel p-gutter" aria-labelledby="arch-viz-caption">
+        <figcaption
+          id="arch-viz-caption"
+          class="font-mono text-mono-label text-muted uppercase tracking-widest mb-4 flex justify-between gap-2 flex-wrap"
+        >
+          <span>System layer model</span>
+          <span aria-hidden="true">SYSTEM_ARCH_VIZ</span>
+        </figcaption>
+        <ol class="flex flex-col gap-2 list-none">
+          {
+            layers.map((layer) => (
+              <li
+                class:list={[
+                  'relative border p-4 flex items-center justify-between gap-4 overflow-hidden',
+                  layer.accent ? 'border-ink bg-surface-2' : 'border-line bg-surface-2/40',
+                ]}
+              >
+                <span
+                  aria-hidden="true"
+                  class:list={['absolute left-0 top-0 bottom-0 w-1', layer.accent ? 'bg-ink' : 'bg-line-soft']}
+                />
+                <span class="flex flex-col gap-1 pl-2">
+                  <span class:list={['font-mono text-status-tag tracking-widest', layer.accent ? 'text-ink' : 'text-muted']}>
+                    {layer.code}
+                  </span>
+                  <span class:list={['font-sans', layer.accent ? 'text-ink text-headline-md' : 'text-body']}>{layer.name}</span>
+                  <span class="font-mono text-[11px] text-meta">{layer.note}</span>
+                </span>
+                <StatusTag status={layer.tag} label={layer.tagLabel} />
+              </li>
+            ))
+          }
+        </ol>
+        <p class="font-mono text-[11px] text-muted mt-4">
+          Layers above the kernel are documented direction, not implemented functionality. See
+          <a href="/architecture" class="underline underline-offset-2 hover:text-ink">/architecture</a>.
+        </p>
+      </figure>
+    </section>
+
+    <!-- ================= Hardware warning ================= -->
+    <section aria-label="Experimental status warning" class="pb-16">
+      <WarningBanner />
+    </section>
+
+    <!-- ================= Current build + modules ================= -->
+    <section class="pb-24" aria-labelledby="now-title">
+      <div class="border-b border-line-soft pb-4 mb-8 flex flex-wrap items-end justify-between gap-4">
+        <h2 id="now-title" class="font-sans text-headline-md text-ink">What we’re building now</h2>
+        <p class="font-mono text-mono-data text-meta">Milestone “V0.1 — {status.milestone}”</p>
+      </div>
+
+      <BuildCard class="mb-gutter" />
+
+      <ul class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-gutter list-none">
+        {
+          status.modules.map((mod) => (
+            <li class="panel panel-hover p-6">
+              <div class="flex justify-between items-start gap-3 mb-4">
+                <h3 class="font-mono text-mono-label text-ink">{mod.name}</h3>
+                <StatusTag status={mod.status} />
+              </div>
+              <p class="font-mono text-[11px] text-muted uppercase tracking-widest">MODULE / {mod.id}</p>
+            </li>
+          ))
+        }
+      </ul>
+      <p class="font-mono text-mono-data text-muted mt-6">
+        Statuses are read from <span class="text-meta-bright">status/current.json</span> at build time. “Implemented”
+        and “Verified” are not interchangeable; anything not marked Verified should be assumed incomplete.
+      </p>
+    </section>
+
+    <!-- ================= Boot sequence ================= -->
+    <section class="pb-24" aria-labelledby="boot-title">
+      <h2 id="boot-title" class="font-sans text-headline-md text-ink border-b border-line-soft pb-4 mb-8">
+        Boot sequence
+      </h2>
+      <BootSequence />
+    </section>
+
+    <!-- ================= Why a new OS ================= -->
+    <section class="pb-24 grid grid-cols-1 md:grid-cols-12 gap-gutter" aria-labelledby="why-title">
+      <div class="md:col-span-5">
+        <h2 id="why-title" class="font-sans text-headline-md text-ink border-b border-line-soft pb-4 mb-6">
+          Why build another OS?
+        </h2>
+        <p class="text-body-base text-body mb-4 max-w-prose">
+          Linux is a mature, broad, production-proven kernel ecosystem — ITISYOU OS does not claim to be better than
+          it, and is not a Linux distribution. It contains no Linux kernel code at runtime.
+        </p>
+        <p class="text-body-base text-meta-bright max-w-prose">
+          Instead, this project documents specific research hypotheses to test for a constrained personal-computing
+          target: what changes when explicit authority boundaries, verification evidence, and recoverability are design
+          inputs from the first boot stage rather than retrofits.
+        </p>
+      </div>
+      <ul class="md:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-gutter list-none content-start">
+        {
+          [
+            ['Explicit authority', 'Privilege and authority boundaries are declared, inspectable, and narrow — never ambient.'],
+            ['Evidence over claims', 'A subsystem is “done” only when an automated QEMU run proves it. The website reads that evidence, not marketing intent.'],
+            ['Recoverable by design', 'System changes should be auditable, verifiable, and reversible — recovery is architecture, not an afterthought.'],
+            ['Local-first intelligence', 'Future AI assistance runs against local state under a policy engine. It advises; it does not rule.'],
+          ].map(([title, text]) => (
+            <li class="panel panel-hover p-6">
+              <h3 class="font-mono text-mono-label text-ink uppercase tracking-wider mb-3">{title}</h3>
+              <p class="text-body-base text-meta-bright">{text}</p>
+            </li>
+          ))
+        }
+      </ul>
+    </section>
+
+    <!-- ================= AI authority principle ================= -->
+    <section class="pb-24" aria-labelledby="authority-title">
+      <div class="panel p-gutter md:p-margin">
+        <p class="font-mono text-mono-label text-muted uppercase tracking-widest mb-4">SECURITY PRINCIPLE 01</p>
+        <h2 id="authority-title" class="font-sans font-light text-[32px] md:text-display-lg text-ink tracking-tight mb-6">
+          AI has intelligence,<br />not authority.
+        </h2>
+        <p class="text-body-base text-meta-bright max-w-2xl mb-8">
+          Any future AI/agent layer reasons about the system and proposes actions; it never executes privileged kernel
+          operations directly. The principle exists now — before any AI component — because it constrains how every
+          kernel interface is designed.
+        </p>
+        <div class="log-block" role="img" aria-label="Intended authority pipeline: agent intent, then policy engine, then risk and permission evaluation, then user approval where required, then deterministic privileged service, then kernel operation, then verification, then audit, then rollback and recovery.">
+          <ol class="flex flex-wrap items-center gap-x-3 gap-y-2 list-none">
+            {
+              [
+                'agent intent',
+                'policy engine',
+                'risk/permission evaluation',
+                'user approval',
+                'deterministic privileged service',
+                'kernel operation',
+                'verification',
+                'audit',
+                'rollback/recovery',
+              ].map((step, i, arr) => (
+                <li class="flex items-center gap-3">
+                  <span class:list={[i === 5 ? 'text-ink' : 'text-meta-bright']}>{step}</span>
+                  {i < arr.length - 1 && (
+                    <span aria-hidden="true" class="text-muted">
+                      →
+                    </span>
+                  )}
+                </li>
+              ))
+            }
+          </ol>
+        </div>
+        <p class="font-mono text-mono-data text-muted mt-4">
+          No AI component exists in the V0.1 runtime. See <a href="/security" class="underline underline-offset-2 hover:text-ink">the security model</a>.
+        </p>
+      </div>
+    </section>
+
+    <!-- ================= Verification loop ================= -->
+    <section class="pb-24" aria-labelledby="loop-title">
+      <h2 id="loop-title" class="font-sans text-headline-md text-ink border-b border-line-soft pb-4 mb-8">
+        The verification loop
+      </h2>
+      <VerificationLoop />
+    </section>
+
+    <!-- ================= Roadmap teaser ================= -->
+    <section class="pb-24" aria-labelledby="roadmap-title">
+      <div class="border-b border-line-soft pb-4 mb-8 flex flex-wrap items-end justify-between gap-4">
+        <h2 id="roadmap-title" class="font-sans text-headline-md text-ink">Roadmap</h2>
+        <p class="font-mono text-mono-data text-meta">Sequenced by dependency, not calendar — no dates.</p>
+      </div>
+      <ol class="grid grid-cols-2 md:grid-cols-5 gap-px bg-line border border-line list-none">
+        {
+          roadmapTeaser.map((m) => (
+            <li class:list={['p-4 flex flex-col gap-3', m.current ? 'bg-surface-2' : 'bg-surface']}>
+              <span class:list={['font-mono text-mono-label tracking-widest', m.current ? 'text-ink' : 'text-muted']}>
+                {m.id}
+              </span>
+              <span class:list={['text-[13px] leading-snug', m.current ? 'text-body' : 'text-meta']}>{m.name}</span>
+              <StatusTag status={m.status} class="self-start mt-auto" />
+            </li>
+          ))
+        }
+      </ol>
+      <div class="mt-6">
+        <a href="/roadmap" class="btn">Full roadmap</a>
+      </div>
+    </section>
+
+    <!-- ================= Development story ================= -->
+    <section class="pb-24" aria-labelledby="journal-title">
+      <div class="border-b border-line-soft pb-4 mb-8 flex flex-wrap items-end justify-between gap-4">
+        <h2 id="journal-title" class="font-sans text-headline-md text-ink">Development story</h2>
+        <p class="font-mono text-mono-data text-meta">Decisions, failures, root causes, fixes — logged as they happen.</p>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-gutter">
+        {
+          latestJournal.map((entry) => (
+            <article class="panel panel-hover p-6 flex flex-col gap-4">
+              <div class="flex flex-wrap items-center gap-2 font-mono text-mono-label text-muted">
+                <span>{entry.date}</span>
+                <span aria-hidden="true">/</span>
+                <span>{entry.time}</span>
+                <span aria-hidden="true">/</span>
+                <span>{entry.session}</span>
+                <StatusTag status={entry.status} class="ml-auto" />
+              </div>
+              <h3 class="text-body-base text-ink font-medium">{entry.title}</h3>
+              <p class="text-body-base text-meta-bright">{entry.what}</p>
+              {entry.evidence && (
+                <p class="log-block text-[11px] leading-relaxed" aria-label="Evidence">
+                  {entry.evidence}
+                </p>
+              )}
+            </article>
+          ))
+        }
+      </div>
+      <div class="mt-6">
+        <a href="/changelog" class="btn">Full ledger</a>
+      </div>
+    </section>
+
+    <!-- ================= Research direction + CTA ================= -->
+    <section class="pb-8 grid grid-cols-1 md:grid-cols-12 gap-gutter" aria-labelledby="research-title">
+      <div class="md:col-span-7 panel p-gutter">
+        <h2 id="research-title" class="font-sans text-headline-md text-ink mb-4">Long-term research direction</h2>
+        <p class="text-body-base text-meta-bright mb-4 max-w-prose">
+          The trajectory runs from kernel foundation through userspace, storage, networking, graphics and hardware
+          expansion toward an experimental personal OS with an AI-native system layer — local inference outside the
+          kernel, policy-controlled actions with preview and approval, provenance and audit for everything.
+        </p>
+        <p class="text-body-base text-meta-bright max-w-prose">
+          Every milestone must pass its verification gates before it is claimed. Modern hardware assumptions are
+          preferred over universal legacy compatibility from day one.
+        </p>
+        <div class="mt-6 flex flex-wrap gap-4">
+          <a href="/philosophy" class="btn">Philosophy &amp; vision</a>
+          <a href="/engineering" class="btn">Engineering process</a>
+        </div>
+      </div>
+      <div class="md:col-span-5 panel p-gutter flex flex-col justify-between gap-6">
+        <div>
+          <h2 class="font-sans text-headline-md text-ink mb-4">Source &amp; documentation</h2>
+          <p class="text-body-base text-meta-bright mb-4">
+            The repository is private during early development and will open once the V0.1 foundation and its
+            verification evidence stabilize. The engineering documentation is public now.
+          </p>
+        </div>
+        <div class="flex flex-wrap gap-4">
+          <a href="/docs" class="btn btn-primary">Read the docs</a>
+          <a href="/source" class="btn">Source access</a>
+        </div>
+      </div>
+    </section>
+  </div>
+</Base>

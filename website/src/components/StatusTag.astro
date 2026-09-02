@@ -1,0 +1,21 @@
+---
+/**
+ * The single status-tag component (DESIGN.md "Status Indicators").
+ * Maps the allowed status vocabulary from status/current.json to the
+ * Stitch visual system. Text is always rendered — never color alone.
+ */
+import { STATUS_LABELS } from '../lib/status';
+
+interface Props {
+  status: string;
+  /** Optional label override (e.g. "PRE-ALPHA"); defaults to vocabulary label. */
+  label?: string;
+  class?: string;
+}
+
+const { status, label, class: extraClass } = Astro.props;
+const key = status.toLowerCase().trim().replace(/\s+/g, '-');
+const text = (label ?? STATUS_LABELS[key] ?? status).toUpperCase();
+---
+
+<span class:list={['status-tag', `status-${key}`, extraClass]}>{text}</span>

@@ -1,0 +1,115 @@
+---
+import Base from '../layouts/Base.astro';
+import Breadcrumbs from '../components/Breadcrumbs.astro';
+import StatusTag from '../components/StatusTag.astro';
+import { status } from '../lib/status';
+
+const description =
+  'Source access for ITISYOU OS: the repository is private during early development and will open later. Repository layout and governance, with no fabricated repository statistics.';
+
+const layout = [
+  ['kernel/', 'the x86_64 kernel (library + interactive/selftest binaries)'],
+  ['crates/kernel-core', 'pure host-testable kernel logic (stage/marker contract)'],
+  ['tools/image-builder', 'builds bootable disk images (pure Rust) + SHA-256 manifest'],
+  ['tools/qemu-runner', 'deterministic QEMU test harness with JSON evidence'],
+  ['scripts/', 'doctor / build / run / test / verify / secret-scan gates'],
+  ['design/', 'preserved Stitch design export (visual source of truth)'],
+  ['website/', 'this site — the public engineering record'],
+  ['docs/', 'architecture, requirements, security model, development story, ADRs'],
+  ['status/', 'machine-readable, evidence-backed project status'],
+];
+---
+
+<Base title="Source Access" description={description}>
+  <div class="max-w-(--container-max) mx-auto px-4 sm:px-margin pt-12 pb-8 flex flex-col gap-margin">
+    <header class="border-b border-line pb-margin">
+      <Breadcrumbs class="mb-4" crumbs={[{ label: 'SYSTEM', href: '/' }, { label: 'SOURCE' }, { label: 'ACCESS' }]} />
+      <h1 class="font-sans font-light text-[36px] sm:text-display-lg text-ink mb-4">Source Access</h1>
+      <p class="text-body-base text-meta-bright max-w-2xl">
+        ITISYOU OS is developed in a single monorepo. The repository is
+        <strong class="text-ink font-medium">private during early development</strong> and will open once the V0.1
+        foundation and its verification evidence stabilize. No public repository link exists yet — this page will carry
+        it when it does.
+      </p>
+    </header>
+
+    <!-- ============ Access state ============ -->
+    <section class="grid grid-cols-1 md:grid-cols-12 gap-px bg-line border border-line" aria-labelledby="access-title">
+      <div class="md:col-span-8 bg-surface p-gutter">
+        <div class="flex items-center justify-between gap-4 mb-6 flex-wrap">
+          <h2 id="access-title" class="font-sans text-headline-md text-ink">Repository status</h2>
+          <span class="font-mono text-[10px] font-bold tracking-widest uppercase border border-line-soft text-muted px-2 py-1.5">PRIVATE</span>
+        </div>
+        <dl class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="border border-line p-4">
+            <dt class="font-mono text-mono-label text-muted uppercase tracking-widest mb-2">Visibility</dt>
+            <dd class="font-mono text-mono-data text-ink">private — early development</dd>
+          </div>
+          <div class="border border-line p-4">
+            <dt class="font-mono text-mono-label text-muted uppercase tracking-widest mb-2">Opens</dt>
+            <dd class="font-mono text-mono-data text-ink">when V0.1 evidence stabilizes — no date promised</dd>
+          </div>
+          <div class="border border-line p-4">
+            <dt class="font-mono text-mono-label text-muted uppercase tracking-widest mb-2">Stars / forks / CI badges</dt>
+            <dd class="font-mono text-mono-data text-meta">none shown — none would be real</dd>
+          </div>
+          <div class="border border-line p-4">
+            <dt class="font-mono text-mono-label text-muted uppercase tracking-widest mb-2">License</dt>
+            <dd class="font-mono text-mono-data text-meta">decided before the repository opens</dd>
+          </div>
+        </dl>
+        <p class="text-sm text-meta-bright mt-6 max-w-2xl">
+          Why private? Early kernel development involves rapid interface churn and half-landed subsystems. Opening the
+          source together with its requirement matrix and verification evidence keeps the public record honest — the
+          same rule this website follows.
+        </p>
+      </div>
+      <div class="md:col-span-4 bg-log p-gutter flex flex-col">
+        <h2 class="font-mono text-mono-label text-ink mb-6 uppercase tracking-widest">Public record // now</h2>
+        <ul class="flex flex-col gap-3 font-mono text-mono-data list-none">
+          <li><a href="/docs" class="text-meta-bright hover:text-ink underline underline-offset-4 transition-colors">engineering docs (rendered from the repo)</a></li>
+          <li><a href="/build" class="text-meta-bright hover:text-ink underline underline-offset-4 transition-colors">live module status (status/current.json)</a></li>
+          <li><a href="/changelog" class="text-meta-bright hover:text-ink underline underline-offset-4 transition-colors">development ledger — including failures</a></li>
+          <li><a href="/roadmap" class="text-meta-bright hover:text-ink underline underline-offset-4 transition-colors">roadmap without dates</a></li>
+        </ul>
+        <p class="font-mono text-[11px] text-muted mt-auto pt-6">
+          v{status.version} · {status.maturity} · {status.environment}-only
+        </p>
+      </div>
+    </section>
+
+    <!-- ============ Repository layout ============ -->
+    <section aria-labelledby="layout-title">
+      <h2 id="layout-title" class="font-sans text-headline-md text-ink border-b border-line-soft pb-4 mb-8">
+        Monorepo layout
+      </h2>
+      <ul class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-px bg-line border border-line list-none">
+        {
+          layout.map(([path, text]) => (
+            <li class="bg-surface p-5 hover:bg-surface-2 transition-colors">
+              <p class="font-mono text-mono-label text-ink mb-2">{path}</p>
+              <p class="text-sm text-meta-bright">{text}</p>
+            </li>
+          ))
+        }
+      </ul>
+    </section>
+
+    <!-- ============ Governance ============ -->
+    <section class="panel p-gutter" aria-labelledby="gov-title">
+      <div class="flex items-start justify-between gap-4 flex-wrap mb-4">
+        <h2 id="gov-title" class="font-sans text-headline-md text-ink">Governance</h2>
+        <StatusTag status="in-development" />
+      </div>
+      <p class="text-body-base text-meta-bright max-w-3xl mb-4">
+        Development follows binding operating rules and an end-to-end implementation plan. Every requirement ends in
+        exactly one state — implemented + verified, blocked, or not applicable — with evidence. Secret scans run before
+        pushes; dependency choices are recorded with rationale; the dependency set is small and pinned.
+      </p>
+      <p class="font-mono text-mono-data text-muted">
+        When the repository opens, the requirement matrix, ADRs, unsafe-code inventory and QEMU evidence artifacts open
+        with it.
+      </p>
+    </section>
+  </div>
+</Base>
