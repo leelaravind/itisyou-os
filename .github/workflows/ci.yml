@@ -70,22 +70,27 @@ jobs:
       - name: QEMU selftest (UEFI)
         run: |
           cargo run -q -p qemu-runner -- \
-            --image target/images/itisyou-kernel-selftest-uefi.img --uefi \
+            --image target/images/itisyou-kernel-selftest-uefi.img --uefi --nvme \
             --firmware /usr/share/OVMF/OVMF_CODE_4M.fd \
             --expect B010 --expect B020 --expect B030 --expect B140 \
-            --expect-selftest \
+            --expect B160 --expect-selftest \
             --require "RING3-HELLO" --require "RING3-DONE" \
-            --timeout-secs 180 --label selftest-uefi
+            --require "RING3-PARENT-DONE" --require "RING3-PARENT-IPC-OK" \
+            --require "nvme_ready blocks=" \
+            --timeout-secs 300 --label selftest-uefi
 
       - name: QEMU selftest (BIOS)
         run: |
           cargo run -q -p qemu-runner -- \
-            --image target/images/itisyou-kernel-selftest-bios.img \
+            --image target/images/itisyou-kernel-selftest-bios.img --nvme \
             --expect B010 --expect B020 --expect B030 --expect B140 \
-            --expect-selftest \
+            --expect B160 --expect-selftest \
             --require "RING3-HELLO" --require "RING3-DONE" \
             --require "user_exit pid=" --require "contained=true" \
-            --timeout-secs 180 --label selftest-bios
+            --require "RING3-PARENT-DONE" --require "RING3-PARENT-WAIT-OK" \
+            --require "RING3-PARENT-IPC-OK" --require "RING3-CHILD-EXIT" \
+            --require "NVMe controller" --require "nvme_ready blocks=" \
+            --timeout-secs 300 --label selftest-bios
 
       - name: QEMU shell interaction (BIOS)
         run: |
@@ -94,6 +99,7 @@ jobs:
             --expect B040 --expect B050 --expect B060 --expect B070 \
             --expect B080 --expect B090 --expect B100 --expect B110 \
             --expect B120 --expect B130 --expect B140 --expect B150 \
+            --expect B160 \
             --send help --send version --send memory --send tasks \
             --send "ls /" --send "cat /etc/version" \
             --send "run /bin/init" --send shutdown \

@@ -76,11 +76,18 @@ struct Options {
     send: Vec<String>,
     /// Substrings that must appear somewhere in the serial log.
     require: Vec<String>,
+    /// Attach an emulated NVMe controller backed by a generated raw disk
+    /// whose first sector carries a known magic (for storage read tests).
+    nvme: bool,
     timeout: Duration,
     label: String,
     artifacts: PathBuf,
     qemu: String,
 }
+
+/// 16-byte magic written at LBA 0 of the generated NVMe disk; the kernel
+/// asserts these exact bytes after reading block 0 back over NVMe.
+const NVME_DISK_MAGIC: &[u8; 16] = b"ITISYOU-OS-DISK1";
 
 fn parse_args() -> Result<Options, String> {
     let mut args = std::env::args().skip(1);
@@ -93,6 +100,7 @@ fn parse_args() -> Result<Options, String> {
     let mut expect_panic = false;
     let mut send = Vec::new();
     let mut require = Vec::new();
+    let mut nvme = false;
     let mut timeout = Duration::from_secs(60);
     let mut label = "run".to_string();
     let mut artifacts = PathBuf::from("artifacts/qemu");
@@ -118,6 +126,7 @@ fn parse_args() -> Result<Options, String> {
             "--expect-panic" => expect_panic = true,
             "--send" => send.push(value("--send")?),
             "--require" => require.push(value("--require")?),
+            "--nvme" => nvme = true,
             "--timeout-secs" => {
                 timeout = Duration::from_secs(
                     value("--timeout-secs")?
@@ -141,11 +150,27 @@ fn parse_args() -> Result<Options, String> {
         expect_panic,
         send,
         require,
+        nvme,
         timeout,
         label,
         artifacts,
         qemu,
     })
+}
+
+/// Create (or overwrite) the NVMe backing disk: 1 MiB raw, LBA 0 begins with
+/// NVME_DISK_MAGIC then a deterministic pattern. Returns its path.
+fn make_nvme_disk(artifacts: &std::path::Path) -> std::io::Result<PathBuf> {
+    std::fs::create_dir_all(artifacts).ok();
+    let path = artifacts.join("nvme-disk.img");
+    let mut buf = vec![0u8; 1024 * 1024];
+    buf[..16].copy_from_slice(NVME_DISK_MAGIC);
+    // Fill the rest of sector 0 with a known pattern (byte i => i xor 0x5A).
+    for (i, b) in buf[16..512].iter_mut().enumerate() {
+        *b = ((i + 16) as u8) ^ 0x5A;
+    }
+    std::fs::write(&path, &buf)?;
+    Ok(path)
 }
 
 fn main() {
@@ -209,6 +234,19 @@ fn build_command(opts: &Options, serial_port: u16) -> Command {
         .arg(format!("tcp:127.0.0.1:{serial_port},nodelay"))
         .args(["-display", "none", "-no-reboot", "-m", "256M"])
         .args(["-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"]);
+    if opts.nvme {
+        match make_nvme_disk(&opts.artifacts) {
+            Ok(disk) => {
+                cmd.arg("-drive")
+                    .arg(format!(
+                        "file={},if=none,format=raw,id=nvme0",
+                        disk.display()
+                    ))
+                    .args(["-device", "nvme,serial=itisyou1,drive=nvme0"]);
+            }
+            Err(e) => eprintln!("qemu-runner: could not create NVMe disk: {e}"),
+        }
+    }
     if opts.uefi {
         let fw = opts
             .firmware

@@ -25,17 +25,35 @@ functionality.
    AI layer (intelligence, never authority) … future (planned)
 ```
 
-## Userspace (V0.2, ADR-0004)
+## Userspace & processes (V0.2/V0.3, ADR-0004/0005/0006)
 
-One user process at a time runs in a dedicated low-half window
-([1 MiB, 512 GiB), USER_ACCESSIBLE + W^X) of the shared address space.
-Entry: `iretq` with zeroed GPRs; syscalls: `syscall`/`sysret` with a masked
-dedicated kernel stack; faults at CPL=3 (#PF/#GP/#UD) terminate only the
-process via a saved abort context. The strict ELF64 loader
-(`kernel-core::elf` + `kernel/src/user.rs`) accepts only static ET_EXEC
-images and validates everything before mapping. `user/ulib` is the Ring 3
-side of the ABI; `/bin/init`, `/bin/gp-test`, `/bin/pf-test` are the
-evidence programs baked into the initramfs.
+Concurrent Ring 3 processes, each with a **private address space** (per-
+process L4; kernel entries shared supervisor-only, user window in L4 entry 0
+— cross-process isolation is structural and MMU-verified). Entry/resume via
+`sysretq` from a `#[repr(C)]` resumable `UserContext`; syscalls via
+`syscall`/`sysret` on a masked dedicated kernel stack; faults at CPL=3 (#PF/
+#GP/#UD) terminate only the process via a saved abort context. A cooperative
+run-loop (`proc.rs`) round-robins processes; `yield`/`wait` save context and
+return to it. The strict ELF64 loader (`kernel-core::elf` + `user.rs`)
+accepts only static ET_EXEC images. Syscalls: write, exit, yield, getpid,
+spawn, wait, msg_send, msg_recv — user buffers validated against the active
+CR3 before any access. `user/ulib` is the Ring 3 ABI side; evidence programs
+`/bin/{init,gp-test,pf-test,child,parent}` are baked into the initramfs.
+
+## Devices & storage (V0.3, ADR-0008)
+
+PCI enumeration (`device::pci`, decoding in host-tested `kernel-core::pci`)
+discovers controllers; a read-only `BlockDevice` trait (`device::block`) is
+backed by a deterministic `RamDisk` and by a minimal polled **NVMe** driver
+(`device::nvme`) that maps BAR0 as uncacheable MMIO, sets up admin + one I/O
+queue pair, identifies namespace 1, and reads blocks. All storage testing
+uses a generated disposable QEMU disk — never a host disk.
+
+## IPC (V0.3, ADR-0007)
+
+Bounded kernel-owned message channels (copy-through-kernel send/recv) — the
+smallest primitive for future system-service RPC, shaped to become
+capability handles later.
 
 ## Crate boundaries
 

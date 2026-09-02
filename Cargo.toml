@@ -9,6 +9,8 @@ members = [
     "user/init",
     "user/gp-test",
     "user/pf-test",
+    "user/child",
+    "user/parent",
 ]
 # The kernel must NEVER share a cargo invocation with host packages: cargo
 # resolves features once per invocation across all compile targets, so a
@@ -23,7 +25,7 @@ default-members = [
 ]
 
 [workspace.package]
-version = "0.2.0-dev"
+version = "0.3.0-dev"
 edition = "2021"
 authors = ["leelaravind"]
 

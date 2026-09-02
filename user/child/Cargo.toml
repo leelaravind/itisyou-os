@@ -1,0 +1,17 @@
+cargo-features = ["per-package-target"]
+
+[package]
+name = "user-child"
+version.workspace = true
+edition.workspace = true
+description = "A spawnable child process: yields to interleave with siblings, then exits with a known code."
+forced-target = "x86_64-unknown-none"
+
+[dependencies]
+ulib = { path = "../ulib" }
+
+[[bin]]
+name = "user-child"
+path = "src/main.rs"
+test = false
+bench = false

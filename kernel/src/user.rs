@@ -1,22 +1,62 @@
-//! Userspace processes (V0.2): ELF loading, Ring 0 → Ring 3 transition,
-//! process lifecycle, and crash containment.
+//! Userspace processes: ELF loading, per-process address spaces (V0.3),
+//! Ring 0 ↔ Ring 3 transitions, resumable contexts, and crash containment.
 //!
-//! Model (ADR-0004): a single user process at a time runs inside the current
-//! kernel task's context. `enter_user` saves an abort context (setjmp-style),
-//! then `iretq`s into Ring 3. The process leaves userspace only through the
-//! `exit` syscall (→ `UserExit::Exit`) or a fault while CPL=3 (→
-//! `UserExit::Fault`), both of which long-jump back into `enter_user`'s
-//! frame. The kernel then unmaps the process and continues — a user crash is
-//! never a kernel panic.
+//! Model (ADR-0004/0006): each process owns an [`AddressSpace`] and a
+//! resumable [`UserContext`]. `enter_or_resume` saves a kernel abort context
+//! (setjmp-style) and `sysretq`s into Ring 3 — the same path serves the
+//! first entry and every later resume. A process leaves Ring 3 via the
+//! `exit` syscall (→ `Exit`), the `yield` syscall (→ `Yielded`, context
+//! saved for resume), or a CPL=3 fault (→ `Fault`); all long-jump back to
+//! the kernel run-loop. A user crash is never a kernel panic.
 
-use crate::memory::{self, paging};
+use crate::memory::aspace::{activate_l4, AddressSpace, AspaceError};
+use crate::memory::paging;
 use crate::serial_println;
-use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 use kernel_core::elf::{self, ElfError};
 use kernel_core::memmap::FRAME_SIZE;
-use x86_64::structures::paging::{Page, PhysFrame};
-use x86_64::VirtAddr;
+
+/// Resumable Ring 3 register state. Caller-saved GPRs are intentionally not
+/// tracked: userspace only leaves via the `syscall` instruction (a function
+/// call — caller-saved regs already dead) or a fault (process terminates).
+///
+/// `#[repr(C)]` is REQUIRED: `enter_user_raw` reads these fields by fixed
+/// byte offsets (rip=0, rsp=8, rflags=16, rbx=24, rbp=32, r12=40, r13=48,
+/// r14=56, r15=64, rax=72).
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct UserContext {
+    pub rip: u64,
+    pub rsp: u64,
+    pub rflags: u64,
+    pub rbx: u64,
+    pub rbp: u64,
+    pub r12: u64,
+    pub r13: u64,
+    pub r14: u64,
+    pub r15: u64,
+    /// Value delivered in rax on resume (a syscall's return value).
+    pub rax: u64,
+}
+
+impl UserContext {
+    /// Fresh context: enter `entry` on `stack_top`, IF set so the timer keeps
+    /// running at CPL=3, all callee-saved registers zeroed.
+    pub fn new(entry: u64, stack_top: u64) -> Self {
+        UserContext {
+            rip: entry,
+            rsp: stack_top,
+            rflags: 0x202,
+            rbx: 0,
+            rbp: 0,
+            r12: 0,
+            r13: 0,
+            r14: 0,
+            r15: 0,
+            rax: 0,
+        }
+    }
+}
 
 /// User virtual window: strictly inside P4 entry 0 (0..512 GiB), far below
 /// the bootloader-assigned kernel/physical-memory mappings (≥ 1 TiB in the
@@ -29,11 +69,16 @@ pub const USER_MAX: u64 = 0x0080_0000_0000; // 512 GiB
 pub const USER_STACK_TOP: u64 = 0x007F_FFFF_0000;
 pub const USER_STACK_PAGES: u64 = 16;
 
-/// Why a process left userspace.
+/// Why a process left userspace this quantum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UserExit {
     /// exit(code) syscall.
     Exit(u64),
+    /// yield syscall — context saved; re-enterable immediately.
+    Yielded,
+    /// wait syscall on a still-running child — context saved; re-enterable
+    /// only when the run-loop wakes it (rax delivered = child status).
+    Blocked,
     /// Hardware fault while CPL=3 (vector; CR2 for page faults).
     Fault { vector: u8, addr: Option<u64> },
 }
@@ -51,21 +96,17 @@ pub enum LoadError {
     WxSegment {
         vaddr: u64,
     },
-    /// Target page already mapped (kernel/boot structures) — refuse to load.
-    Overlap {
-        vaddr: u64,
-    },
-    Memory(memory::PmmError),
-    Paging(paging::PagingError),
+    Space(AspaceError),
 }
 
-/// A loaded (not yet running) process image.
+/// A loaded process image with its private address space (V0.3, ADR-0005)
+/// and resumable context.
 pub struct Process {
     pub pid: u64,
     pub entry: u64,
     pub stack_top: u64,
-    /// Every mapping owned by this process, for teardown.
-    pages: Vec<Page>,
+    pub space: AddressSpace,
+    pub ctx: UserContext,
 }
 
 static NEXT_PID: AtomicU64 = AtomicU64::new(1);
@@ -76,22 +117,25 @@ pub fn load(path: &str) -> Result<Process, LoadError> {
     load_from_bytes(bytes)
 }
 
-/// Load an ELF64 executable from raw bytes (also used by selftests).
+/// Load an ELF64 executable from raw bytes into a fresh private address
+/// space (also used by selftests).
 pub fn load_from_bytes(bytes: &[u8]) -> Result<Process, LoadError> {
     let image = elf::parse(bytes).map_err(LoadError::Elf)?;
+    let space = AddressSpace::new().map_err(LoadError::Space)?;
 
     let mut process = Process {
         pid: NEXT_PID.fetch_add(1, Ordering::SeqCst),
         entry: image.entry,
         stack_top: USER_STACK_TOP,
-        pages: Vec::new(),
+        space,
+        ctx: UserContext::new(image.entry, USER_STACK_TOP),
     };
 
     let result = (|| {
-        // Pass 1 — validate every segment and map all of its pages
-        // writable+NX (freshly zeroed). Copying and permission tightening
-        // happen only after ALL pages exist, so segments sharing a page can
-        // never write through an already-tightened mapping.
+        // Pass 1 — validate every segment and map its pages writable+NX,
+        // freshly zeroed. Copying and tightening happen only after ALL
+        // pages exist, so segments sharing a page can never write through
+        // an already-tightened mapping.
         for segment in image.load_segments() {
             if segment.writable && segment.executable {
                 return Err(LoadError::WxSegment {
@@ -105,119 +149,124 @@ pub fn load_from_bytes(bytes: &[u8]) -> Result<Process, LoadError> {
             if start < USER_MIN || end > USER_MAX || segment.mem_size == 0 {
                 return Err(LoadError::OutsideUserWindow { vaddr: start });
             }
-            let first_page: Page = Page::containing_address(VirtAddr::new(start));
-            let last_page: Page = Page::containing_address(VirtAddr::new(end - 1));
-            for page in Page::range_inclusive(first_page, last_page) {
-                map_user_page_tracked(&mut process, page, true, false)?;
-            }
+            map_range(&mut process.space, start, end)?;
         }
 
-        // Pass 2 — copy segment contents through the writable mappings.
+        // Pass 2 — copy contents through the physical alias (no CR3 switch
+        // needed; works whether or not this space is active).
         for segment in image.load_segments() {
-            // SAFETY: pages mapped+zeroed in pass 1, exclusively owned by
-            // this process; the range was bounds-checked above.
-            unsafe {
-                core::ptr::copy_nonoverlapping(
-                    segment.data.as_ptr(),
-                    segment.vaddr as *mut u8,
-                    segment.data.len(),
-                );
-            }
+            copy_into_space(&process.space, segment.vaddr, segment.data);
         }
 
         // Pass 3 — tighten every segment's pages to its real protection.
         for segment in image.load_segments() {
-            let first_page: Page = Page::containing_address(VirtAddr::new(segment.vaddr));
-            let last_page: Page =
-                Page::containing_address(VirtAddr::new(segment.vaddr + segment.mem_size - 1));
-            for page in Page::range_inclusive(first_page, last_page) {
-                paging::update_user_flags(page, segment.writable, segment.executable)
-                    .map_err(LoadError::Paging)?;
+            let mut page = segment.vaddr & !(FRAME_SIZE - 1);
+            let end = segment.vaddr + segment.mem_size;
+            while page < end {
+                process
+                    .space
+                    .update_user_flags(page, segment.writable, segment.executable)
+                    .map_err(LoadError::Space)?;
+                page += FRAME_SIZE;
             }
         }
 
         // User stack (writable, never executable).
         let stack_low = USER_STACK_TOP - USER_STACK_PAGES * FRAME_SIZE;
-        let first: Page = Page::containing_address(VirtAddr::new(stack_low));
-        let last: Page = Page::containing_address(VirtAddr::new(USER_STACK_TOP - 1));
-        for page in Page::range_inclusive(first, last) {
-            map_user_page_tracked(&mut process, page, true, false)?;
-        }
+        map_range(&mut process.space, stack_low, USER_STACK_TOP)?;
         Ok(())
     })();
 
     match result {
         Ok(()) => Ok(process),
         Err(err) => {
-            teardown(&mut process);
+            process.space.teardown();
             Err(err)
         }
     }
 }
 
-fn map_user_page_tracked(
-    process: &mut Process,
-    page: Page,
-    writable: bool,
-    executable: bool,
-) -> Result<(), LoadError> {
-    let vaddr = page.start_address().as_u64();
-    if !(USER_MIN..USER_MAX).contains(&vaddr) {
-        return Err(LoadError::OutsideUserWindow { vaddr });
+/// Map every page intersecting [start, end) writable+NX, skipping pages this
+/// space already mapped (overlapping segments).
+fn map_range(space: &mut AddressSpace, start: u64, end: u64) -> Result<(), LoadError> {
+    let mut page = start & !(FRAME_SIZE - 1);
+    while page < end {
+        if !(USER_MIN..USER_MAX).contains(&page) {
+            return Err(LoadError::OutsideUserWindow { vaddr: page });
+        }
+        match space.map_user_page(page, true, false) {
+            Ok(_) => {}
+            // Already mapped in THIS fresh space == ours (shared page).
+            Err(AspaceError::AlreadyMapped { .. }) => {}
+            Err(e) => return Err(LoadError::Space(e)),
+        }
+        page += FRAME_SIZE;
     }
-    if !paging::is_unmapped(page.start_address()) {
-        // Already mapped by this process (overlapping segments share pages)?
-        if process.pages.contains(&page) {
-            return Ok(());
+    Ok(())
+}
+
+/// Copy `data` to `vaddr` inside `space` via the physical-memory alias.
+fn copy_into_space(space: &AddressSpace, vaddr: u64, data: &[u8]) {
+    let mut off: usize = 0;
+    while off < data.len() {
+        let va = vaddr + off as u64;
+        let page_base = va & !(FRAME_SIZE - 1);
+        let page_off = (va - page_base) as usize;
+        let n = core::cmp::min(FRAME_SIZE as usize - page_off, data.len() - off);
+        let phys = space
+            .translate(page_base)
+            .expect("segment page mapped in pass 1");
+        // SAFETY: destination frame belongs exclusively to this space and
+        // was mapped+zeroed in pass 1; n is bounded to the page.
+        unsafe {
+            core::ptr::copy_nonoverlapping(
+                data.as_ptr().add(off),
+                paging::phys_to_virt(phys).add(page_off),
+                n,
+            );
         }
-        // Mapped by someone else (kernel/boot structures): refuse.
-        return Err(LoadError::Overlap { vaddr });
-    }
-    let frame = memory::alloc_frame().map_err(LoadError::Memory)?;
-    match paging::map_user_page(page, frame, writable, executable) {
-        Ok(()) => {
-            // Fresh frames must never leak previous contents to userspace.
-            // SAFETY: just mapped writable, exclusively owned.
-            unsafe {
-                core::ptr::write_bytes(
-                    page.start_address().as_mut_ptr::<u8>(),
-                    0,
-                    FRAME_SIZE as usize,
-                );
-            }
-            process.pages.push(page);
-            Ok(())
-        }
-        Err(e) => {
-            let _ = memory::free_frame(frame);
-            Err(LoadError::Paging(e))
-        }
+        off += n;
     }
 }
 
-/// Unmap every page of the process and return its frames to the PMM.
-fn teardown(process: &mut Process) {
-    for page in process.pages.drain(..) {
-        if let Ok(frame) = paging::unmap_page(page) {
-            let frame: PhysFrame = frame;
-            let _ = memory::free_frame(frame);
-        }
+/// Run one process for one quantum in its own address space: activate its
+/// CR3, enter/resume Ring 3, restore the kernel CR3 on return. Updates the
+/// process's saved context on yield. Does NOT tear down — the caller (the
+/// process scheduler) owns lifecycle.
+pub fn run_quantum(process: &mut Process, first: bool) -> UserExit {
+    if first {
+        serial_println!(
+            "[ITISYOU:INFO] user_enter pid={} entry={:#x} stack={:#x} ring=3 l4={:#x}",
+            process.pid,
+            process.entry,
+            process.stack_top,
+            process.space.l4_phys(),
+        );
     }
+    crate::syscall::CURRENT_PID.store(process.pid, Ordering::SeqCst);
+    activate_l4(process.space.l4_phys());
+    let exit = transition::enter_or_resume(&mut process.ctx);
+    activate_l4(paging::boot_l4_frame());
+    crate::syscall::CURRENT_PID.store(0, Ordering::SeqCst);
+    exit
 }
 
-/// Run a loaded process to completion (exit or contained fault), then tear
-/// it down. Returns how it ended.
+/// Run a loaded process to completion in its own address space (draining
+/// cooperative yields), then tear it down. Returns its terminal outcome.
 pub fn run(mut process: Process) -> UserExit {
-    serial_println!(
-        "[ITISYOU:INFO] user_enter pid={} entry={:#x} stack={:#x} ring=3",
-        process.pid,
-        process.entry,
-        process.stack_top,
-    );
-    crate::syscall::CURRENT_PID.store(process.pid, core::sync::atomic::Ordering::SeqCst);
-    let exit = transition::enter_user(process.entry, process.stack_top);
-    crate::syscall::CURRENT_PID.store(0, core::sync::atomic::Ordering::SeqCst);
-    match exit {
+    let mut first = true;
+    let terminal = loop {
+        match run_quantum(&mut process, first) {
+            // A lone process yielding or (mis)using wait with no scheduler
+            // simply re-runs; tested single programs do neither indefinitely.
+            UserExit::Yielded | UserExit::Blocked => {
+                first = false;
+                continue;
+            }
+            other => break other,
+        }
+    };
+    match terminal {
         UserExit::Exit(code) => {
             serial_println!("[ITISYOU:INFO] user_exit pid={} code={}", process.pid, code);
         }
@@ -229,9 +278,10 @@ pub fn run(mut process: Process) -> UserExit {
                 addr.unwrap_or(0),
             );
         }
+        UserExit::Yielded | UserExit::Blocked => unreachable!(),
     }
-    teardown(&mut process);
-    exit
+    process.space.teardown();
+    terminal
 }
 
 /// Convenience: load + run a program from the VFS.
@@ -240,9 +290,14 @@ pub fn run_path(path: &str) -> Result<UserExit, LoadError> {
     Ok(run(process))
 }
 
+/// Discard a loaded-but-never-run process, freeing its address space.
+pub fn discard(process: Process) {
+    process.space.teardown();
+}
+
 /// Ring transition + abort plumbing.
 pub mod transition {
-    use super::UserExit;
+    use super::{UserContext, UserExit};
     use core::arch::naked_asm;
     use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
@@ -260,28 +315,63 @@ pub mod transition {
 
     const TAG_EXIT: u64 = 1 << 56;
     const TAG_FAULT: u64 = 2 << 56;
+    const TAG_YIELD: u64 = 3 << 56;
+    const TAG_BLOCK: u64 = 4 << 56;
 
-    /// Enter Ring 3 at `entry` with `user_rsp`. Returns when the process
-    /// exits or faults.
-    pub fn enter_user(entry: u64, user_rsp: u64) -> UserExit {
+    /// Pointer to the UserContext of the process currently in Ring 3 (or
+    /// about to be), so the yield syscall can persist a resume point.
+    static CURRENT_CTX: AtomicU64 = AtomicU64::new(0);
+
+    /// Save the resumable snapshot taken at syscall entry into the current
+    /// process's context, delivering `rax` to it on resume.
+    pub fn save_yield_context(rax: u64) {
+        let ctx_ptr = CURRENT_CTX.load(Ordering::SeqCst) as *mut UserContext;
+        if ctx_ptr.is_null() {
+            return;
+        }
+        let (snap, user_rsp) = crate::syscall::snapshot();
+        // SAFETY: ctx_ptr was set by enter_or_resume for the running process
+        // and stays valid until it returns; single CPU serializes access.
+        let ctx = unsafe { &mut *ctx_ptr };
+        ctx.rip = snap[0];
+        ctx.rflags = snap[1];
+        ctx.rbx = snap[2];
+        ctx.rbp = snap[3];
+        ctx.r12 = snap[4];
+        ctx.r13 = snap[5];
+        ctx.r14 = snap[6];
+        ctx.r15 = snap[7];
+        ctx.rsp = user_rsp;
+        ctx.rax = rax;
+    }
+
+    /// Enter (first time) or resume Ring 3 from `ctx`. Returns when the
+    /// process yields (ctx updated for the next resume), exits, or faults.
+    pub fn enter_or_resume(ctx: &mut UserContext) -> UserExit {
         FAULT_HAS_ADDR.store(false, Ordering::SeqCst);
+        CURRENT_CTX.store(ctx as *mut UserContext as u64, Ordering::SeqCst);
         IN_USER.store(true, Ordering::SeqCst);
-        // SAFETY: entry/stack point into freshly mapped user pages; the
-        // abort context is armed before any Ring 3 instruction runs.
-        let packed = unsafe { enter_user_raw(entry, user_rsp) };
+        // SAFETY: ctx describes a valid Ring 3 state (fresh entry or a state
+        // saved by a prior yield); the abort context is armed before any
+        // Ring 3 instruction runs.
+        let packed = unsafe { enter_user_raw(ctx as *mut UserContext) };
         IN_USER.store(false, Ordering::SeqCst);
-        // Both abort paths (exit syscall, contained fault) arrive with IF
-        // masked; kernel steady-state runs with interrupts enabled.
+        CURRENT_CTX.store(0, Ordering::SeqCst);
+        // Abort paths arrive with IF masked; kernel steady-state runs with
+        // interrupts enabled.
         x86_64::instructions::interrupts::enable();
 
-        if packed & TAG_FAULT != 0 {
-            let vector = (packed & 0xFF) as u8;
-            let addr = FAULT_HAS_ADDR
-                .load(Ordering::SeqCst)
-                .then(|| FAULT_ADDR.load(Ordering::SeqCst));
-            UserExit::Fault { vector, addr }
-        } else {
-            UserExit::Exit(packed & 0xFFFF_FFFF)
+        match packed >> 56 {
+            4 => UserExit::Blocked,
+            3 => UserExit::Yielded,
+            2 => {
+                let vector = (packed & 0xFF) as u8;
+                let addr = FAULT_HAS_ADDR
+                    .load(Ordering::SeqCst)
+                    .then(|| FAULT_ADDR.load(Ordering::SeqCst));
+                UserExit::Fault { vector, addr }
+            }
+            _ => UserExit::Exit(packed & 0xFFFF_FFFF),
         }
     }
 
@@ -297,13 +387,30 @@ pub mod transition {
         unsafe { user_abort_raw(TAG_FAULT | vector as u64) }
     }
 
-    /// Save callee-saved context, build an iretq frame, zero every GPR (no
-    /// kernel data may leak into Ring 3), and enter userspace.
-    ///
-    /// RFLAGS for user: IF set (0x202) so the timer keeps running at CPL=3.
+    /// Save the current process's resumable context (snapshotted at syscall
+    /// entry) and return control to the run-loop as a yield.
+    pub fn abort_yield() -> ! {
+        // SAFETY: only called from the yield syscall while IN_USER.
+        unsafe { user_abort_raw(TAG_YIELD) }
+    }
+
+    /// Return control to the run-loop as a block (the context has already
+    /// been saved by the caller); the process is not re-queued until woken.
+    pub fn abort_block() -> ! {
+        // SAFETY: only called from the wait syscall while IN_USER.
+        unsafe { user_abort_raw(TAG_BLOCK) }
+    }
+
+    /// Enter/resume Ring 3 via `sysretq` (used for BOTH first entry and
+    /// resume — sysret drops to CPL=3, loads RIP from rcx and RFLAGS from
+    /// r11, and we load RSP + callee-saved + rax from `ctx`). Every register
+    /// delivered to Ring 3 comes from `ctx` (zeroed on first entry), so no
+    /// kernel data leaks. `ctx` layout matches the field order in
+    /// `UserContext` (rip, rsp, rflags, rbx, rbp, r12..r15, rax).
     #[unsafe(naked)]
-    unsafe extern "C" fn enter_user_raw(entry: u64, user_rsp: u64) -> u64 {
+    unsafe extern "C" fn enter_user_raw(ctx: *mut UserContext) -> u64 {
         naked_asm!(
+            // Save kernel callee-saved + a return label into the abort ctx.
             "lea rax, [rip + 2f]",
             "mov [rip + USER_ABORT_CTX + 0], rax",
             "mov [rip + USER_ABORT_CTX + 8], rsp",
@@ -313,34 +420,28 @@ pub mod transition {
             "mov [rip + USER_ABORT_CTX + 40], r13",
             "mov [rip + USER_ABORT_CTX + 48], r14",
             "mov [rip + USER_ABORT_CTX + 56], r15",
-            // iretq frame: SS, RSP, RFLAGS, CS, RIP
-            "push {uss}",
-            "push rsi",
-            "push 0x202",
-            "push {ucs}",
-            "push rdi",
-            // No kernel register contents may reach Ring 3.
-            "xor eax, eax",
-            "xor ebx, ebx",
-            "xor ecx, ecx",
+            // Load user state from ctx (rdi). Offsets follow UserContext.
+            "mov rcx, [rdi + 0]",  // -> user RIP  (sysret)
+            "mov r11, [rdi + 16]", // -> user RFLAGS (sysret)
+            "mov rbx, [rdi + 24]",
+            "mov rbp, [rdi + 32]",
+            "mov r12, [rdi + 40]",
+            "mov r13, [rdi + 48]",
+            "mov r14, [rdi + 56]",
+            "mov r15, [rdi + 64]",
+            "mov rax, [rdi + 72]", // syscall return value on resume
+            "mov rsp, [rdi + 8]",  // user RSP
+            // Scrub the remaining scratch registers (no kernel data to R3).
             "xor edx, edx",
             "xor esi, esi",
             "xor edi, edi",
-            "xor ebp, ebp",
             "xor r8d, r8d",
             "xor r9d, r9d",
             "xor r10d, r10d",
-            "xor r11d, r11d",
-            "xor r12d, r12d",
-            "xor r13d, r13d",
-            "xor r14d, r14d",
-            "xor r15d, r15d",
-            "iretq",
-            // Abort lands here with rax = packed reason.
+            "sysretq",
+            // Abort/yield lands here with rax = packed reason.
             "2:",
             "ret",
-            uss = const super::super::gdt::USER_DATA_SELECTOR as u64,
-            ucs = const super::super::gdt::USER_CODE_SELECTOR as u64,
         )
     }
 

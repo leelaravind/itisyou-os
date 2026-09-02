@@ -40,7 +40,7 @@ const sections: FaqSection[] = [
         q: 'What actually works today?',
         tag: 'STATUS',
         a: [
-          `The project is ${status.maturity} at v${status.version}, milestone “${status.milestone}”. The V0.1 kernel foundation (boot, memory, interrupts, scheduler, filesystem, shell) is verified in QEMU, and V0.2 has verified Ring 3 userspace with a syscall ABI for a single process. The build page shows the live evidence-backed module table.`,
+          `The project is ${status.maturity} at v${status.version}, milestone “${status.milestone}”. The V0.1 kernel foundation (boot, memory, interrupts, scheduler, filesystem, shell) and V0.2 Ring 3 userspace are verified in QEMU; V0.3 adds verified per-process address-space isolation, concurrent processes (spawn/wait/IPC), and a read-only NVMe block driver. The build page shows the live evidence-backed module table.`,
         ],
       },
     ],
@@ -107,7 +107,7 @@ const sections: FaqSection[] = [
         q: 'Is it secure?',
         tag: 'HONESTY',
         a: [
-          'Not yet, and it does not claim to be. As of V0.2 the kernel runs one userspace process at a time in Ring 3 with MMU-enforced kernel/user separation, validated syscalls, and crash containment — verified by automated QEMU tests. Isolation between multiple user processes (per-process page tables) is still future work. The security posture remains honest boundaries: documented trust boundaries, minimized and documented unsafe code, panic on violated kernel invariants, and strict VM containment so the host machine is never at risk.',
+          'Not yet, and it does not claim to be. As of V0.3 the kernel runs concurrent Ring 3 processes, each in its own address space, with MMU-enforced kernel/user AND cross-process memory isolation, validated syscalls, and per-process crash containment — all machine-checked by automated QEMU tests. What is still missing for a real security story: preemptive scheduling, a capability model, sandboxing, signed/atomic updates, and much more. The posture remains honest boundaries: documented trust boundaries, minimized and documented unsafe code, panic on violated kernel invariants, and strict VM containment so the host machine is never at risk.',
         ],
       },
     ],

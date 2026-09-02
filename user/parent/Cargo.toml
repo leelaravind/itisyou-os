@@ -1,0 +1,17 @@
+cargo-features = ["per-package-target"]
+
+[package]
+name = "user-parent"
+version.workspace = true
+edition.workspace = true
+description = "Init-style parent: spawns two children, interleaves via yield, waits for both, round-trips an IPC message, then exits."
+forced-target = "x86_64-unknown-none"
+
+[dependencies]
+ulib = { path = "../ulib" }
+
+[[bin]]
+name = "user-parent"
+path = "src/main.rs"
+test = false
+bench = false

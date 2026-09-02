@@ -16,6 +16,26 @@ use x86_64::{PhysAddr, VirtAddr};
 
 static MAPPER: Mutex<Option<OffsetPageTable<'static>>> = Mutex::new(None);
 
+/// Physical-memory mapping offset (set once at init; read-only afterwards).
+static PHYS_OFFSET: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+/// The bootloader-provided ("kernel") L4 frame, active at boot.
+static BOOT_L4: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
+/// Offset at which all physical memory is mapped (valid after init).
+pub fn phys_offset() -> u64 {
+    PHYS_OFFSET.load(core::sync::atomic::Ordering::Relaxed)
+}
+
+/// Physical address of the boot (kernel) level-4 table.
+pub fn boot_l4_frame() -> u64 {
+    BOOT_L4.load(core::sync::atomic::Ordering::Relaxed)
+}
+
+/// Kernel-space alias for a physical address, via the full physical mapping.
+pub fn phys_to_virt(phys: u64) -> *mut u8 {
+    (phys_offset() + phys) as *mut u8
+}
+
 /// Mapping failure surfaced to callers.
 #[derive(Debug)]
 pub enum PagingError {
@@ -36,10 +56,49 @@ pub enum PagingError {
 pub unsafe fn init(physical_memory_offset: u64) {
     let offset = VirtAddr::new(physical_memory_offset);
     let (l4_frame, _flags) = Cr3::read();
+    PHYS_OFFSET.store(
+        physical_memory_offset,
+        core::sync::atomic::Ordering::Relaxed,
+    );
+    BOOT_L4.store(
+        l4_frame.start_address().as_u64(),
+        core::sync::atomic::Ordering::Relaxed,
+    );
     let l4_virt = offset + l4_frame.start_address().as_u64();
     let l4_table: &'static mut PageTable = unsafe { &mut *l4_virt.as_mut_ptr::<PageTable>() };
+    // The BIOS boot path identity-maps handoff structures (boot GDT,
+    // context-switch page) inside L4 entry 0. They are needed only until
+    // the kernel installs its own GDT/IDT; `release_boot_identity_mappings`
+    // unlinks them at B080 so the user window becomes process-exclusive.
+    crate::serial_println!(
+        "[ITISYOU:INFO] boot_l4_entry0={}",
+        if l4_table[0].is_unused() {
+            "free"
+        } else {
+            "boot-identity-mapped"
+        }
+    );
     let mapper = unsafe { OffsetPageTable::new(l4_table, offset) };
     *MAPPER.lock() = Some(mapper);
+}
+
+/// Unlink the bootloader's identity mappings from L4 entry 0 (V0.3).
+///
+/// Must run AFTER the kernel's own GDT/IDT are loaded (the boot GDT lives in
+/// those mappings) and BEFORE the first process is created. The bootloader
+/// table frames stay reserved in the memory map — unlink, never free.
+pub fn release_boot_identity_mappings() {
+    let l4_table = unsafe { &mut *((phys_offset() + boot_l4_frame()) as *mut PageTable) };
+    let was_used = !l4_table[0].is_unused();
+    l4_table[0].set_unused();
+    // Full TLB flush: reload CR3.
+    let (frame, flags) = Cr3::read();
+    // SAFETY: rewriting the identical root; only stale low-address TLB
+    // entries are discarded.
+    unsafe { Cr3::write(frame, flags) };
+    crate::serial_println!(
+        "[ITISYOU:INFO] boot_identity_mappings released={was_used} user_window=exclusive"
+    );
 }
 
 /// Map `page` to `frame` with `flags` (PRESENT is implied).
@@ -145,6 +204,42 @@ pub fn is_unmapped(addr: VirtAddr) -> bool {
     translate(addr).is_none()
 }
 
+/// Map a physical MMIO range into kernel virtual space, uncacheable, at a
+/// dedicated MMIO window base. Returns the kernel virtual address of `phys`.
+/// Used by device drivers (e.g. NVMe BAR0). Not for RAM.
+pub fn map_mmio(phys: u64, size: u64) -> Result<u64, PagingError> {
+    use core::sync::atomic::{AtomicU64, Ordering};
+    // Bump-allocated MMIO virtual window well clear of kernel/phys-map/user.
+    static NEXT_MMIO_VIRT: AtomicU64 = AtomicU64::new(0xFFFF_E000_0000_0000);
+
+    let page_off = phys & 0xFFF;
+    let phys_base = phys & !0xFFF;
+    let pages = (size + page_off).div_ceil(4096);
+    let span = pages * 4096;
+    let virt_base = NEXT_MMIO_VIRT.fetch_add(span, Ordering::SeqCst);
+
+    let flags = PageTableFlags::PRESENT
+        | PageTableFlags::WRITABLE
+        | PageTableFlags::NO_EXECUTE
+        | PageTableFlags::NO_CACHE;
+    let mut guard = MAPPER.lock();
+    let mapper = guard.as_mut().ok_or(PagingError::NotInitialized)?;
+    let mut frame_source = crate::memory::PmmFrameSource;
+    for i in 0..pages {
+        let page: Page<Size4KiB> = Page::containing_address(VirtAddr::new(virt_base + i * 4096));
+        let frame = PhysFrame::containing_address(PhysAddr::new(phys_base + i * 4096));
+        // SAFETY: mapping device MMIO (not RAM) into a fresh kernel window;
+        // uncacheable so writes reach the device.
+        unsafe {
+            mapper
+                .map_to(page, frame, flags, &mut frame_source)
+                .map_err(PagingError::MapTo)?
+                .flush();
+        }
+    }
+    Ok(virt_base + page_off)
+}
+
 /// Unmap `page`, returning the frame that backed it. The TLB entry is
 /// flushed before returning.
 pub fn unmap_page(page: Page<Size4KiB>) -> Result<PhysFrame<Size4KiB>, PagingError> {
@@ -155,7 +250,23 @@ pub fn unmap_page(page: Page<Size4KiB>) -> Result<PhysFrame<Size4KiB>, PagingErr
     Ok(frame)
 }
 
-/// Translate a virtual address to its physical mapping, if mapped.
+/// Translate a virtual address through the CURRENTLY ACTIVE page tables
+/// (CR3) — the correct view for validating a running process's pointers.
+pub fn translate_active(addr: VirtAddr) -> Option<PhysAddr> {
+    let (l4_frame, _) = Cr3::read();
+    let l4_virt = phys_offset() + l4_frame.start_address().as_u64();
+    // SAFETY: read-only translation walk over the active root; single CPU
+    // and the owning process is suspended while the kernel runs.
+    let table = unsafe { &mut *(l4_virt as *mut PageTable) };
+    let mapper = unsafe { OffsetPageTable::new(table, VirtAddr::new(phys_offset())) };
+    match mapper.translate(addr) {
+        TranslateResult::Mapped { frame, offset, .. } => Some(frame.start_address() + offset),
+        _ => None,
+    }
+}
+
+/// Translate a virtual address to its physical mapping, if mapped
+/// (in the KERNEL/boot table — not process spaces).
 pub fn translate(addr: VirtAddr) -> Option<PhysAddr> {
     let guard = MAPPER.lock();
     let mapper = guard.as_ref()?;

@@ -10,19 +10,21 @@ virtual memory, heap, exceptions/interrupts/timer, kernel tasks + scheduler,
 VFS/initramfs, interactive shell, automated boot/regression testing,
 reproducible builds.
 
-## V0.2 — Userspace Foundation *(current)*
+## V0.2 — Userspace Foundation *(complete — tag v0.2.0)*
 
-Achieved so far: Ring 3 execution of real ELF64 programs, strict loader
-(W^X, window, overlap policy), syscall ABI (write/exit/yield/getpid),
-kernel/user MMU isolation, crash containment, clean process teardown.
-Remaining in this milestone: per-process page tables (concurrent
-processes), fork/exec-style process creation, IPC foundations, richer
-syscalls.
+Ring 3 execution of real ELF64 programs, strict loader (W^X, window, overlap
+policy), syscall ABI (write/exit/yield/getpid), kernel/user MMU isolation,
+crash containment, clean process teardown.
 
-## V0.3 — Storage
+## V0.3 — Process Isolation + Storage Foundation *(current)*
 
-PCI enumeration maturity, block device abstraction, AHCI/NVMe research,
-persistent filesystem strategy, crash-consistency experiments.
+Achieved: per-process page tables with verified cross-process isolation;
+concurrent Ring 3 processes (cooperative scheduler, spawn/wait/exit);
+expanded syscalls with strict user-buffer validation; a minimal IPC channel
+primitive; PCI enumeration; a block-device abstraction; and a read-only NVMe
+driver reading real blocks from an emulated controller. Remaining for a full
+storage milestone: NVMe writes, AHCI, a persistent filesystem, and
+crash-consistency work; and preemptive user scheduling.
 
 ## V0.4 — Networking
 

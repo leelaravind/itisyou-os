@@ -33,20 +33,25 @@ if (Test-Path 'target/images/itisyou-kernel-uefi.img') {
 }
 
 Write-Output '=== QEMU selftest (BIOS) ==='
-& $runner @('--image', 'target/images/itisyou-kernel-selftest-bios.img',
+& $runner @('--image', 'target/images/itisyou-kernel-selftest-bios.img', '--nvme',
     '--expect', 'B010', '--expect', 'B020', '--expect', 'B030', '--expect', 'B140',
-    '--expect-selftest',
+    '--expect', 'B160', '--expect-selftest',
     '--require', 'RING3-HELLO', '--require', 'RING3-DONE',
     '--require', 'user_exit pid=', '--require', 'contained=true',
-    '--timeout-secs', '120', '--label', 'selftest-bios')
+    '--require', 'RING3-PARENT-DONE', '--require', 'RING3-PARENT-WAIT-OK',
+    '--require', 'RING3-PARENT-IPC-OK', '--require', 'RING3-CHILD-EXIT',
+    '--require', 'NVMe controller', '--require', 'nvme_ready blocks=',
+    '--timeout-secs', '180', '--label', 'selftest-bios')
 
 Write-Output '=== QEMU selftest (UEFI) ==='
 if (Test-Path 'target/images/itisyou-kernel-selftest-uefi.img') {
-    & $runner @('--image', 'target/images/itisyou-kernel-selftest-uefi.img', '--uefi',
+    & $runner @('--image', 'target/images/itisyou-kernel-selftest-uefi.img', '--uefi', '--nvme',
         '--expect', 'B010', '--expect', 'B020', '--expect', 'B030', '--expect', 'B140',
-        '--expect-selftest',
+        '--expect', 'B160', '--expect-selftest',
         '--require', 'RING3-HELLO', '--require', 'RING3-DONE',
-        '--timeout-secs', '120', '--label', 'selftest-uefi')
+        '--require', 'RING3-PARENT-DONE', '--require', 'RING3-PARENT-IPC-OK',
+        '--require', 'nvme_ready blocks=',
+        '--timeout-secs', '180', '--label', 'selftest-uefi')
 } else {
     Write-Output 'SKIPPED: UEFI image absent - bootloader UEFI stage blocked upstream (rust-osdev/bootloader#579)'
 }
@@ -56,6 +61,7 @@ Write-Output '=== QEMU shell interaction (BIOS) ==='
     '--expect', 'B040', '--expect', 'B050', '--expect', 'B060', '--expect', 'B070',
     '--expect', 'B080', '--expect', 'B090', '--expect', 'B100', '--expect', 'B110',
     '--expect', 'B120', '--expect', 'B130', '--expect', 'B140', '--expect', 'B150',
+    '--expect', 'B160',
     '--send', 'help', '--send', 'version', '--send', 'system', '--send', 'memory',
     '--send', 'tasks', '--send', 'uptime', '--send', 'ls /', '--send', 'cat /etc/version',
     '--send', 'echo shell-echo-check', '--send', 'definitely-not-a-command',

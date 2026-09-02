@@ -94,8 +94,8 @@ const cellStatus = (id: string) => status.modules.find((m) => m.id === id)?.stat
         <h2 id="layer-kernel" class="font-sans text-headline-md text-ink mb-2">Kernel Space</h2>
         <p class="text-meta-bright text-sm mb-4">
           All Rust <span class="font-mono text-mono-data">no_std</span> code in <span class="font-mono text-mono-data">kernel/</span> —
-          the trusted computing base. The kernel runs ring 0 inside QEMU; as of V0.2 it hosts one Ring 3 process
-          at a time behind MMU-enforced separation.
+          the trusted computing base. The kernel runs ring 0 inside QEMU; as of V0.3 it runs concurrent Ring 3
+          processes, each in its own address space behind MMU-enforced separation.
         </p>
         <div class="space-y-3">
           {
