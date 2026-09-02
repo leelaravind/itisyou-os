@@ -39,6 +39,8 @@ pub enum Stage {
     B140UserspaceReady,
     /// V0.1 boot acceptance reached.
     B150Acceptance,
+    /// Device layer ready — PCI enumerated, storage discovered (V0.3).
+    B160StorageReady,
 }
 
 impl Stage {
@@ -61,6 +63,7 @@ impl Stage {
             Stage::B130ShellRunning => "B130",
             Stage::B140UserspaceReady => "B140",
             Stage::B150Acceptance => "B150",
+            Stage::B160StorageReady => "B160",
         }
     }
 
@@ -83,6 +86,7 @@ impl Stage {
             Stage::B130ShellRunning => "shell/init task running",
             Stage::B140UserspaceReady => "userspace transition ready",
             Stage::B150Acceptance => "V0.1 boot acceptance reached",
+            Stage::B160StorageReady => "device layer / storage ready",
         }
     }
 
@@ -93,7 +97,7 @@ impl Stage {
 }
 
 /// Every stage in canonical order.
-pub const ALL_STAGES: [Stage; 16] = [
+pub const ALL_STAGES: [Stage; 17] = [
     Stage::B000FirmwareHandoff,
     Stage::B010KernelEntry,
     Stage::B020SerialReady,
@@ -110,6 +114,7 @@ pub const ALL_STAGES: [Stage; 16] = [
     Stage::B130ShellRunning,
     Stage::B140UserspaceReady,
     Stage::B150Acceptance,
+    Stage::B160StorageReady,
 ];
 
 #[cfg(test)]

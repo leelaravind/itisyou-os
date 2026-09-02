@@ -9,13 +9,25 @@ verified).
   ticks but does not preempt yet. Timer-driven preemption is future work.
 - Input is **polled serial only** — the verified automation path. PS/2
   keyboard support is tracked separately (`input-keyboard: planned`).
-- Userspace (V0.2): **one user process at a time** in a shared address
-  space — isolation user↔kernel is MMU-enforced (U/S bit, verified), but
-  per-process page tables (isolation *between* user processes) are future
-  work and required before concurrent processes. No fork/exec/IPC. Syscalls
-  run with interrupts masked; SMEP/SMAP are not enabled (absent on the QEMU
-  CPU model); the user stack has an unmapped hole below it rather than a
-  hardened guard region.
+- Userspace (V0.3): **concurrent** Ring 3 processes, each in its own address
+  space (per-process page tables, cross-process isolation MMU-verified).
+  Scheduling is **cooperative** — the PIT ticks at CPL=3 but does not preempt
+  user code, so a process that never yields monopolizes the CPU. Preemptive
+  user scheduling (full trap-frame save/restore in the timer ISR) is V0.4.
+- Process model: spawn/wait/exit and a single blocking waiter per child;
+  no fork/exec-with-args, no process groups, no signals yet.
+- IPC: bounded kernel message channels (4 channels, ≤256 B, ≤8 queued),
+  non-blocking, addressed by integer id (a future capability handle). No
+  shared-memory or synchronous-rendezvous IPC yet.
+- Storage: **read-only** block I/O. NVMe driver is polled (no MSI-X), single
+  I/O queue, single namespace, read path only — no writes, no persistent
+  filesystem. AHCI/virtio-blk not implemented. The block layer reads 512 B
+  logical blocks. QEMU attaches only a generated disposable disk; no host
+  disk is ever touched.
+- Syscalls run with interrupts masked; SMEP/SMAP are not enabled (absent on
+  the QEMU CPU model); the user stack has an unmapped hole below it rather
+  than a hardened guard region; CR3 switches do a full TLB flush (no
+  PCID/ASID tagging).
 - The filesystem is a read-only in-memory initramfs; no persistent storage,
   no writes.
 - No networking, no graphics output beyond the bootloader-provided

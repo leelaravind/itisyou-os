@@ -1,6 +1,7 @@
 //! Memory management: boot-map validation (B040), physical frame allocator
 //! (B050), paging abstraction (B060), kernel heap (B070).
 
+pub mod aspace;
 pub mod heap;
 pub mod paging;
 

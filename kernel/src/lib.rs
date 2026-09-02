@@ -12,10 +12,13 @@ extern crate alloc;
 
 pub mod bootstage;
 pub mod cpu;
+pub mod device;
 pub mod fs;
 pub mod gdt;
 pub mod interrupts;
+pub mod ipc;
 pub mod memory;
+pub mod proc;
 pub mod qemu;
 pub mod selftest;
 pub mod serial;
@@ -121,6 +124,9 @@ pub fn init_subsystems(boot_info: &'static mut BootInfo) {
 
     // B080: GDT/TSS/IDT + exception handlers.
     interrupts::init_descriptors();
+    // With our own descriptors live, the bootloader's low identity mappings
+    // are dead — unlink them so L4 entry 0 belongs to processes alone.
+    memory::paging::release_boot_identity_mappings();
     bootstage::emit(Stage::B080DescriptorsReady);
 
     // B090: PIC remap + PIT timer + interrupts on.
@@ -142,7 +148,23 @@ pub fn init_subsystems(boot_info: &'static mut BootInfo) {
     // B140: Ring 3 transition machinery (user GDT segments were installed
     // at B080; this arms the syscall MSRs and kernel syscall stack).
     syscall::init();
+    proc::init();
+    ipc::init();
     bootstage::emit(Stage::B140UserspaceReady);
+
+    // B160: device layer — PCI enumeration + storage discovery (V0.3).
+    let pci_devices = device::pci::scan_and_report();
+    if let Some(storage) = device::pci::find_storage(&pci_devices) {
+        serial_println!(
+            "[ITISYOU:INFO] storage_controller found bus={} slot={} class={:#04x} subclass={:#04x} name=\"{}\"",
+            storage.bus,
+            storage.slot,
+            storage.id.class,
+            storage.id.subclass,
+            storage.id.class_name(),
+        );
+    }
+    bootstage::emit(Stage::B160StorageReady);
 }
 
 /// Kernel panic handler: emit a machine-readable marker plus diagnostics on a

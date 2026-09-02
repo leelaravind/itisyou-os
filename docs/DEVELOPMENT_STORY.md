@@ -171,3 +171,46 @@ corrupted fixtures (/bin/broken, /bin/wx-test).
   round-tripping) → `user_exit code=0` → `#GP cs_rpl=3` on a Ring 3 `hlt`
   (hardware CPL evidence) → `#PF … USER_MODE` on a kernel-half read (MMU
   isolation evidence) → kernel alive → clean reload after teardown.
+
+### 08:40 — V0.3 Process Isolation + Storage Foundation
+
+Baseline preserved as tag `v0.2.0`. Implemented all five priorities in
+dependency order (ADR-0005/0006/0007/0008):
+
+1. **Per-process page tables**: `AddressSpace` — private L4, kernel entries
+   1..511 shared from the boot table (supervisor-only), user window in L4
+   entry 0 exclusive. Loading through the physical alias (no CR3 switch);
+   recursive leak-free teardown.
+2. **Concurrent processes**: unified `sysretq` enter/resume from a
+   `#[repr(C)]` resumable `UserContext`; a `proc.rs` run-loop round-robins
+   processes; `yield`/`wait`/`Blocked` outcomes; spawn/wait/exit.
+3. **Syscall expansion**: spawn, wait, msg_send, msg_recv; `validate_user_
+   range`/`copy_from_user`/`copy_to_user` against the active CR3.
+4. **IPC**: bounded kernel message channels.
+5. **Storage**: PCI enumeration; `BlockDevice` trait + RamDisk; a polled
+   read-only **NVMe** driver.
+
+Failures found and root-caused:
+- **Triple fault at B040** on the isolation assert: the BIOS boot path
+  identity-maps handoff structures in L4 entry 0, so the "user window is
+  free" assumption was false. Fix: `release_boot_identity_mappings` unlinks
+  entry 0 at B080 after our GDT/IDT are live (the boot GDT lived in those
+  mappings, so timing matters).
+- **init printed nothing under per-process CR3**: `sys_write` validated
+  pointers against the *kernel* table, which no longer maps the user window.
+  The selftests passed on return values but the harness caught the missing
+  RING3 output — added `translate_active` (walks the live CR3). Exactly the
+  kind of silent-success bug the output-assertion discipline exists to catch.
+- **`&T as &mut T` in the NVMe read path** was real UB (clippy caught it):
+  reworked queue cursors into an `UnsafeCell` with a documented single-CPU
+  `Sync` contract.
+- **NVMe init hung 150 s**: `find_storage` returned the legacy IDE
+  controller (also class 0x01) instead of NVMe (subclass 0x08); init polled
+  the wrong BAR forever. Fixed device selection + tightened spin bounds.
+
+Result: **selftest pass=50 fail=0 on BIOS and UEFI**. Evidence chain adds:
+per-process `l4=…` on entry; `aspace_*` isolation + leak proofs; parent
+spawns children pid 10/11 that interleave (both print before either exits),
+`RING3-PARENT-WAIT-OK` (both children exit 7), `RING3-PARENT-IPC-OK`;
+`pci_devices count=7` incl. the NVMe controller; `nvme_ready blocks=2048`;
+`nvme_disk_magic` (LBA 0 read back as `ITISYOU-OS-DISK1`). 55 host tests.

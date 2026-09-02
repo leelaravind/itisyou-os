@@ -48,6 +48,80 @@ pub fn run_all(suite: &mut Suite) {
     scheduler_tests(suite);
     vfs_tests(suite);
     userspace_tests(suite);
+    storage_tests(suite);
+}
+
+/// V0.3: PCI enumeration, block abstraction (RAM disk), NVMe read-only.
+fn storage_tests(suite: &mut Suite) {
+    use crate::device::block::{BlockDevice, BlockError, RamDisk, BLOCK_SIZE};
+    use crate::device::{nvme::Nvme, pci};
+
+    // Block abstraction on a deterministic RAM disk: read + content + errors.
+    let disk = RamDisk::patterned(8);
+    let mut blk = [0u8; BLOCK_SIZE];
+    let read_ok = disk.read_block(3, &mut blk).is_ok() && blk[0] == (3u8 ^ 0x5A);
+    suite.check("blk_ramdisk_read", read_ok);
+    suite.check(
+        "blk_out_of_range_rejected",
+        matches!(
+            disk.read_block(99, &mut blk),
+            Err(BlockError::OutOfRange { .. })
+        ),
+    );
+    let mut small = [0u8; 8];
+    suite.check(
+        "blk_bad_buffer_rejected",
+        matches!(
+            disk.read_block(0, &mut small),
+            Err(BlockError::BadBufferLen { .. })
+        ),
+    );
+
+    // PCI enumeration must find the host bridge and the NVMe controller
+    // QEMU attaches (class 0x01 subclass 0x08).
+    let devices = pci::enumerate(0);
+    suite.check("pci_enumerated", devices.len() >= 2);
+    let nvme_dev = pci::find_nvme(&devices);
+    suite.check("pci_found_nvme", nvme_dev.is_some());
+
+    // NVMe: bring up the controller, read LBA 0, assert the harness magic.
+    match nvme_dev {
+        Some(dev) => match Nvme::init(&dev) {
+            Ok(nvme) => {
+                crate::serial_println!(
+                    "[ITISYOU:INFO] nvme_ready blocks={} lba_bytes={}",
+                    nvme.block_count(),
+                    BLOCK_SIZE,
+                );
+                suite.check("nvme_init", nvme.block_count() > 0);
+                let mut sector = [0u8; BLOCK_SIZE];
+                let read = nvme.read_block(0, &mut sector);
+                suite.check("nvme_read_block0", read.is_ok());
+                suite.check("nvme_disk_magic", &sector[..16] == b"ITISYOU-OS-DISK1");
+                // Out-of-range LBA must be rejected before any I/O.
+                suite.check(
+                    "nvme_out_of_range_rejected",
+                    matches!(
+                        nvme.read_block(u64::MAX, &mut sector),
+                        Err(BlockError::OutOfRange { .. })
+                    ),
+                );
+            }
+            Err(e) => {
+                crate::serial_println!("[ITISYOU:INFO] nvme_init_failed err={e:?}");
+                suite.check("nvme_init", false);
+                suite.check("nvme_read_block0", false);
+                suite.check("nvme_disk_magic", false);
+                suite.check("nvme_out_of_range_rejected", false);
+            }
+        },
+        None => {
+            suite.check("nvme_init", false);
+            suite.check("nvme_read_block0", false);
+            suite.check("nvme_disk_magic", false);
+            suite.check("nvme_out_of_range_rejected", false);
+        }
+    }
 }
 
 /// V0.2: Ring 3 execution, syscalls, isolation, and rejection paths.
@@ -70,12 +144,48 @@ fn userspace_tests(suite: &mut Suite) {
         matches!(user::load("/bin/wx-test"), Err(LoadError::WxSegment { .. })),
     );
 
-    // init: full syscall ABI round-trip in Ring 3 ending in exit(0).
+    // V0.3: two loaded processes have structurally distinct address spaces —
+    // the same user vaddr maps to different physical frames, and the kernel
+    // (boot) table has no mapping there at all.
+    let free_before_spaces = memory::stats().map(|(f, _)| f).unwrap_or(0);
+    match (user::load("/bin/init"), user::load("/bin/init")) {
+        (Ok(a), Ok(b)) => {
+            let probe = 0x0020_0000; // both images link their code here
+            let pa = a.space.translate(probe);
+            let pb = b.space.translate(probe);
+            suite.check(
+                "aspace_distinct_frames",
+                pa.is_some() && pb.is_some() && pa != pb,
+            );
+            suite.check(
+                "aspace_kernel_table_untouched",
+                crate::memory::paging::translate(x86_64::VirtAddr::new(probe)).is_none(),
+            );
+            user::discard(a);
+            user::discard(b);
+        }
+        _ => {
+            suite.check("aspace_distinct_frames", false);
+            suite.check("aspace_kernel_table_untouched", false);
+        }
+    }
+    // Full teardown returns every frame (leaf + intermediate tables + L4).
+    let free_after_spaces = memory::stats().map(|(f, _)| f).unwrap_or(0);
+    suite.check(
+        "aspace_teardown_no_leaks",
+        free_after_spaces == free_before_spaces,
+    );
+
+    // init: full syscall ABI round-trip in Ring 3 ending in exit(0), with
+    // frame-exact leak accounting across the whole load/run/teardown cycle.
     // (Its RING3-* output lines are asserted by the harness.)
+    let free_before_run = memory::stats().map(|(f, _)| f).unwrap_or(0);
     suite.check(
         "usr_init_clean_exit",
         matches!(user::run_path("/bin/init"), Ok(UserExit::Exit(0))),
     );
+    let free_after_run = memory::stats().map(|(f, _)| f).unwrap_or(0);
+    suite.check("usr_run_no_frame_leaks", free_after_run == free_before_run);
 
     // Privileged instruction at CPL=3 → #GP contained, process terminated.
     suite.check(
@@ -96,6 +206,59 @@ fn userspace_tests(suite: &mut Suite) {
                 addr: Some(0xFFFF_8000_DEAD_0000)
             })
         ),
+    );
+
+    // V0.3 cross-process memory isolation (physical proof): write a sentinel
+    // into process A's frame for a user vaddr, then confirm process B's frame
+    // for the SAME vaddr does not contain it (independent physical memory).
+    match (user::load("/bin/init"), user::load("/bin/init")) {
+        (Ok(a), Ok(b)) => {
+            let probe = crate::user::USER_STACK_TOP - 0x1000; // a mapped stack page
+            let (pa, pb) = (a.space.translate(probe), b.space.translate(probe));
+            let isolated = match (pa, pb) {
+                (Some(pa), Some(pb)) => {
+                    // SAFETY: both are frames owned by the respective loaded
+                    // processes, aliased through the physical-memory map.
+                    unsafe {
+                        let va = crate::memory::paging::phys_to_virt(pa) as *mut u64;
+                        let vb = crate::memory::paging::phys_to_virt(pb) as *const u64;
+                        va.write_volatile(0xA11C_E5EA_u64);
+                        // B's same-vaddr frame is a different physical frame
+                        // and must be unaffected (still zero).
+                        pa != pb && vb.read_volatile() == 0
+                    }
+                }
+                _ => false,
+            };
+            suite.check("aspace_cross_process_isolation", isolated);
+            user::discard(a);
+            user::discard(b);
+        }
+        _ => suite.check("aspace_cross_process_isolation", false),
+    }
+
+    // V0.3 concurrent processes: parent spawns two children, interleaves via
+    // yield, waits for both (7,7), round-trips IPC, exits 0. All RING3-*
+    // lines are harness-asserted; here we assert the terminal state.
+    let free_before_conc = memory::stats().map(|(f, _)| f).unwrap_or(0);
+    match user::load("/bin/parent") {
+        Ok(parent) => {
+            let ppid = crate::proc::admit(parent);
+            let completed = crate::proc::run_until_idle();
+            let ok = completed >= 3
+                && matches!(
+                    crate::proc::state_of(ppid),
+                    Some(crate::proc::ProcState::Exited(0)) | None
+                );
+            suite.check("proc_concurrent_spawn_wait_ipc", ok);
+        }
+        Err(_) => suite.check("proc_concurrent_spawn_wait_ipc", false),
+    }
+    // Whole concurrent run (parent + 2 children) leaked no frames.
+    let free_after_conc = memory::stats().map(|(f, _)| f).unwrap_or(0);
+    suite.check(
+        "proc_concurrent_no_leaks",
+        free_after_conc == free_before_conc,
     );
 
     // The kernel survived two user crashes: allocator + timer still work.

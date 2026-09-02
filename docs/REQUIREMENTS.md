@@ -50,7 +50,29 @@ labels, commit SHAs, CI run links, or file paths.
 | USR-007 | Invalid syscall + invalid pointer handling | IMPLEMENTED+VERIFIED | ERR_NOSYS for nr=999; ERR_FAULT for kernel-half and unmapped-in-window pointers — validated before any dereference (RING3-EINVAL/BADPTR/UNMAPPED-OK) |
 | USR-008 | Scheduler integration (yield from Ring 3) | IMPLEMENTED+VERIFIED | yield syscall parks in the kernel scheduler and returns to Ring 3 (RING3-YIELD-OK) |
 | USR-009 | Userspace stdout path | IMPLEMENTED+VERIFIED | write(fd=1) → serial with UTF-8 sanitization; all RING3-* lines are user-produced output |
-| USR-010 | Per-process page tables / concurrent user processes | PLANNED (V0.2 follow-up) | single-address-space model documented in ADR-0004 + KNOWN_LIMITATIONS; required before concurrent processes |
+| USR-010 | Per-process page tables / concurrent user processes | IMPLEMENTED+VERIFIED | (V0.3) see PROC/ASPACE rows below |
+
+## V0.3 — Process Isolation + Storage Foundation
+
+| ID | Requirement | Status | Evidence |
+|---|---|---|---|
+| ASPACE-001 | Per-process page tables (dedicated address space) | IMPLEMENTED+VERIFIED | ADR-0005; `aspace_distinct_frames` — same user vaddr → different physical frames in two processes |
+| ASPACE-002 | Shared/protected kernel mappings | IMPLEMENTED+VERIFIED | L4 entries 1..512 shared from boot table (supervisor-only); `aspace_kernel_table_untouched` (user vaddr unmapped in kernel table) |
+| ASPACE-003 | Safe CR3 / address-space switching | IMPLEMENTED+VERIFIED | `activate_l4` around each quantum; boot L4 restored on return; concurrent run of 3 processes stable |
+| ASPACE-004 | Complete teardown without leaks | IMPLEMENTED+VERIFIED | `aspace_teardown_no_leaks`, `usr_run_no_frame_leaks`, `proc_concurrent_no_leaks` — frame-exact accounting across load/run/teardown |
+| ASPACE-005 | Cross-process memory isolation | IMPLEMENTED+VERIFIED | `aspace_cross_process_isolation` — sentinel written to process A's frame is absent from process B's same-vaddr frame |
+| PROC-001 | Concurrent Ring 3 processes + scheduler | IMPLEMENTED+VERIFIED | ADR-0006; `proc_concurrent_spawn_wait_ipc` — parent + 2 children interleave (both print before either exits), run-loop round-robin |
+| PROC-002 | PID management + process states/lifecycle | IMPLEMENTED+VERIFIED | monotonic pids; Runnable/Blocked/Exited/Faulted; `user_exit`/`user_fault` markers with pid |
+| PROC-003 | spawn / wait / exit semantics | IMPLEMENTED+VERIFIED | spawn(path)→child pid; wait blocks until zombie, returns status (RING3-PARENT-WAIT-OK: both children 7); exit contained |
+| PROC-004 | User-process fault containment (concurrent) | IMPLEMENTED+VERIFIED | `usr_gp_contained`, `usr_pf_contained`, `usr_kernel_alive_after_faults` still green with per-process spaces |
+| PROC-005 | Timer-driven preemption | NOT APPLICABLE (deferred) | cooperative scheduling this milestone; preemptive user scheduling needs full ISR trap-frame save/restore — V0.4 (KNOWN_LIMITATIONS, ADR-0006) |
+| SYS-001 | syscall argument + user-buffer validation | IMPLEMENTED+VERIFIED | `validate_user_range`/`copy_from_user`/`copy_to_user` (active-CR3, window-bounded, per-page); RING3-BADPTR/UNMAPPED-OK; spawn path bounded to 128 B |
+| SYS-002 | Invalid/hostile syscall handling | IMPLEMENTED+VERIFIED | ERR_NOSYS (RING3-EINVAL-OK), ERR_FAULT, ERR_BADF, ERR_NOENT, ERR_2BIG, ERR_AGAIN, ERR_INVAL |
+| IPC-001 | Minimal IPC primitive | IMPLEMENTED+VERIFIED | ADR-0007; bounded kernel channels; RING3-PARENT-IPC-OK (send/recv round-trip + ERR_AGAIN on empty) |
+| PCI-001 | PCI enumeration hardening | IMPLEMENTED+VERIFIED | `device::pci` + host-tested `kernel_core::pci` (4 tests); `pci_enumerated` (7 devices), `pci_found_nvme` |
+| BLK-001 | Block-device abstraction + error handling | IMPLEMENTED+VERIFIED | `BlockDevice` trait + RamDisk; `blk_ramdisk_read`, `blk_out_of_range_rejected`, `blk_bad_buffer_rejected` |
+| NVME-001 | Read-only NVMe driver (real block I/O) | IMPLEMENTED+VERIFIED | ADR-0008; `nvme_init` (2048 blocks identified), `nvme_read_block0`, `nvme_disk_magic` (LBA 0 magic read back), `nvme_out_of_range_rejected` |
+| STORE-001 | No physical-disk risk | IMPLEMENTED+VERIFIED | QEMU attaches only a generated disposable raw disk (runner `--nvme`); no passthrough anywhere |
 
 ## Testing & verification
 

@@ -10,6 +10,7 @@ pub mod elf;
 pub mod marker;
 pub mod memmap;
 pub mod path;
+pub mod pci;
 pub mod shellparse;
 pub mod stage;
 pub mod tar;
