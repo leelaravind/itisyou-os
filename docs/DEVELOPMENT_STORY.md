@@ -214,3 +214,40 @@ spawns children pid 10/11 that interleave (both print before either exits),
 `RING3-PARENT-WAIT-OK` (both children exit 7), `RING3-PARENT-IPC-OK`;
 `pci_devices count=7` incl. the NVMe controller; `nvme_ready blocks=2048`;
 `nvme_disk_magic` (LBA 0 read back as `ITISYOU-OS-DISK1`). 55 host tests.
+
+### 09:30 — V0.4 Preemptive Multitasking + Persistent Storage
+
+Baseline preserved as tag `v0.3.0`. Two sub-milestones (ADR-0009).
+
+**Preemption** (committed cf220dc): expanded `UserContext` to a full trap
+frame and switched Ring 3 resume from sysretq to iretq (preemption interrupts
+user code at any instruction, so all GPRs must be saved/restored and sysretq
+clobbers rcx/r11). A naked timer ISR saves all GPRs; when a Ring 3 process's
+2-tick quantum expires it saves the full trap frame and long-jumps to the
+run-loop (`UserExit::Preempted`). Adversarial userspace: spin-finite (a
+no-syscall compute loop verifying its own sum + stack sentinel) and
+spin-forever (infinite loop). Verified pass=56/0: two non-yielding CPU-bound
+processes both finish correctly (registers + address spaces preserved); an
+infinite spinner cannot monopolize (a co-scheduled finite process still
+completes, spinner still runnable, then reaped); cooperative yield/wait/IPC
+coexist; no leaks/lost processes.
+
+**Persistent storage**: NVMe gained write + flush; ITFS (ADR-0009) is a
+minimal filesystem with double-buffered CRC-committed superblocks. Verified
+pass=63/0: NVMe write→flush→read round-trip; ITFS format/create/read/list;
+strict metadata validation (8 host tests + both-superblocks-corrupt reject);
+crash consistency (corrupt the newest superblock → mount recovers the older
+consistent slot).
+
+- Failure (debugged at length): the dedicated `itisyou-fs-persist` binary's
+  **BIOS** disk image produced ZERO serial output (not even bootloader
+  lines), while structurally-identical binaries (panictest) boot fine. Its
+  ELF is valid (same size/segment layout as the booting selftest) and its
+  **UEFI** image boots correctly (panic captured). Root cause is a bootloader
+  BIOS-stage quirk specific to that binary, not yet isolated. Resolution: run
+  the reboot-persistence test on UEFI (a fully verified firmware path);
+  documented in KNOWN_LIMITATIONS as a V0.5 follow-up.
+- **Reboot persistence proven**: two separate QEMU guests share one
+  disposable disk — boot 1 formats ITFS + writes `/hello` + flush
+  (`FS-PERSIST-WROTE`), boot 2 (fresh guest) mounts + reads it back
+  (`FS-PERSIST-VERIFIED`). The hard V0.4 acceptance target is met.

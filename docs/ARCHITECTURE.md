@@ -32,9 +32,11 @@ process L4; kernel entries shared supervisor-only, user window in L4 entry 0
 — cross-process isolation is structural and MMU-verified). Entry/resume via
 `sysretq` from a `#[repr(C)]` resumable `UserContext`; syscalls via
 `syscall`/`sysret` on a masked dedicated kernel stack; faults at CPL=3 (#PF/
-#GP/#UD) terminate only the process via a saved abort context. A cooperative
-run-loop (`proc.rs`) round-robins processes; `yield`/`wait` save context and
-return to it. The strict ELF64 loader (`kernel-core::elf` + `user.rs`)
+#GP/#UD) terminate only the process via a saved abort context. A preemptive round-robin
+run-loop (`proc.rs`) rotates processes: the timer preempts a non-yielding
+Ring 3 process after a fixed quantum (V0.4), saving its full trap frame; a
+naked timer ISR saves/restores all GPRs and long-jumps to the run-loop on
+preemption. `yield`/`wait` also save context and return to it. The strict ELF64 loader (`kernel-core::elf` + `user.rs`)
 accepts only static ET_EXEC images. Syscalls: write, exit, yield, getpid,
 spawn, wait, msg_send, msg_recv — user buffers validated against the active
 CR3 before any access. `user/ulib` is the Ring 3 ABI side; evidence programs
@@ -43,11 +45,15 @@ CR3 before any access. `user/ulib` is the Ring 3 ABI side; evidence programs
 ## Devices & storage (V0.3, ADR-0008)
 
 PCI enumeration (`device::pci`, decoding in host-tested `kernel-core::pci`)
-discovers controllers; a read-only `BlockDevice` trait (`device::block`) is
-backed by a deterministic `RamDisk` and by a minimal polled **NVMe** driver
+discovers controllers; a `BlockDevice` trait (`device::block`,
+read+write+flush) is backed by a `RamDisk` and by a polled **NVMe** driver
 (`device::nvme`) that maps BAR0 as uncacheable MMIO, sets up admin + one I/O
-queue pair, identifies namespace 1, and reads blocks. All storage testing
-uses a generated disposable QEMU disk — never a host disk.
+queue pair, and does Identify / Read / Write / Flush. On top sits **ITFS**
+(`kernel-core::itfs` format logic + `kernel/src/fs_disk.rs` block I/O): a
+minimal persistent filesystem — a fixed directory of contiguous append-only
+files, committed through double-buffered CRC-protected superblocks for atomic
+metadata updates against a crash. Verified to survive a full QEMU reboot. All
+storage testing uses generated disposable QEMU disks — never a host disk.
 
 ## IPC (V0.3, ADR-0007)
 

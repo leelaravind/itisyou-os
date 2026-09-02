@@ -14,12 +14,22 @@
    `isa-debug-exit`. The harness requires: all expected stages, `fail=0`,
    `pass>0`, **and** QEMU exit code 33. A hang, panic, or missing summary
    can never pass.
-4. **Userspace suite** (V0.2, inside the selftest kernel + shell leg):
+4. **Userspace suite** (V0.2/V0.3, inside the selftest kernel + shell leg):
    Ring 3 execution of `/bin/init` with the full syscall ABI (its RING3-*
    output lines are `--require`d by the harness), malformed-ELF and W^X
-   rejection fixtures, #GP/#PF containment programs, kernel-alive and
-   reload-after-teardown checks.
-5. **Negative cases** (grown alongside subsystems): intentional panic,
+   rejection fixtures, #GP/#PF containment programs, per-process address-space
+   isolation + leak proofs, concurrent spawn/wait/IPC (parent + children).
+5. **Preemption suite** (V0.4): two non-yielding CPU-bound processes finish
+   with registers + address spaces intact; an infinite spinner cannot
+   monopolize (co-scheduled finite process still completes); cooperative
+   scheduling coexists; no frame leaks / lost processes.
+6. **Storage/filesystem suite** (V0.3/V0.4): PCI enumeration, RAM-disk and
+   NVMe block I/O, NVMe write→flush→read round-trip, ITFS format/create/
+   read/list, strict metadata validation, crash-consistency (torn
+   superblock recovery), and a **two-boot reboot-persistence** test (UEFI)
+   proving a written file survives a full QEMU reboot on the same disposable
+   disk.
+7. **Negative cases** (grown alongside subsystems): intentional panic,
    allocator exhaustion, malformed inputs, timeout classification.
 
 ## Failure classification (tools/qemu-runner)

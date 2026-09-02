@@ -7,6 +7,7 @@
 
 pub mod bitmap;
 pub mod elf;
+pub mod itfs;
 pub mod marker;
 pub mod memmap;
 pub mod path;

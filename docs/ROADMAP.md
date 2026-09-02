@@ -16,15 +16,21 @@ Ring 3 execution of real ELF64 programs, strict loader (W^X, window, overlap
 policy), syscall ABI (write/exit/yield/getpid), kernel/user MMU isolation,
 crash containment, clean process teardown.
 
-## V0.3 — Process Isolation + Storage Foundation *(current)*
+## V0.3 — Process Isolation + Storage Foundation *(complete — tag v0.3.0)*
 
-Achieved: per-process page tables with verified cross-process isolation;
-concurrent Ring 3 processes (cooperative scheduler, spawn/wait/exit);
-expanded syscalls with strict user-buffer validation; a minimal IPC channel
-primitive; PCI enumeration; a block-device abstraction; and a read-only NVMe
-driver reading real blocks from an emulated controller. Remaining for a full
-storage milestone: NVMe writes, AHCI, a persistent filesystem, and
-crash-consistency work; and preemptive user scheduling.
+Per-process page tables with verified cross-process isolation; concurrent
+Ring 3 processes (cooperative), spawn/wait/exit; strict user-buffer
+validation; a minimal IPC channel; PCI enumeration; a block-device
+abstraction; a read-only NVMe driver.
+
+## V0.4 — Preemptive Multitasking + Persistent Storage *(current)*
+
+Achieved: timer-driven preemptive scheduling (non-yielding processes cannot
+monopolize; registers + address spaces preserved across preemption); NVMe
+write + flush; ITFS, a minimal persistent filesystem with double-buffered
+CRC-committed superblocks and verified reboot persistence. Remaining for a
+full storage milestone: a second block driver (AHCI/virtio-blk), richer
+file operations (update/delete/directories), and data-write journaling.
 
 ## V0.4 — Networking
 

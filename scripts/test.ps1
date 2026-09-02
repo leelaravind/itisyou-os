@@ -68,7 +68,7 @@ Write-Output '=== QEMU shell interaction (BIOS) ==='
     '--send', 'echo shell-echo-check', '--send', 'definitely-not-a-command',
     '--send', 'run /bin/init', '--send', 'run /bin/broken',
     '--send', 'panic-test', '--send', 'shutdown',
-    '--require', 'itisyou-os 0.3.0-dev',
+    '--require', 'itisyou-os 0.4.0-dev',
     '--require', 'task 0: kmain',
     '--require', 'RING3-DONE',
     '--require', 'run: /bin/init: Exit(0)',
@@ -87,6 +87,26 @@ Write-Output '=== QEMU intentional panic (BIOS) ==='
     '--expect', 'B010', '--expect', 'B020', '--expect-panic',
     '--require', 'intentional panic-test',
     '--timeout-secs', '60', '--label', 'panic-test-bios')
+
+Write-Output '=== QEMU filesystem reboot persistence (UEFI, two boots) ==='
+# Two separate QEMU guests share one disposable persistent disk: boot 1
+# formats ITFS + writes /hello, boot 2 (fresh guest) mounts + verifies it —
+# proving the write survived a full reboot through the real block layer.
+# (UEFI: the fs-persist binary's BIOS image does not boot — see
+# docs/DEVELOPMENT_STORY; UEFI is a fully verified firmware path.)
+$persistDisk = Join-Path $env:ITISYOU_SCRATCH 'itisyou-fs-persist-test.img'
+Remove-Item $persistDisk -ErrorAction SilentlyContinue
+& $runner @('--image', 'target/images/itisyou-fs-persist-uefi.img', '--uefi',
+    '--nvme-persist', $persistDisk,
+    '--expect', 'B010', '--expect', 'B160',
+    '--require', 'FS-PERSIST-WROTE',
+    '--timeout-secs', '90', '--label', 'fs-persist-write')
+& $runner @('--image', 'target/images/itisyou-fs-persist-uefi.img', '--uefi',
+    '--nvme-persist', $persistDisk,
+    '--expect', 'B010', '--expect', 'B160',
+    '--require', 'FS-PERSIST-VERIFIED',
+    '--timeout-secs', '90', '--label', 'fs-persist-verify')
+Remove-Item $persistDisk -ErrorAction SilentlyContinue
 
 if ($anyFailed) { Write-Output 'TEST: FAILED'; exit 1 }
 Write-Output 'TEST: OK'

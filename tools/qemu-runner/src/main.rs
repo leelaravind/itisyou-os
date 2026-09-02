@@ -79,6 +79,10 @@ struct Options {
     /// Attach an emulated NVMe controller backed by a generated raw disk
     /// whose first sector carries a known magic (for storage read tests).
     nvme: bool,
+    /// Attach an emulated NVMe controller backed by a PERSISTENT raw disk at
+    /// this path: created blank only if missing, never regenerated — so
+    /// writes survive across separate QEMU runs (reboot-persistence tests).
+    nvme_persist: Option<PathBuf>,
     timeout: Duration,
     label: String,
     artifacts: PathBuf,
@@ -101,6 +105,7 @@ fn parse_args() -> Result<Options, String> {
     let mut send = Vec::new();
     let mut require = Vec::new();
     let mut nvme = false;
+    let mut nvme_persist = None;
     let mut timeout = Duration::from_secs(60);
     let mut label = "run".to_string();
     let mut artifacts = PathBuf::from("artifacts/qemu");
@@ -127,6 +132,7 @@ fn parse_args() -> Result<Options, String> {
             "--send" => send.push(value("--send")?),
             "--require" => require.push(value("--require")?),
             "--nvme" => nvme = true,
+            "--nvme-persist" => nvme_persist = Some(PathBuf::from(value("--nvme-persist")?)),
             "--timeout-secs" => {
                 timeout = Duration::from_secs(
                     value("--timeout-secs")?
@@ -151,6 +157,7 @@ fn parse_args() -> Result<Options, String> {
         send,
         require,
         nvme,
+        nvme_persist,
         timeout,
         label,
         artifacts,
@@ -246,6 +253,24 @@ fn build_command(opts: &Options, serial_port: u16) -> Command {
             }
             Err(e) => eprintln!("qemu-runner: could not create NVMe disk: {e}"),
         }
+    }
+    if let Some(disk) = &opts.nvme_persist {
+        // Create a blank persistent disk only if it doesn't already exist,
+        // so writes from a previous run survive into this one.
+        if !disk.exists() {
+            if let Some(parent) = disk.parent() {
+                std::fs::create_dir_all(parent).ok();
+            }
+            if let Err(e) = std::fs::write(disk, vec![0u8; 1024 * 1024]) {
+                eprintln!("qemu-runner: could not create persistent NVMe disk: {e}");
+            }
+        }
+        cmd.arg("-drive")
+            .arg(format!(
+                "file={},if=none,format=raw,id=nvme0",
+                disk.display()
+            ))
+            .args(["-device", "nvme,serial=itisyoup,drive=nvme0"]);
     }
     if opts.uefi {
         let fw = opts

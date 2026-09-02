@@ -14,6 +14,7 @@ pub mod bootstage;
 pub mod cpu;
 pub mod device;
 pub mod fs;
+pub mod fs_disk;
 pub mod gdt;
 pub mod interrupts;
 pub mod ipc;
@@ -165,6 +166,60 @@ pub fn init_subsystems(boot_info: &'static mut BootInfo) {
         );
     }
     bootstage::emit(Stage::B160StorageReady);
+}
+
+/// Enumerate PCI, find the NVMe controller, and initialize it. Used by the
+/// filesystem-persistence boot binary.
+pub fn open_nvme() -> Option<device::nvme::Nvme> {
+    let devices = device::pci::enumerate(0);
+    let dev = device::pci::find_nvme(&devices)?;
+    device::nvme::Nvme::init(&dev).ok()
+}
+
+/// Filesystem-persistence boot logic (invoked by `itisyou-fs-persist`): if a
+/// valid ITFS with `name` already exists, verify its contents (post-reboot
+/// run); otherwise format and write it (first run). Never returns — exits
+/// QEMU with success/failure.
+pub fn run_fs_persist(name: &str, content: &[u8]) -> ! {
+    use fs_disk::FileSystem;
+    let Some(nvme) = open_nvme() else {
+        serial_println!("[ITISYOU:INFO] fs_persist nvme=absent");
+        qemu::exit(qemu::ExitCode::Failed);
+    };
+
+    // A valid ITFS with our file already present → verify (second boot).
+    if let Ok(fs) = FileSystem::mount(&nvme) {
+        if let Ok(data) = fs.read(name) {
+            if data == content {
+                serial_println!(
+                    "[ITISYOU:INFO] FS-PERSIST-VERIFIED file={name} bytes={}",
+                    data.len()
+                );
+                qemu::exit(qemu::ExitCode::Success);
+            }
+            serial_println!("[ITISYOU:INFO] FS-PERSIST-MISMATCH");
+            qemu::exit(qemu::ExitCode::Failed);
+        }
+    }
+
+    // No filesystem yet → format and write (first boot).
+    match (|| -> Result<(), fs_disk::Error> {
+        let mut fs = FileSystem::format(&nvme)?;
+        fs.create(name, content)?;
+        Ok(())
+    })() {
+        Ok(()) => {
+            serial_println!(
+                "[ITISYOU:INFO] FS-PERSIST-WROTE file={name} bytes={}",
+                content.len()
+            );
+            qemu::exit(qemu::ExitCode::Success);
+        }
+        Err(e) => {
+            serial_println!("[ITISYOU:INFO] FS-PERSIST-WRITE-FAILED err={e:?}");
+            qemu::exit(qemu::ExitCode::Failed);
+        }
+    }
 }
 
 /// Kernel panic handler: emit a machine-readable marker plus diagnostics on a

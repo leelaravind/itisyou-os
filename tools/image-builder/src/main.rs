@@ -11,10 +11,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const VARIANTS: [&str; 3] = [
+const VARIANTS: [&str; 4] = [
     "itisyou-kernel",
     "itisyou-kernel-selftest",
     "itisyou-kernel-panictest",
+    "itisyou-fs-persist",
 ];
 
 fn main() -> Result<()> {

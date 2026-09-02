@@ -23,7 +23,7 @@ const boundaries = [
     n: 3,
     name: 'Userspace boundary',
     now: true,
-    text: 'V0.3, verified: concurrent ring 3 processes, each in its own address space (per-process page tables — cross-process memory isolation is MMU-enforced and machine-checked). Syscall arguments validated against the active address space before any kernel dereference; no user mapping of kernel pages; faults contained to the faulting process.',
+    text: 'V0.4, verified: concurrent, preemptively-scheduled ring 3 processes, each in its own address space (per-process page tables — cross-process memory isolation is MMU-enforced and machine-checked). A non-yielding process cannot monopolize the CPU. Syscall arguments validated against the active address space before any kernel dereference; no user mapping of kernel pages; faults contained to the faulting process.',
   },
   { n: 4, name: 'Privileged system-service boundary', now: false, text: 'Future.' },
   { n: 5, name: 'Untrusted application boundary', now: false, text: 'Future.' },

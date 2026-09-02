@@ -104,7 +104,7 @@ jobs:
             --send help --send version --send memory --send tasks \
             --send "ls /" --send "cat /etc/version" \
             --send "run /bin/init" --send shutdown \
-            --require "itisyou-os 0.3.0-dev" \
+            --require "itisyou-os 0.4.0-dev" \
             --require "task 0: kmain" \
             --require "RING3-DONE" \
             --require "run: /bin/init: Exit(0)" \
@@ -118,6 +118,26 @@ jobs:
             --expect B010 --expect B020 --expect-panic \
             --require "intentional panic-test" \
             --timeout-secs 120 --label panic-test-bios
+
+      - name: QEMU filesystem reboot persistence (UEFI, two boots)
+        run: |
+          # Boot 1 writes /hello + flushes; boot 2 (fresh guest, same disk)
+          # verifies it — proving reboot persistence. UEFI path (this binary's
+          # BIOS image does not boot; see docs/DEVELOPMENT_STORY).
+          rm -f artifacts/fs-persist-ci.img
+          cargo run -q -p qemu-runner -- \
+            --image target/images/itisyou-fs-persist-uefi.img --uefi \
+            --firmware /usr/share/OVMF/OVMF_CODE_4M.fd \
+            --nvme-persist artifacts/fs-persist-ci.img \
+            --expect B010 --expect B160 --require "FS-PERSIST-WROTE" \
+            --timeout-secs 120 --label fs-persist-write
+          cargo run -q -p qemu-runner -- \
+            --image target/images/itisyou-fs-persist-uefi.img --uefi \
+            --firmware /usr/share/OVMF/OVMF_CODE_4M.fd \
+            --nvme-persist artifacts/fs-persist-ci.img \
+            --expect B010 --expect B160 --require "FS-PERSIST-VERIFIED" \
+            --timeout-secs 120 --label fs-persist-verify
+          rm -f artifacts/fs-persist-ci.img
 
       - name: Upload QEMU evidence
         if: always()
