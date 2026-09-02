@@ -4,7 +4,8 @@
 //! on the serial panic path; never continue with known corruption. The
 //! breakpoint handler is the only resumable exception (used by selftests).
 
-use core::sync::atomic::{AtomicU64, Ordering};
+use core::arch::naked_asm;
+use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use pic8259::ChainedPics;
 use spin::{Lazy, Mutex};
 use x86_64::instructions::port::Port;
@@ -36,6 +37,32 @@ static TICKS: AtomicU64 = AtomicU64::new(0);
 /// Breakpoint hit counter (selftest evidence that the IDT works).
 static BREAKPOINTS: AtomicU64 = AtomicU64::new(0);
 
+/// Count of timer preemptions of Ring 3 processes (diagnostic evidence).
+pub static PREEMPTIONS: AtomicU64 = AtomicU64::new(0);
+
+/// Ticks remaining in the current user process's scheduling quantum. Armed
+/// by the scheduler before entering Ring 3, decremented by the timer while
+/// CPL=3; reaching zero triggers preemption. 0 = not armed (no preemption).
+static QUANTUM_REMAINING: AtomicU32 = AtomicU32::new(0);
+
+/// Quantum length in timer ticks (10 ms each at 100 Hz). Small so a
+/// non-yielding process is preempted promptly and fairness is easy to prove.
+pub const QUANTUM_TICKS: u32 = 2;
+
+/// Arm the preemption quantum for the process about to run (scheduler call).
+pub fn arm_quantum() {
+    QUANTUM_REMAINING.store(QUANTUM_TICKS, Ordering::SeqCst);
+}
+
+/// Disarm preemption (scheduler call, after a process returns to the kernel).
+pub fn disarm_quantum() {
+    QUANTUM_REMAINING.store(0, Ordering::SeqCst);
+}
+
+pub fn preemption_count() -> u64 {
+    PREEMPTIONS.load(Ordering::Relaxed)
+}
+
 static IDT: Lazy<InterruptDescriptorTable> = Lazy::new(|| {
     let mut idt = InterruptDescriptorTable::new();
     idt.breakpoint.set_handler_fn(breakpoint_handler);
@@ -50,7 +77,13 @@ static IDT: Lazy<InterruptDescriptorTable> = Lazy::new(|| {
             .set_handler_fn(double_fault_handler)
             .set_stack_index(crate::gdt::DOUBLE_FAULT_IST_INDEX);
     }
-    idt[TIMER_VECTOR].set_handler_fn(timer_handler);
+    // SAFETY: timer_isr is a naked handler with the correct interrupt-frame
+    // ABI; set_handler_addr wires it directly. It saves/restores all GPRs
+    // and may preempt Ring 3 (see below).
+    let isr: unsafe extern "C" fn() = timer_isr;
+    unsafe {
+        idt[TIMER_VECTOR].set_handler_addr(x86_64::VirtAddr::new(isr as usize as u64));
+    }
     idt
 });
 
@@ -93,12 +126,138 @@ pub fn breakpoint_count() -> u64 {
     BREAKPOINTS.load(Ordering::Relaxed)
 }
 
-extern "x86-interrupt" fn timer_handler(_frame: InterruptStackFrame) {
+/// Saved register frame for the naked timer ISR. Field order matches the
+/// push order in `timer_isr` exactly (r15 at offset 0 = lowest address =
+/// where rsp points after the pushes; the CPU-pushed interrupt frame follows
+/// the GPRs). `#[repr(C)]` is REQUIRED.
+#[repr(C)]
+struct TrapFrame {
+    r15: u64,
+    r14: u64,
+    r13: u64,
+    r12: u64,
+    r11: u64,
+    r10: u64,
+    r9: u64,
+    r8: u64,
+    rbp: u64,
+    rdi: u64,
+    rsi: u64,
+    rdx: u64,
+    rcx: u64,
+    rbx: u64,
+    rax: u64,
+    // CPU-pushed interrupt frame:
+    rip: u64,
+    cs: u64,
+    rflags: u64,
+    rsp: u64,
+    ss: u64,
+}
+
+/// Naked timer ISR: saves all GPRs, calls the Rust handler with a pointer to
+/// the `TrapFrame`, and — if the handler returns (no preemption) — restores
+/// and `iretq`s. When the handler preempts a Ring 3 process it long-jumps to
+/// the scheduler and never returns here.
+#[unsafe(naked)]
+unsafe extern "C" fn timer_isr() {
+    naked_asm!(
+        "push rax",
+        "push rbx",
+        "push rcx",
+        "push rdx",
+        "push rsi",
+        "push rdi",
+        "push rbp",
+        "push r8",
+        "push r9",
+        "push r10",
+        "push r11",
+        "push r12",
+        "push r13",
+        "push r14",
+        "push r15",
+        "mov rdi, rsp", // &TrapFrame
+        "call {handler}",
+        "pop r15",
+        "pop r14",
+        "pop r13",
+        "pop r12",
+        "pop r11",
+        "pop r10",
+        "pop r9",
+        "pop r8",
+        "pop rbp",
+        "pop rdi",
+        "pop rsi",
+        "pop rdx",
+        "pop rcx",
+        "pop rbx",
+        "pop rax",
+        "iretq",
+        handler = sym timer_handler_inner,
+    )
+}
+
+/// Timer handler body. Runs with interrupts disabled (interrupt gate).
+/// Increments ticks, EOIs the PIC, and — when a Ring 3 process's quantum has
+/// expired — saves its full context and preempts it (never returns in that
+/// case).
+extern "C" fn timer_handler_inner(frame: &mut TrapFrame) {
     TICKS.fetch_add(1, Ordering::Relaxed);
-    // SAFETY: acknowledging the interrupt we are currently servicing.
+
+    // Was the interrupt taken from Ring 3 (a user process)?
+    let from_user = frame.cs & 0b11 == 0b11;
+
+    // EOI before any possible long-jump, so the PIC delivers the next tick.
+    // SAFETY: acknowledging the interrupt currently being serviced.
     unsafe {
         PICS.lock().notify_end_of_interrupt(TIMER_VECTOR);
     }
+
+    if !from_user {
+        return; // kernel-context tick: just account it
+    }
+
+    // Decrement the quantum; preempt when it reaches zero.
+    let remaining = QUANTUM_REMAINING.load(Ordering::SeqCst);
+    if remaining == 0 {
+        return; // not armed (shouldn't happen from user, but be safe)
+    }
+    if remaining > 1 {
+        QUANTUM_REMAINING.store(remaining - 1, Ordering::SeqCst);
+        return;
+    }
+    // Quantum expired: save the full user context and preempt.
+    let ctx_ptr = crate::user::transition::current_ctx();
+    if ctx_ptr.is_null() {
+        return;
+    }
+    QUANTUM_REMAINING.store(0, Ordering::SeqCst);
+    PREEMPTIONS.fetch_add(1, Ordering::Relaxed);
+    // SAFETY: ctx_ptr is the running process's context, valid until
+    // enter_or_resume returns; single CPU serializes access.
+    let ctx = unsafe { &mut *ctx_ptr };
+    ctx.rax = frame.rax;
+    ctx.rbx = frame.rbx;
+    ctx.rcx = frame.rcx;
+    ctx.rdx = frame.rdx;
+    ctx.rsi = frame.rsi;
+    ctx.rdi = frame.rdi;
+    ctx.rbp = frame.rbp;
+    ctx.r8 = frame.r8;
+    ctx.r9 = frame.r9;
+    ctx.r10 = frame.r10;
+    ctx.r11 = frame.r11;
+    ctx.r12 = frame.r12;
+    ctx.r13 = frame.r13;
+    ctx.r14 = frame.r14;
+    ctx.r15 = frame.r15;
+    ctx.rip = frame.rip;
+    ctx.rsp = frame.rsp;
+    ctx.rflags = frame.rflags;
+    // Long-jump back to the scheduler run-loop; does not return.
+    crate::user::transition::abort_preempt();
 }
 
 extern "x86-interrupt" fn breakpoint_handler(frame: InterruptStackFrame) {

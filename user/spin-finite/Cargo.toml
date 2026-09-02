@@ -1,0 +1,17 @@
+cargo-features = ["per-package-target"]
+
+[package]
+name = "user-spin-finite"
+version.workspace = true
+edition.workspace = true
+description = "CPU-bound process that never yields during its compute loop: sums 0..N in registers and verifies a stack sentinel, proving preemption preserves registers and address-space isolation."
+forced-target = "x86_64-unknown-none"
+
+[dependencies]
+ulib = { path = "../ulib" }
+
+[[bin]]
+name = "user-spin-finite"
+path = "src/main.rs"
+test = false
+bench = false

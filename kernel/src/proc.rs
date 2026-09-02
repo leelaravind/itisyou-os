@@ -85,8 +85,35 @@ fn encode_status(state: ProcState) -> u64 {
 /// a terminal state. A leftover Blocked process with no runnable peer is a
 /// deadlock and is reported (should not happen in the tested programs).
 pub fn run_until_idle() -> usize {
+    run_scheduler(|_| false)
+}
+
+/// Run the scheduler preemptively until `target` reaches a terminal state or
+/// `max_ticks` timer ticks elapse. Returns `target`'s state (if any) — used
+/// by the non-monopolization proof, where a co-scheduled infinite spinner
+/// keeps the run queue non-empty forever. `run_until_idle` cannot be used
+/// there because it only stops when nothing is runnable.
+pub fn run_until_pid_exits(target: u64, max_ticks: u64) -> Option<ProcState> {
+    let deadline = crate::interrupts::ticks() + max_ticks;
+    run_scheduler(|_| {
+        let done = matches!(
+            state_of(target),
+            Some(ProcState::Exited(_)) | Some(ProcState::Faulted { .. }) | None
+        );
+        done || crate::interrupts::ticks() >= deadline
+    });
+    state_of(target)
+}
+
+/// Core scheduler loop. Runs each runnable process for one quantum (until it
+/// yields, is preempted, blocks, exits, or faults), updating state. Stops
+/// when the run queue drains or `stop(completed)` returns true.
+fn run_scheduler(stop: impl Fn(usize) -> bool) -> usize {
     let mut completed = 0;
     loop {
+        if stop(completed) {
+            break;
+        }
         let taken = {
             let mut guard = TABLE.lock();
             let table = guard.as_mut().expect("proc table init");
@@ -115,7 +142,7 @@ pub fn run_until_idle() -> usize {
         let mut guard = TABLE.lock();
         let table = guard.as_mut().expect("proc table init");
         match outcome {
-            UserExit::Yielded => {
+            UserExit::Yielded | UserExit::Preempted => {
                 if let Some(s) = table.slots.get_mut(&pid) {
                     s.process = Some(process);
                     table.runq.push_back(pid);
@@ -154,6 +181,32 @@ pub fn run_until_idle() -> usize {
         }
     }
     completed
+}
+
+/// Tear down and remove every process still in the table (test cleanup after
+/// a bounded run that intentionally left processes runnable, e.g. an infinite
+/// spinner). Returns how many were reaped. Frees all their address spaces.
+pub fn drain_all() -> usize {
+    let mut guard = TABLE.lock();
+    let table = guard.as_mut().expect("proc table init");
+    let pids: alloc::vec::Vec<u64> = table.slots.keys().copied().collect();
+    let mut n = 0;
+    for pid in pids {
+        if let Some(slot) = table.slots.remove(&pid) {
+            if let Some(process) = slot.process {
+                process.space.teardown();
+                n += 1;
+            }
+        }
+    }
+    table.runq.clear();
+    n
+}
+
+/// Number of live slots (diagnostics/invariants).
+pub fn live_count() -> usize {
+    let guard = TABLE.lock();
+    guard.as_ref().map(|t| t.slots.len()).unwrap_or(0)
 }
 
 /// Wake any process blocked in wait() on `child`, delivering `status`, and

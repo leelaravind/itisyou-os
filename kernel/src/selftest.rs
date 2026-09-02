@@ -51,6 +51,90 @@ pub fn run_all(suite: &mut Suite) {
     storage_tests(suite);
 }
 
+/// V0.4: timer-driven preemptive scheduling of Ring 3 processes.
+fn preemption_tests(suite: &mut Suite) {
+    use crate::proc::{self, ProcState};
+    use crate::{interrupts, user};
+
+    let free_before = memory::stats().map(|(f, _)| f).unwrap_or(0);
+    let preempts_before = interrupts::preemption_count();
+
+    // 1) Two CPU-bound processes that never yield both finish correctly under
+    //    preemption — proving register + address-space preservation across
+    //    involuntary switches (each verifies its own sum and stack sentinel,
+    //    exiting nonzero on any corruption).
+    let (a, b) = (
+        user::load("/bin/spin-finite"),
+        user::load("/bin/spin-finite"),
+    );
+    match (a, b) {
+        (Ok(a), Ok(b)) => {
+            let (pa, pb) = (proc::admit(a), proc::admit(b));
+            let completed = proc::run_until_idle();
+            let sa = proc::state_of(pa);
+            let sb = proc::state_of(pb);
+            suite.check(
+                "preempt_two_cpu_bound_progress",
+                completed >= 2
+                    && matches!(sa, Some(ProcState::Exited(0)) | None)
+                    && matches!(sb, Some(ProcState::Exited(0)) | None),
+            );
+        }
+        _ => suite.check("preempt_two_cpu_bound_progress", false),
+    }
+    // Both non-yielding processes were actually preempted (not run to
+    // completion cooperatively).
+    suite.check(
+        "preempt_actually_occurred",
+        interrupts::preemption_count() > preempts_before,
+    );
+
+    // 2) A non-yielding INFINITE spinner cannot monopolize the CPU: a
+    //    co-scheduled finite process still runs to completion, after which
+    //    the spinner is still runnable (never exited). Bounded by a tick
+    //    deadline so the test itself terminates; the spinner is then reaped.
+    match (
+        user::load("/bin/spin-forever"),
+        user::load("/bin/spin-finite"),
+    ) {
+        (Ok(spinner), Ok(finite)) => {
+            let spid = proc::admit(spinner);
+            let fpid = proc::admit(finite);
+            // Generous deadline (~15 s of ticks) so the finite job completes
+            // even while sharing the CPU with the infinite spinner.
+            let final_state = proc::run_until_pid_exits(fpid, 1500);
+            let finite_done = matches!(final_state, Some(ProcState::Exited(0)) | None);
+            let spinner_alive = matches!(proc::state_of(spid), Some(ProcState::Runnable));
+            suite.check("preempt_no_monopoly", finite_done && spinner_alive);
+            // Reap the still-running spinner (and anything else left).
+            proc::drain_all();
+        }
+        _ => {
+            suite.check("preempt_no_monopoly", false);
+            proc::drain_all();
+        }
+    }
+
+    // 3) Cooperative V0.3 scheduling still works under the preemptive timer
+    //    (yield/wait/IPC), and repeated preemptive switching leaked no frames.
+    match user::load("/bin/parent") {
+        Ok(parent) => {
+            let ppid = proc::admit(parent);
+            let completed = proc::run_until_idle();
+            suite.check(
+                "preempt_coexists_with_cooperative",
+                completed >= 3 && matches!(proc::state_of(ppid), Some(ProcState::Exited(0)) | None),
+            );
+        }
+        Err(_) => suite.check("preempt_coexists_with_cooperative", false),
+    }
+    proc::drain_all();
+
+    let free_after = memory::stats().map(|(f, _)| f).unwrap_or(0);
+    suite.check("preempt_no_frame_leaks", free_after == free_before);
+    suite.check("preempt_no_lost_processes", proc::live_count() == 0);
+}
+
 /// V0.3: PCI enumeration, block abstraction (RAM disk), NVMe read-only.
 fn storage_tests(suite: &mut Suite) {
     use crate::device::block::{BlockDevice, BlockError, RamDisk, BLOCK_SIZE};
@@ -260,6 +344,9 @@ fn userspace_tests(suite: &mut Suite) {
         "proc_concurrent_no_leaks",
         free_after_conc == free_before_conc,
     );
+
+    // V0.4 preemptive scheduling.
+    preemption_tests(suite);
 
     // The kernel survived two user crashes: allocator + timer still work.
     let alive_alloc = alloc::vec![0xEEu8; 4096];

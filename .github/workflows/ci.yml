@@ -76,8 +76,8 @@ jobs:
             --expect B160 --expect-selftest \
             --require "RING3-HELLO" --require "RING3-DONE" \
             --require "RING3-PARENT-DONE" --require "RING3-PARENT-IPC-OK" \
-            --require "nvme_ready blocks=" \
-            --timeout-secs 300 --label selftest-uefi
+            --require "nvme_ready blocks=" --require "SPIN-FINITE-OK" \
+            --timeout-secs 420 --label selftest-uefi
 
       - name: QEMU selftest (BIOS)
         run: |
@@ -90,7 +90,8 @@ jobs:
             --require "RING3-PARENT-DONE" --require "RING3-PARENT-WAIT-OK" \
             --require "RING3-PARENT-IPC-OK" --require "RING3-CHILD-EXIT" \
             --require "NVMe controller" --require "nvme_ready blocks=" \
-            --timeout-secs 300 --label selftest-bios
+            --require "SPIN-FINITE-OK" \
+            --timeout-secs 420 --label selftest-bios
 
       - name: QEMU shell interaction (BIOS)
         run: |

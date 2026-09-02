@@ -16,44 +16,64 @@ use core::sync::atomic::{AtomicU64, Ordering};
 use kernel_core::elf::{self, ElfError};
 use kernel_core::memmap::FRAME_SIZE;
 
-/// Resumable Ring 3 register state. Caller-saved GPRs are intentionally not
-/// tracked: userspace only leaves via the `syscall` instruction (a function
-/// call — caller-saved regs already dead) or a fault (process terminates).
+/// Complete resumable Ring 3 register state (V0.4). All 15 GPRs plus
+/// RIP/RSP/RFLAGS are tracked so a process can be resumed from ANY
+/// instruction — required for timer preemption, which can interrupt user
+/// code at an arbitrary point. Resume is via `iretq` (does not clobber
+/// rcx/r11 the way sysretq does).
 ///
 /// `#[repr(C)]` is REQUIRED: `enter_user_raw` reads these fields by fixed
-/// byte offsets (rip=0, rsp=8, rflags=16, rbx=24, rbp=32, r12=40, r13=48,
-/// r14=56, r15=64, rax=72).
+/// byte offsets — rax=0, rbx=8, rcx=16, rdx=24, rsi=32, rdi=40, rbp=48,
+/// r8=56, r9=64, r10=72, r11=80, r12=88, r13=96, r14=104, r15=112,
+/// rip=120, rsp=128, rflags=136. Keep the field order in lockstep with the
+/// asm.
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct UserContext {
-    pub rip: u64,
-    pub rsp: u64,
-    pub rflags: u64,
+    pub rax: u64,
     pub rbx: u64,
+    pub rcx: u64,
+    pub rdx: u64,
+    pub rsi: u64,
+    pub rdi: u64,
     pub rbp: u64,
+    pub r8: u64,
+    pub r9: u64,
+    pub r10: u64,
+    pub r11: u64,
     pub r12: u64,
     pub r13: u64,
     pub r14: u64,
     pub r15: u64,
-    /// Value delivered in rax on resume (a syscall's return value).
-    pub rax: u64,
+    pub rip: u64,
+    pub rsp: u64,
+    pub rflags: u64,
 }
 
 impl UserContext {
-    /// Fresh context: enter `entry` on `stack_top`, IF set so the timer keeps
-    /// running at CPL=3, all callee-saved registers zeroed.
+    /// Fresh context: enter `entry` on `stack_top`, IF set so the timer
+    /// preempts at CPL=3, all general registers zeroed (no kernel data
+    /// reaches Ring 3).
     pub fn new(entry: u64, stack_top: u64) -> Self {
         UserContext {
-            rip: entry,
-            rsp: stack_top,
-            rflags: 0x202,
+            rax: 0,
             rbx: 0,
+            rcx: 0,
+            rdx: 0,
+            rsi: 0,
+            rdi: 0,
             rbp: 0,
+            r8: 0,
+            r9: 0,
+            r10: 0,
+            r11: 0,
             r12: 0,
             r13: 0,
             r14: 0,
             r15: 0,
-            rax: 0,
+            rip: entry,
+            rsp: stack_top,
+            rflags: 0x202,
         }
     }
 }
@@ -76,6 +96,9 @@ pub enum UserExit {
     Exit(u64),
     /// yield syscall — context saved; re-enterable immediately.
     Yielded,
+    /// timer preemption — full context saved; re-enterable immediately
+    /// (round-robin). Distinct from Yielded only for diagnostics/accounting.
+    Preempted,
     /// wait syscall on a still-running child — context saved; re-enterable
     /// only when the run-loop wakes it (rax delivered = child status).
     Blocked,
@@ -245,7 +268,11 @@ pub fn run_quantum(process: &mut Process, first: bool) -> UserExit {
     }
     crate::syscall::CURRENT_PID.store(process.pid, Ordering::SeqCst);
     activate_l4(process.space.l4_phys());
+    // Arm the preemption quantum for this slice; the timer decrements it
+    // while this process runs at CPL=3 and preempts when it hits zero.
+    crate::interrupts::arm_quantum();
     let exit = transition::enter_or_resume(&mut process.ctx);
+    crate::interrupts::disarm_quantum();
     activate_l4(paging::boot_l4_frame());
     crate::syscall::CURRENT_PID.store(0, Ordering::SeqCst);
     exit
@@ -257,9 +284,10 @@ pub fn run(mut process: Process) -> UserExit {
     let mut first = true;
     let terminal = loop {
         match run_quantum(&mut process, first) {
-            // A lone process yielding or (mis)using wait with no scheduler
-            // simply re-runs; tested single programs do neither indefinitely.
-            UserExit::Yielded | UserExit::Blocked => {
+            // A lone process yielding, preempted, or (mis)using wait with no
+            // scheduler simply re-runs; tested single programs do none of
+            // these indefinitely.
+            UserExit::Yielded | UserExit::Preempted | UserExit::Blocked => {
                 first = false;
                 continue;
             }
@@ -278,7 +306,7 @@ pub fn run(mut process: Process) -> UserExit {
                 addr.unwrap_or(0),
             );
         }
-        UserExit::Yielded | UserExit::Blocked => unreachable!(),
+        UserExit::Yielded | UserExit::Preempted | UserExit::Blocked => unreachable!(),
     }
     process.space.teardown();
     terminal
@@ -317,13 +345,22 @@ pub mod transition {
     const TAG_FAULT: u64 = 2 << 56;
     const TAG_YIELD: u64 = 3 << 56;
     const TAG_BLOCK: u64 = 4 << 56;
+    const TAG_PREEMPT: u64 = 5 << 56;
 
     /// Pointer to the UserContext of the process currently in Ring 3 (or
-    /// about to be), so the yield syscall can persist a resume point.
+    /// about to be), so syscalls and the timer can persist a resume point.
     static CURRENT_CTX: AtomicU64 = AtomicU64::new(0);
 
+    /// The running process's context pointer (null if none). Used by the
+    /// timer preemption path.
+    pub fn current_ctx() -> *mut UserContext {
+        CURRENT_CTX.load(Ordering::SeqCst) as *mut UserContext
+    }
+
     /// Save the resumable snapshot taken at syscall entry into the current
-    /// process's context, delivering `rax` to it on resume.
+    /// process's context, delivering `rax` to it on resume. Caller-saved
+    /// registers are dead across a syscall, so only callee-saved + control
+    /// registers + rax are updated.
     pub fn save_yield_context(rax: u64) {
         let ctx_ptr = CURRENT_CTX.load(Ordering::SeqCst) as *mut UserContext;
         if ctx_ptr.is_null() {
@@ -345,6 +382,15 @@ pub mod transition {
         ctx.rax = rax;
     }
 
+    /// Return control to the run-loop as a preemption. The full context has
+    /// already been written into the current process's `UserContext` by the
+    /// timer handler; this only long-jumps back.
+    pub fn abort_preempt() -> ! {
+        // SAFETY: only called from the timer ISR while a user process runs
+        // (CPL=3 verified) with the abort context armed.
+        unsafe { user_abort_raw(TAG_PREEMPT) }
+    }
+
     /// Enter (first time) or resume Ring 3 from `ctx`. Returns when the
     /// process yields (ctx updated for the next resume), exits, or faults.
     pub fn enter_or_resume(ctx: &mut UserContext) -> UserExit {
@@ -362,6 +408,7 @@ pub mod transition {
         x86_64::instructions::interrupts::enable();
 
         match packed >> 56 {
+            5 => UserExit::Preempted,
             4 => UserExit::Blocked,
             3 => UserExit::Yielded,
             2 => {
@@ -401,12 +448,11 @@ pub mod transition {
         unsafe { user_abort_raw(TAG_BLOCK) }
     }
 
-    /// Enter/resume Ring 3 via `sysretq` (used for BOTH first entry and
-    /// resume — sysret drops to CPL=3, loads RIP from rcx and RFLAGS from
-    /// r11, and we load RSP + callee-saved + rax from `ctx`). Every register
+    /// Enter/resume Ring 3 via `iretq` (used for BOTH first entry and every
+    /// resume — including timer preemption, which requires restoring ALL
+    /// GPRs and does not survive sysretq's rcx/r11 clobber). Every register
     /// delivered to Ring 3 comes from `ctx` (zeroed on first entry), so no
-    /// kernel data leaks. `ctx` layout matches the field order in
-    /// `UserContext` (rip, rsp, rflags, rbx, rbp, r12..r15, rax).
+    /// kernel data leaks. Offsets track the `UserContext` field order.
     #[unsafe(naked)]
     unsafe extern "C" fn enter_user_raw(ctx: *mut UserContext) -> u64 {
         naked_asm!(
@@ -420,28 +466,34 @@ pub mod transition {
             "mov [rip + USER_ABORT_CTX + 40], r13",
             "mov [rip + USER_ABORT_CTX + 48], r14",
             "mov [rip + USER_ABORT_CTX + 56], r15",
-            // Load user state from ctx (rdi). Offsets follow UserContext.
-            "mov rcx, [rdi + 0]",  // -> user RIP  (sysret)
-            "mov r11, [rdi + 16]", // -> user RFLAGS (sysret)
-            "mov rbx, [rdi + 24]",
-            "mov rbp, [rdi + 32]",
-            "mov r12, [rdi + 40]",
-            "mov r13, [rdi + 48]",
-            "mov r14, [rdi + 56]",
-            "mov r15, [rdi + 64]",
-            "mov rax, [rdi + 72]", // syscall return value on resume
-            "mov rsp, [rdi + 8]",  // user RSP
-            // Scrub the remaining scratch registers (no kernel data to R3).
-            "xor edx, edx",
-            "xor esi, esi",
-            "xor edi, edi",
-            "xor r8d, r8d",
-            "xor r9d, r9d",
-            "xor r10d, r10d",
-            "sysretq",
-            // Abort/yield lands here with rax = packed reason.
+            // Build the iretq frame from ctx (rdi): SS, RSP, RFLAGS, CS, RIP.
+            "push {uss}",
+            "push qword ptr [rdi + 128]", // user RSP
+            "push qword ptr [rdi + 136]", // user RFLAGS
+            "push {ucs}",
+            "push qword ptr [rdi + 120]", // user RIP
+            // Restore all GPRs from ctx (rdi restored LAST).
+            "mov rax, [rdi + 0]",
+            "mov rbx, [rdi + 8]",
+            "mov rcx, [rdi + 16]",
+            "mov rdx, [rdi + 24]",
+            "mov rsi, [rdi + 32]",
+            "mov rbp, [rdi + 48]",
+            "mov r8,  [rdi + 56]",
+            "mov r9,  [rdi + 64]",
+            "mov r10, [rdi + 72]",
+            "mov r11, [rdi + 80]",
+            "mov r12, [rdi + 88]",
+            "mov r13, [rdi + 96]",
+            "mov r14, [rdi + 104]",
+            "mov r15, [rdi + 112]",
+            "mov rdi, [rdi + 40]",
+            "iretq",
+            // Abort/yield/preempt lands here with rax = packed reason.
             "2:",
             "ret",
+            uss = const super::super::gdt::USER_DATA_SELECTOR as u64,
+            ucs = const super::super::gdt::USER_CODE_SELECTOR as u64,
         )
     }
 

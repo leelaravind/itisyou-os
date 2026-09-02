@@ -17,7 +17,16 @@ fn main() {
     let root = manifest_dir.join("../initramfs/root");
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("initramfs.tar");
     println!("cargo::rerun-if-changed={}", root.display());
-    for dir in ["ulib", "init", "gp-test", "pf-test", "child", "parent"] {
+    for dir in [
+        "ulib",
+        "init",
+        "gp-test",
+        "pf-test",
+        "child",
+        "parent",
+        "spin-finite",
+        "spin-forever",
+    ] {
         println!(
             "cargo::rerun-if-changed={}",
             workspace.join("user").join(dir).display()
@@ -71,6 +80,10 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
             "user-child",
             "-p",
             "user-parent",
+            "-p",
+            "user-spin-finite",
+            "-p",
+            "user-spin-forever",
         ])
         .arg("--target-dir")
         .arg(&target_dir)
@@ -93,6 +106,8 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
         ("user-pf-test", "bin/pf-test"),
         ("user-child", "bin/child"),
         ("user-parent", "bin/parent"),
+        ("user-spin-finite", "bin/spin-finite"),
+        ("user-spin-forever", "bin/spin-forever"),
     ];
     entries.push(("bin/".to_string(), Vec::new(), true));
     for (artifact, dest) in programs {
