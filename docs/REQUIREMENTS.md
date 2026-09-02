@@ -73,6 +73,8 @@ labels, commit SHAs, CI run links, or file paths.
 | BLK-001 | Block-device abstraction + error handling | IMPLEMENTED+VERIFIED | `BlockDevice` trait + RamDisk; `blk_ramdisk_read`, `blk_out_of_range_rejected`, `blk_bad_buffer_rejected` |
 | NVME-001 | Read-only NVMe driver (real block I/O) | IMPLEMENTED+VERIFIED | ADR-0008; `nvme_init` (2048 blocks identified), `nvme_read_block0`, `nvme_disk_magic` (LBA 0 magic read back), `nvme_out_of_range_rejected` |
 | STORE-001 | No physical-disk risk | IMPLEMENTED+VERIFIED | QEMU attaches only a generated disposable raw disk (runner `--nvme`); no passthrough anywhere |
+| CI-V03 | CI green with V0.3 QEMU coverage | IMPLEMENTED+VERIFIED | run 33609090873 success (kernel build, split clippy, 55 host tests, images, 6 QEMU legs incl. NVMe+concurrency asserts, website, gitleaks) on ubuntu-24.04 |
+| WEB-V03 | os.itisyou.app reflects V0.3 truthfully | IMPLEMENTED+VERIFIED | live at v0.3.0-dev commit d83942b, milestone "V0.3 — Process Isolation + Storage", verified modules (per-process/ipc/pci/block/nvme), browser+HTTP verified, zero console errors, stale claims removed |
 
 ## Testing & verification
 
