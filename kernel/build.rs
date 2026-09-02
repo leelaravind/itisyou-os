@@ -27,6 +27,15 @@ fn main() {
         "spin-finite",
         "spin-forever",
         "gui-demo",
+        "lsdev",
+        "sandbox-probe",
+        "cap-parent",
+        "cap-child",
+        "fs-probe",
+        "echo-svc",
+        "crashy-svc",
+        "svc-client",
+        "hello-app",
     ] {
         println!(
             "cargo::rerun-if-changed={}",
@@ -89,6 +98,22 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
             "user-gui-demo",
             "-p",
             "user-lsdev",
+            "-p",
+            "user-sandbox-probe",
+            "-p",
+            "user-cap-parent",
+            "-p",
+            "user-cap-child",
+            "-p",
+            "user-fs-probe",
+            "-p",
+            "user-echo-svc",
+            "-p",
+            "user-crashy-svc",
+            "-p",
+            "user-svc-client",
+            "-p",
+            "user-hello-app",
         ])
         .arg("--target-dir")
         .arg(&target_dir)
@@ -115,6 +140,13 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
         ("user-spin-forever", "bin/spin-forever"),
         ("user-gui-demo", "bin/gui-demo"),
         ("user-lsdev", "bin/lsdev"),
+        ("user-sandbox-probe", "bin/sandbox-probe"),
+        ("user-cap-parent", "bin/cap-parent"),
+        ("user-cap-child", "bin/cap-child"),
+        ("user-fs-probe", "bin/fs-probe"),
+        ("user-echo-svc", "bin/echo-svc"),
+        ("user-crashy-svc", "bin/crashy-svc"),
+        ("user-svc-client", "bin/svc-client"),
     ];
     entries.push(("bin/".to_string(), Vec::new(), true));
     for (artifact, dest) in programs {
@@ -135,6 +167,68 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
     let mut wx = init;
     patch_first_exec_segment_writable(&mut wx);
     entries.push(("bin/wx-test".to_string(), wx, false));
+
+    // ITPKG application packages (V0.7): hello-app packed with the same
+    // format + digest code the kernel verifies with, plus adversarial
+    // fixtures (corrupted payload; hostile manifest) under /pkgs.
+    let hello = fs::read(bin_dir.join("user-hello-app")).unwrap();
+    entries.push(("pkgs/".to_string(), Vec::new(), true));
+    entries.push((
+        "pkgs/hello-app-1.itpkg".to_string(),
+        pack_itpkg(
+            "name=hello-app
+version=1.0.0
+caps=fs_read
+",
+            &hello,
+        ),
+        false,
+    ));
+    entries.push((
+        "pkgs/hello-app-2.itpkg".to_string(),
+        pack_itpkg(
+            "name=hello-app
+version=1.0.1
+caps=fs_read
+",
+            &hello,
+        ),
+        false,
+    ));
+    // Corrupted AFTER digest computation -> the kernel must refuse it.
+    let mut bad = pack_itpkg(
+        "name=hello-app
+version=1.0.0
+caps=fs_read
+",
+        &hello,
+    );
+    let last = bad.len() - 1;
+    bad[last] ^= 0x01;
+    entries.push(("pkgs/hello-app-bad.itpkg".to_string(), bad, false));
+    // Digest-valid but the manifest demands an undefined capability -> the
+    // kernel must refuse it at manifest validation.
+    entries.push((
+        "pkgs/evil.itpkg".to_string(),
+        pack_itpkg(
+            "name=evil
+version=1
+caps=kernel-root
+",
+            &hello,
+        ),
+        false,
+    ));
+}
+
+/// Assemble an ITPKG (header + manifest + payload) with a fresh digest.
+fn pack_itpkg(manifest: &str, payload: &[u8]) -> Vec<u8> {
+    let digest = kernel_core::pkg::content_digest(manifest.as_bytes(), payload);
+    let mut out =
+        kernel_core::pkg::header(manifest.len() as u32, payload.len() as u32, &digest).to_vec();
+    out.extend_from_slice(manifest.as_bytes());
+    out.extend_from_slice(payload);
+    out
 }
 
 /// Set PF_W on the first executable PT_LOAD program header (ELF64 layout).

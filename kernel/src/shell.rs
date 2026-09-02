@@ -108,6 +108,9 @@ fn execute(line: &str) {
         "echo" => cmd_echo(args),
         "clear" => crate::serial_print!("\x1b[2J\x1b[H"),
         "run" => cmd_run(args),
+        "svc" => cmd_svc(),
+        "pkg" => cmd_pkg(args),
+        "audit" => cmd_audit(),
         "lsdev" => cmd_lsdev(),
         "beep" => cmd_beep(),
         "usbwait" => cmd_usbwait(),
@@ -126,7 +129,7 @@ fn execute(line: &str) {
 
 fn cmd_help() {
     crate::serial_println!(
-        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path>        load + run a Ring 3 ELF program\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  usbwait           wait for USB HID input (keyboard/mouse)\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU\n  reboot            8042 CPU reset"
+        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path> [caps|-] [prefix]  run a Ring 3 ELF (optionally sandboxed)\n  svc               start + supervise system services\n  pkg <op> ...      app packages: install/stage/launch/rollback/recover/list\n  audit             show the privileged-action audit trail\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  usbwait           wait for USB HID input (keyboard/mouse)\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU\n  reboot            8042 CPU reset"
     );
 }
 
@@ -226,9 +229,142 @@ fn cmd_run(args: &[&str]) {
         crate::serial_println!("run: missing program path (e.g. run /bin/init)");
         return;
     };
-    match crate::user::run_path(path) {
+    // Optional V0.7 sandboxing: `run <path> [caps|-] [prefix]` — "-" means
+    // NO capabilities; a prefix restricts fs_read to that subtree. Without
+    // the extra args the trusted legacy-full launch is unchanged.
+    let caps = match args.get(1) {
+        None => kernel_core::caps::CAP_LEGACY_FULL,
+        Some(&"-") => 0,
+        Some(list) => match kernel_core::caps::parse(list) {
+            Ok(c) => c,
+            Err(_) => {
+                crate::serial_println!("run: unknown capability in \"{list}\"");
+                return;
+            }
+        },
+    };
+    let sandbox = args
+        .get(2)
+        .map(|p| alloc::sync::Arc::new(alloc::vec![alloc::string::String::from(*p)]));
+    match crate::user::run_path_with(path, caps, sandbox) {
         Ok(exit) => crate::serial_println!("run: {path}: {exit:?}"),
         Err(err) => crate::serial_println!("run: {path}: load failed: {err:?}"),
+    }
+}
+
+fn cmd_svc() {
+    match crate::services::run_supervised(600) {
+        Ok(report) => {
+            crate::services::with_status(|table| {
+                for s in table {
+                    crate::serial_println!(
+                        "  {}  {:?}  pid={} restarts={}",
+                        s.name,
+                        s.state,
+                        s.pid,
+                        s.restarts
+                    );
+                }
+            });
+            crate::serial_println!(
+                "svc: started={} done={} failed={} restarts={}",
+                report.started,
+                report.done,
+                report.failed,
+                report.restarts_performed
+            );
+        }
+        Err(e) => crate::serial_println!("svc: startup ordering failed: {e:?}"),
+    }
+}
+
+fn cmd_audit() {
+    let (total, denials) = crate::audit::counts();
+    crate::audit::with_records(|records| {
+        for r in records {
+            crate::serial_println!(
+                "  #{} tick={} pid={} {} cap={:#x} {} {}",
+                r.seq,
+                r.tick,
+                r.pid,
+                r.action,
+                r.cap,
+                if r.ok { "ok" } else { "DENIED" },
+                r.detail.as_deref().unwrap_or(""),
+            );
+        }
+    });
+    crate::serial_println!("audit: total={total} denials={denials} (ring keeps the newest 64)");
+}
+
+fn cmd_pkg(args: &[&str]) {
+    use crate::fs_disk::FileSystem;
+    let Some(&sub) = args.first() else {
+        crate::serial_println!(
+            "pkg: subcommands: install <vfs.pkg> | stage <vfs.pkg> | launch <app> | rollback <app> | recover | list"
+        );
+        return;
+    };
+    let Some(nvme) = crate::open_nvme() else {
+        crate::serial_println!("pkg: no NVMe storage attached");
+        return;
+    };
+    // Mount the persistent store; a fresh disk is formatted on first use.
+    let mut fs = match FileSystem::mount(&nvme) {
+        Ok(fs) => fs,
+        Err(_) => match FileSystem::format(&nvme) {
+            Ok(fs) => fs,
+            Err(e) => {
+                crate::serial_println!("pkg: storage unusable: {e:?}");
+                return;
+            }
+        },
+    };
+    match (sub, args.get(1)) {
+        ("install", Some(src)) | ("stage", Some(src)) => {
+            let bytes = match crate::fs::read(src) {
+                Ok(b) => b,
+                Err(e) => {
+                    crate::serial_println!("pkg: {src}: {e:?}");
+                    return;
+                }
+            };
+            let result = if sub == "install" {
+                crate::platform::install(&mut fs, bytes)
+            } else {
+                crate::platform::stage(&mut fs, bytes)
+            };
+            match result {
+                Ok((app, v)) => crate::serial_println!("pkg: {sub} {app} -> store v{v}"),
+                Err(e) => crate::serial_println!("pkg: {sub} refused: {e:?}"),
+            }
+        }
+        ("launch", Some(app)) => {
+            match crate::platform::launch(&fs, app, kernel_core::caps::CAP_LEGACY_FULL) {
+                Ok(code) => crate::serial_println!("pkg: launch {app}: exit={code}"),
+                Err(e) => crate::serial_println!("pkg: launch {app}: {e:?}"),
+            }
+        }
+        ("rollback", Some(app)) => match crate::platform::rollback(&mut fs, app) {
+            Ok((from, to)) => crate::serial_println!("pkg: rollback {app}: v{from} -> v{to}"),
+            Err(e) => crate::serial_println!("pkg: rollback {app}: {e:?}"),
+        },
+        ("recover", _) => match crate::platform::recover(&mut fs) {
+            Ok(n) => crate::serial_println!("pkg: recovery findings={n}"),
+            Err(e) => crate::serial_println!("pkg: recover: {e:?}"),
+        },
+        ("list", _) => {
+            for app in crate::platform::apps(&fs) {
+                let st = crate::platform::state(&fs, &app);
+                crate::serial_println!(
+                    "  {app}: active={:?} previous={:?} staged={:?}",
+                    st.active,
+                    st.previous,
+                    st.orphan_staged
+                );
+            }
+        }
+        _ => crate::serial_println!("pkg: bad arguments (try `pkg`)"),
     }
 }
 

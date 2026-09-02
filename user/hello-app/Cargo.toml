@@ -1,0 +1,17 @@
+cargo-features = ["per-package-target"]
+
+[package]
+name = "user-hello-app"
+version.workspace = true
+edition.workspace = true
+description = "V0.7 platform program (hello-app)."
+forced-target = "x86_64-unknown-none"
+
+[dependencies]
+ulib = { path = "../ulib" }
+
+[[bin]]
+name = "user-hello-app"
+path = "src/main.rs"
+test = false
+bench = false

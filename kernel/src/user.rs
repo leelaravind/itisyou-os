@@ -123,21 +123,42 @@ pub enum LoadError {
 }
 
 /// A loaded process image with its private address space (V0.3, ADR-0005)
-/// and resumable context.
+/// and resumable context. V0.7 adds the process's capability set and an
+/// optional filesystem sandbox (allowed path prefixes).
 pub struct Process {
     pub pid: u64,
     pub entry: u64,
     pub stack_top: u64,
     pub space: AddressSpace,
     pub ctx: UserContext,
+    /// Capability bits (kernel_core::caps). Syscalls beyond the basic
+    /// runtime (write/exit/yield/getpid) are refused without the matching bit.
+    pub caps: u64,
+    /// FS sandbox: fs_read allowed only under these path prefixes. `None` =
+    /// unrestricted (trusted kernel-shell launches).
+    pub fs_prefixes: Option<alloc::sync::Arc<alloc::vec::Vec<alloc::string::String>>>,
 }
 
 static NEXT_PID: AtomicU64 = AtomicU64::new(1);
 
-/// Load an ELF64 executable from the VFS into the user window.
+/// Load an ELF64 executable from the VFS with the LEGACY-FULL capability set
+/// (trusted kernel-shell/selftest path; platform launches use [`load_with`]
+/// and grant only manifest-requested capabilities — default deny).
 pub fn load(path: &str) -> Result<Process, LoadError> {
+    load_with(path, kernel_core::caps::CAP_LEGACY_FULL, None)
+}
+
+/// Load with an explicit capability set + optional FS sandbox prefixes.
+pub fn load_with(
+    path: &str,
+    caps: u64,
+    fs_prefixes: Option<alloc::sync::Arc<alloc::vec::Vec<alloc::string::String>>>,
+) -> Result<Process, LoadError> {
     let bytes = crate::fs::read(path).map_err(LoadError::File)?;
-    load_from_bytes(bytes)
+    let mut process = load_from_bytes(bytes)?;
+    process.caps = caps;
+    process.fs_prefixes = fs_prefixes;
+    Ok(process)
 }
 
 /// Load an ELF64 executable from raw bytes into a fresh private address
@@ -152,6 +173,8 @@ pub fn load_from_bytes(bytes: &[u8]) -> Result<Process, LoadError> {
         stack_top: USER_STACK_TOP,
         space,
         ctx: UserContext::new(image.entry, USER_STACK_TOP),
+        caps: kernel_core::caps::CAP_LEGACY_FULL,
+        fs_prefixes: None,
     };
 
     let result = (|| {
@@ -267,6 +290,10 @@ pub fn run_quantum(process: &mut Process, first: bool) -> UserExit {
         );
     }
     crate::syscall::CURRENT_PID.store(process.pid, Ordering::SeqCst);
+    // Publish this quantum's authority: the syscall layer checks these on
+    // every privileged request (V0.7 capability enforcement + FS sandbox).
+    crate::syscall::CURRENT_CAPS.store(process.caps, Ordering::SeqCst);
+    crate::syscall::set_current_sandbox(process.fs_prefixes.clone());
     activate_l4(process.space.l4_phys());
     // Arm the preemption quantum for this slice; the timer decrements it
     // while this process runs at CPL=3 and preempts when it hits zero.
@@ -275,6 +302,8 @@ pub fn run_quantum(process: &mut Process, first: bool) -> UserExit {
     crate::interrupts::disarm_quantum();
     activate_l4(paging::boot_l4_frame());
     crate::syscall::CURRENT_PID.store(0, Ordering::SeqCst);
+    crate::syscall::CURRENT_CAPS.store(0, Ordering::SeqCst);
+    crate::syscall::set_current_sandbox(None);
     exit
 }
 
@@ -316,6 +345,17 @@ pub fn run(mut process: Process) -> UserExit {
 /// Convenience: load + run a program from the VFS.
 pub fn run_path(path: &str) -> Result<UserExit, LoadError> {
     let process = load(path)?;
+    Ok(run(process))
+}
+
+/// Load + run with explicit capabilities and an optional FS sandbox (V0.7 —
+/// the shell's restricted `run` and the platform selftests use this).
+pub fn run_path_with(
+    path: &str,
+    caps: u64,
+    fs_prefixes: Option<alloc::sync::Arc<alloc::vec::Vec<alloc::string::String>>>,
+) -> Result<UserExit, LoadError> {
+    let process = load_with(path, caps, fs_prefixes)?;
     Ok(run(process))
 }
 

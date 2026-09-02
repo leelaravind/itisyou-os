@@ -15,6 +15,14 @@ members = [
     "user/spin-forever",
     "user/gui-demo",
     "user/lsdev",
+    "user/sandbox-probe",
+    "user/cap-parent",
+    "user/cap-child",
+    "user/fs-probe",
+    "user/echo-svc",
+    "user/crashy-svc",
+    "user/svc-client",
+    "user/hello-app",
 ]
 # The kernel must NEVER share a cargo invocation with host packages: cargo
 # resolves features once per invocation across all compile targets, so a

@@ -84,6 +84,26 @@ pub fn normalized(path: &str) -> impl Iterator<Item = &str> {
     })
 }
 
+/// Sandbox prefix check (V0.7): is `path` inside the directory `prefix`?
+/// Both are validated + normalized first, so traversal tricks
+/// (`/apps/x/../../bin/init`) are resolved BEFORE the comparison and either
+/// rejected (root escape) or compared by their true components. A `prefix` of
+/// `/` allows everything. Comparison is by whole components — `/apps/hel`
+/// does NOT contain `/apps/hello/f`.
+pub fn is_within(prefix: &str, path: &str) -> bool {
+    if validate(prefix).is_err() || validate(path).is_err() {
+        return false;
+    }
+    let mut p = normalized(path);
+    for want in normalized(prefix) {
+        match p.next() {
+            Some(got) if got == want => {}
+            _ => return false,
+        }
+    }
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -127,5 +147,31 @@ mod tests {
     fn rejects_oversized_component() {
         let long = format!("/{}", "x".repeat(MAX_COMPONENT + 1));
         assert_eq!(validate(&long), Err(PathError::ComponentTooLong));
+    }
+
+    #[test]
+    fn sandbox_prefix_containment() {
+        assert!(is_within("/apps/hello", "/apps/hello/data.txt"));
+        assert!(is_within("/apps/hello/", "/apps/hello/sub/f"));
+        assert!(is_within("/", "/bin/init")); // root prefix allows everything
+        assert!(is_within("/apps/hello", "/apps/hello")); // the dir itself
+                                                          // Outside the prefix.
+        assert!(!is_within("/apps/hello", "/bin/init"));
+        assert!(!is_within("/apps/hello", "/apps/other/f"));
+        // Component-boundary attack: /apps/hel is not a prefix of /apps/hello.
+        assert!(!is_within("/apps/hel", "/apps/hello/f"));
+    }
+
+    #[test]
+    fn sandbox_defeats_traversal() {
+        // Traversal resolved before comparison → escapes the prefix.
+        assert!(!is_within("/apps/hello", "/apps/hello/../../bin/init"));
+        assert!(!is_within("/apps/hello", "/apps/hello/../other/f"));
+        // In-bounds dotdot still allowed.
+        assert!(is_within("/apps/hello", "/apps/hello/a/../b"));
+        // Root escape / relative paths are rejected outright.
+        assert!(!is_within("/apps/hello", "/../etc"));
+        assert!(!is_within("/apps/hello", "relative"));
+        assert!(!is_within("relative", "/apps/hello/f"));
     }
 }

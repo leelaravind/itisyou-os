@@ -10,6 +10,7 @@
 
 extern crate alloc;
 
+pub mod audit;
 pub mod bootstage;
 pub mod cpu;
 pub mod desktop;
@@ -22,10 +23,12 @@ pub mod input;
 pub mod interrupts;
 pub mod ipc;
 pub mod memory;
+pub mod platform;
 pub mod proc;
 pub mod qemu;
 pub mod selftest;
 pub mod serial;
+pub mod services;
 pub mod shell;
 pub mod syscall;
 pub mod task;

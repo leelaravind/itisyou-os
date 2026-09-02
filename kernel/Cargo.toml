@@ -9,6 +9,12 @@ description = "ITISYOU OS x86_64 kernel (no_std, boots via the rust-osdev bootlo
 # plain `cargo build` at the workspace root correct on every package.
 forced-target = "x86_64-unknown-none"
 
+# Build script: packs ITPKG application packages into the initramfs using
+# the same pure format/digest code the kernel verifies with (host-compiled;
+# resolver=2 keeps build-dep features separate from the bare-metal graph).
+[build-dependencies]
+kernel-core = { path = "../crates/kernel-core" }
+
 [dependencies]
 bootloader_api = "0.11"
 kernel-core = { path = "../crates/kernel-core" }

@@ -152,6 +152,24 @@ impl SuperBlock {
         Ok((slot, start))
     }
 
+    /// Remove a file's directory entry (V0.7 — uninstall/rollback support).
+    /// The entry is cleared and `file_count` decremented in one superblock
+    /// generation, so persisting it is a single atomic double-buffered commit.
+    /// The file's data blocks are NOT reclaimed (`next_free_block` is left
+    /// unchanged) — contiguous allocation has no free-block reuse (documented
+    /// limitation); correctness and crash-atomicity over compaction.
+    pub fn remove(&mut self, name: &str) -> Result<(), FsError> {
+        let slot = self
+            .entries
+            .iter()
+            .position(|e| e.used() && e.name_str() == Some(name))
+            .ok_or(FsError::NotFound)?;
+        self.entries[slot] = DirEntry::EMPTY;
+        self.file_count -= 1;
+        self.generation += 1;
+        Ok(())
+    }
+
     /// Encode to a 512-byte block with a fresh CRC.
     pub fn encode(&self) -> [u8; BLOCK_SIZE] {
         let mut b = [0u8; BLOCK_SIZE];
@@ -383,5 +401,31 @@ mod tests {
         let mut torn_a = a;
         torn_a[0] = b'Z';
         assert_eq!(choose(&torn_a, &torn), Err(FsError::NoValidSuperblock));
+    }
+    #[test]
+    fn remove_clears_entry_and_round_trips() {
+        let mut sb = SuperBlock::empty(2048);
+        sb.allocate("hello.1.pkg", 600).unwrap();
+        sb.allocate("hello.1.ok", 1).unwrap();
+        let free_before = sb.next_free_block;
+        let gen_before = sb.generation;
+
+        sb.remove("hello.1.ok").unwrap();
+        assert!(sb.find("hello.1.ok").is_none());
+        assert!(sb.find("hello.1.pkg").is_some());
+        assert_eq!(sb.file_count, 1);
+        assert_eq!(sb.generation, gen_before + 1);
+        // Blocks are NOT reclaimed (documented leak; keeps atomicity simple).
+        assert_eq!(sb.next_free_block, free_before);
+
+        // The gapped superblock still encodes/decodes as valid.
+        let decoded = SuperBlock::decode(&sb.encode()).unwrap();
+        assert_eq!(decoded, sb);
+
+        // Removing a missing file fails cleanly.
+        assert_eq!(sb.remove("ghost"), Err(FsError::NotFound));
+        // The slot is reusable for a new file.
+        sb.allocate("hello.2.pkg", 100).unwrap();
+        assert_eq!(sb.file_count, 2);
     }
 }

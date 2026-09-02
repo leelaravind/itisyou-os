@@ -185,6 +185,27 @@ fn run_scheduler(stop: impl Fn(usize) -> bool) -> usize {
     completed
 }
 
+/// Run the scheduler until nothing is runnable OR `max_ticks` elapse —
+/// the service supervisor's bounded scheduling slice (V0.7).
+pub fn run_until_pid_idle_bounded(max_ticks: u64) {
+    let deadline = crate::interrupts::ticks() + max_ticks;
+    run_scheduler(|_| crate::interrupts::ticks() >= deadline);
+}
+
+/// Remove one process's slot (V0.7 supervisor cleanup): tears down its
+/// address space if it never reached a terminal state. No waiters are woken —
+/// the caller owns this pid's lifecycle.
+pub fn reap(pid: u64) {
+    let mut guard = TABLE.lock();
+    if let Some(table) = guard.as_mut() {
+        if let Some(slot) = table.slots.remove(&pid) {
+            if let Some(process) = slot.process {
+                process.space.teardown();
+            }
+        }
+    }
+}
+
 /// Tear down and remove every process still in the table (test cleanup after
 /// a bounded run that intentionally left processes runnable, e.g. an infinite
 /// spinner). Returns how many were reaped. Frees all their address spaces.
@@ -239,8 +260,22 @@ fn wake_waiters(table: &mut Table, child: u64, status: u64) {
 }
 
 /// spawn(path_ptr, path_len) — load an ELF from the VFS into a new process
-/// and admit it. Returns the child pid, or ERR_*.
+/// and admit it. Returns the child pid, or ERR_*. The child INHERITS the
+/// parent's capabilities and FS sandbox exactly (V0.7) — spawning can never
+/// amplify authority.
 pub fn sys_spawn(path_ptr: u64, path_len: u64) -> u64 {
+    spawn_common(path_ptr, path_len, u64::MAX)
+}
+
+/// spawn_caps(path_ptr, path_len, requested) — like spawn, but the child
+/// receives `parent caps ∩ requested` (controlled delegation; requesting more
+/// than the parent holds silently yields only the intersection — a child can
+/// NEVER hold what its parent lacked).
+pub fn sys_spawn_caps(path_ptr: u64, path_len: u64, requested: u64) -> u64 {
+    spawn_common(path_ptr, path_len, requested)
+}
+
+fn spawn_common(path_ptr: u64, path_len: u64, requested: u64) -> u64 {
     let bytes = match crate::syscall::copy_from_user(path_ptr, path_len, SPAWN_PATH_MAX) {
         Ok(b) => b,
         Err(e) => return e,
@@ -249,8 +284,16 @@ pub fn sys_spawn(path_ptr: u64, path_len: u64) -> u64 {
         Ok(p) => p,
         Err(_) => return crate::syscall::ERR_INVAL,
     };
-    match user::load(path) {
-        Ok(child) => admit(child),
+    let parent_caps = crate::syscall::CURRENT_CAPS.load(core::sync::atomic::Ordering::SeqCst);
+    let child_caps = kernel_core::caps::delegate(parent_caps, requested);
+    // The child inherits the parent's FS sandbox (it can only stay as tight).
+    let sandbox = crate::syscall::current_sandbox_for_child();
+    match user::load_with(path, child_caps, sandbox) {
+        Ok(child) => {
+            let pid = admit(child);
+            crate::audit::allowed("spawn", child_caps, Some(alloc::string::String::from(path)));
+            pid
+        }
         Err(_) => ERR_NOENT,
     }
 }
