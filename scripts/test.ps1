@@ -127,6 +127,22 @@ $audioWav = Join-Path (Resolve-Path 'artifacts/qemu') 'audio.wav'
     '--require', 'ac97 play', '--require', 'halted=true',
     '--timeout-secs', '150', '--label', 'audio-bios')
 
+Write-Output '=== QEMU USB (UHCI) enumeration + HID keyboard input (BIOS) ==='
+# Attach a UHCI controller with a USB HID keyboard. The OS binds the uhci
+# driver (B190), resets the root port, enumerates the device over control
+# transfers (device + configuration descriptors, SET_ADDRESS/CONFIG/PROTOCOL),
+# and polls the interrupt-IN endpoint. The harness injects a keypress via the
+# monitor; the OS must read + decode the HID report - real USB input, verified.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B190', '--usb',
+    '--send', 'usbwait', '--send', 'shutdown',
+    '--inject-after', 'USB-HID-READY',
+    '--monitor-cmd', 'sendkey a',
+    '--require', 'uhci ready', '--require', 'usb device vendor=',
+    '--require', 'usb hid iface=', '--require', 'usb key=a',
+    '--require', 'USB-HID-VERIFIED',
+    '--timeout-secs', '150', '--label', 'usb-hid-bios')
+
 Write-Output '=== QEMU intentional panic (BIOS) ==='
 & $runner @('--image', 'target/images/itisyou-kernel-panictest-bios.img',
     '--expect', 'B010', '--expect', 'B020', '--expect-panic',

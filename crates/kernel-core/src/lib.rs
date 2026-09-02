@@ -18,3 +18,4 @@ pub mod scancode;
 pub mod shellparse;
 pub mod stage;
 pub mod tar;
+pub mod usb;

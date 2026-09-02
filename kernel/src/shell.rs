@@ -110,6 +110,7 @@ fn execute(line: &str) {
         "run" => cmd_run(args),
         "lsdev" => cmd_lsdev(),
         "beep" => cmd_beep(),
+        "usbwait" => cmd_usbwait(),
         "desktop" => crate::desktop::run(),
         "panic-test" => cmd_panic_test(args),
         "shutdown" => {
@@ -125,7 +126,7 @@ fn execute(line: &str) {
 
 fn cmd_help() {
     crate::serial_println!(
-        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path>        load + run a Ring 3 ELF program\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU\n  reboot            8042 CPU reset"
+        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path>        load + run a Ring 3 ELF program\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  usbwait           wait for USB HID input (keyboard/mouse)\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU\n  reboot            8042 CPU reset"
     );
 }
 
@@ -228,6 +229,60 @@ fn cmd_run(args: &[&str]) {
     match crate::user::run_path(path) {
         Ok(exit) => crate::serial_println!("run: {path}: {exit:?}"),
         Err(err) => crate::serial_println!("run: {path}: load failed: {err:?}"),
+    }
+}
+
+fn cmd_usbwait() {
+    use crate::device::uhci;
+    if !uhci::available() {
+        crate::serial_println!("usbwait: no USB controller");
+        return;
+    }
+    if !uhci::has_hid() {
+        crate::serial_println!("usbwait: no USB HID device");
+        return;
+    }
+    let kind = uhci::device_kind().unwrap_or("usb");
+    crate::serial_println!("[ITISYOU:INFO] USB-HID-READY kind={kind}");
+
+    // Poll the interrupt-IN endpoint at the timer rate until a HID report
+    // arrives or a bounded deadline (the harness injects input via monitor).
+    let deadline = interrupts::ticks() + interrupts::TICK_HZ * 10;
+    let mut report = [0u8; 8];
+    let mut got = false;
+    while interrupts::ticks() < deadline {
+        let n = uhci::poll_hid_report(&mut report);
+        if n >= 3 {
+            if kind == "mouse" {
+                if let Some(m) = kernel_core::usb::hid_mouse(&report[..n]) {
+                    if m.dx != 0 || m.dy != 0 || m.left || m.right {
+                        crate::serial_println!(
+                            "[ITISYOU:INPUT] usb mouse dx={} dy={} l={} r={}",
+                            m.dx,
+                            m.dy,
+                            m.left as u8,
+                            m.right as u8
+                        );
+                        got = true;
+                        break;
+                    }
+                }
+            } else if let Some(a) = kernel_core::usb::hid_keyboard_ascii(&report[..n]) {
+                if a.is_ascii_graphic() || a == b' ' {
+                    crate::serial_println!("[ITISYOU:INPUT] usb key={}", a as char);
+                } else {
+                    crate::serial_println!("[ITISYOU:INPUT] usb key=<special>");
+                }
+                got = true;
+                break;
+            }
+        }
+        x86_64::instructions::hlt();
+    }
+    if got {
+        crate::serial_println!("[ITISYOU:INFO] USB-HID-VERIFIED kind={kind}");
+    } else {
+        crate::serial_println!("[ITISYOU:INFO] USB-HID-NO-INPUT kind={kind}");
     }
 }
 
