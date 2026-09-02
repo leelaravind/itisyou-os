@@ -14,7 +14,12 @@
    `isa-debug-exit`. The harness requires: all expected stages, `fail=0`,
    `pass>0`, **and** QEMU exit code 33. A hang, panic, or missing summary
    can never pass.
-4. **Negative cases** (grown alongside subsystems): intentional panic,
+4. **Userspace suite** (V0.2, inside the selftest kernel + shell leg):
+   Ring 3 execution of `/bin/init` with the full syscall ABI (its RING3-*
+   output lines are `--require`d by the harness), malformed-ELF and W^X
+   rejection fixtures, #GP/#PF containment programs, kernel-alive and
+   reload-after-teardown checks.
+5. **Negative cases** (grown alongside subsystems): intentional panic,
    allocator exhaustion, malformed inputs, timeout classification.
 
 ## Failure classification (tools/qemu-runner)
