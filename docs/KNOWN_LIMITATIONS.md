@@ -9,8 +9,13 @@ verified).
   ticks but does not preempt yet. Timer-driven preemption is future work.
 - Input is **polled serial only** — the verified automation path. PS/2
   keyboard support is tracked separately (`input-keyboard: planned`).
-- No userspace, no syscalls, no process isolation yet (stretch milestone,
-  not started).
+- Userspace (V0.2): **one user process at a time** in a shared address
+  space — isolation user↔kernel is MMU-enforced (U/S bit, verified), but
+  per-process page tables (isolation *between* user processes) are future
+  work and required before concurrent processes. No fork/exec/IPC. Syscalls
+  run with interrupts masked; SMEP/SMAP are not enabled (absent on the QEMU
+  CPU model); the user stack has an unmapped hole below it rather than a
+  hardened guard region.
 - The filesystem is a read-only in-memory initramfs; no persistent storage,
   no writes.
 - No networking, no graphics output beyond the bootloader-provided

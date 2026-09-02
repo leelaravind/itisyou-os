@@ -34,14 +34,19 @@ if (Test-Path 'target/images/itisyou-kernel-uefi.img') {
 
 Write-Output '=== QEMU selftest (BIOS) ==='
 & $runner @('--image', 'target/images/itisyou-kernel-selftest-bios.img',
-    '--expect', 'B010', '--expect', 'B020', '--expect', 'B030',
-    '--expect-selftest', '--timeout-secs', '90', '--label', 'selftest-bios')
+    '--expect', 'B010', '--expect', 'B020', '--expect', 'B030', '--expect', 'B140',
+    '--expect-selftest',
+    '--require', 'RING3-HELLO', '--require', 'RING3-DONE',
+    '--require', 'user_exit pid=', '--require', 'contained=true',
+    '--timeout-secs', '120', '--label', 'selftest-bios')
 
 Write-Output '=== QEMU selftest (UEFI) ==='
 if (Test-Path 'target/images/itisyou-kernel-selftest-uefi.img') {
     & $runner @('--image', 'target/images/itisyou-kernel-selftest-uefi.img', '--uefi',
-        '--expect', 'B010', '--expect', 'B020', '--expect', 'B030',
-        '--expect-selftest', '--timeout-secs', '90', '--label', 'selftest-uefi')
+        '--expect', 'B010', '--expect', 'B020', '--expect', 'B030', '--expect', 'B140',
+        '--expect-selftest',
+        '--require', 'RING3-HELLO', '--require', 'RING3-DONE',
+        '--timeout-secs', '120', '--label', 'selftest-uefi')
 } else {
     Write-Output 'SKIPPED: UEFI image absent - bootloader UEFI stage blocked upstream (rust-osdev/bootloader#579)'
 }
@@ -50,13 +55,17 @@ Write-Output '=== QEMU shell interaction (BIOS) ==='
 & $runner @('--image', 'target/images/itisyou-kernel-bios.img',
     '--expect', 'B040', '--expect', 'B050', '--expect', 'B060', '--expect', 'B070',
     '--expect', 'B080', '--expect', 'B090', '--expect', 'B100', '--expect', 'B110',
-    '--expect', 'B120', '--expect', 'B130', '--expect', 'B150',
+    '--expect', 'B120', '--expect', 'B130', '--expect', 'B140', '--expect', 'B150',
     '--send', 'help', '--send', 'version', '--send', 'system', '--send', 'memory',
     '--send', 'tasks', '--send', 'uptime', '--send', 'ls /', '--send', 'cat /etc/version',
     '--send', 'echo shell-echo-check', '--send', 'definitely-not-a-command',
+    '--send', 'run /bin/init', '--send', 'run /bin/broken',
     '--send', 'panic-test', '--send', 'shutdown',
-    '--require', 'itisyou-os 0.1.0',
+    '--require', 'itisyou-os 0.2.0-dev',
     '--require', 'task 0: kmain',
+    '--require', 'RING3-DONE',
+    '--require', 'run: /bin/init: Exit(0)',
+    '--require', 'load failed: Elf(BadMagic)',
     '--require', 'physical: usable_frames=',
     '--require', 'heap: used=',
     '--require', 'etc/',

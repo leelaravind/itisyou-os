@@ -3,17 +3,21 @@
 Milestones are sequenced by dependency, not calendar. A milestone is reached
 when its verification gates pass, never before.
 
-## V0.1 — Kernel Foundation *(current)*
+## V0.1 — Kernel Foundation *(complete — tag v0.1.0)*
 
 Independently bootable x86_64 kernel in QEMU: serial diagnostics, physical +
 virtual memory, heap, exceptions/interrupts/timer, kernel tasks + scheduler,
 VFS/initramfs, interactive shell, automated boot/regression testing,
-reproducible builds. Stretch: ring 3 + minimal syscalls + ELF loading.
+reproducible builds.
 
-## V0.2 — Userspace Foundation
+## V0.2 — Userspace Foundation *(current)*
 
-Stable process abstraction, ring 3 isolation, ELF loading, syscall ABI,
-IPC foundations, user programs, stronger memory protection.
+Achieved so far: Ring 3 execution of real ELF64 programs, strict loader
+(W^X, window, overlap policy), syscall ABI (write/exit/yield/getpid),
+kernel/user MMU isolation, crash containment, clean process teardown.
+Remaining in this milestone: per-process page tables (concurrent
+processes), fork/exec-style process creation, IPC foundations, richer
+syscalls.
 
 ## V0.3 — Storage
 

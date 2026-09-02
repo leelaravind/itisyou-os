@@ -72,14 +72,19 @@ jobs:
           cargo run -q -p qemu-runner -- \
             --image target/images/itisyou-kernel-selftest-uefi.img --uefi \
             --firmware /usr/share/OVMF/OVMF_CODE_4M.fd \
-            --expect B010 --expect B020 --expect B030 --expect-selftest \
+            --expect B010 --expect B020 --expect B030 --expect B140 \
+            --expect-selftest \
+            --require "RING3-HELLO" --require "RING3-DONE" \
             --timeout-secs 180 --label selftest-uefi
 
       - name: QEMU selftest (BIOS)
         run: |
           cargo run -q -p qemu-runner -- \
             --image target/images/itisyou-kernel-selftest-bios.img \
-            --expect B010 --expect B020 --expect B030 --expect-selftest \
+            --expect B010 --expect B020 --expect B030 --expect B140 \
+            --expect-selftest \
+            --require "RING3-HELLO" --require "RING3-DONE" \
+            --require "user_exit pid=" --require "contained=true" \
             --timeout-secs 180 --label selftest-bios
 
       - name: QEMU shell interaction (BIOS)
@@ -88,11 +93,14 @@ jobs:
             --image target/images/itisyou-kernel-bios.img \
             --expect B040 --expect B050 --expect B060 --expect B070 \
             --expect B080 --expect B090 --expect B100 --expect B110 \
-            --expect B120 --expect B130 --expect B150 \
+            --expect B120 --expect B130 --expect B140 --expect B150 \
             --send help --send version --send memory --send tasks \
-            --send "ls /" --send "cat /etc/version" --send shutdown \
-            --require "itisyou-os 0.1.0" \
+            --send "ls /" --send "cat /etc/version" \
+            --send "run /bin/init" --send shutdown \
+            --require "itisyou-os 0.2.0-dev" \
             --require "task 0: kmain" \
+            --require "RING3-DONE" \
+            --require "run: /bin/init: Exit(0)" \
             --require "shutting down (QEMU exit)" \
             --timeout-secs 180 --label shell-test-bios
 

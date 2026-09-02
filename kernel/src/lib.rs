@@ -20,7 +20,9 @@ pub mod qemu;
 pub mod selftest;
 pub mod serial;
 pub mod shell;
+pub mod syscall;
 pub mod task;
+pub mod user;
 
 use bootloader_api::config::Mapping;
 use bootloader_api::{BootInfo, BootloaderConfig};
@@ -136,6 +138,11 @@ pub fn init_subsystems(boot_info: &'static mut BootInfo) {
 
     // B120: input path (polled serial RX).
     shell::init_input();
+
+    // B140: Ring 3 transition machinery (user GDT segments were installed
+    // at B080; this arms the syscall MSRs and kernel syscall stack).
+    syscall::init();
+    bootstage::emit(Stage::B140UserspaceReady);
 }
 
 /// Kernel panic handler: emit a machine-readable marker plus diagnostics on a

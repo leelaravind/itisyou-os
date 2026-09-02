@@ -1,5 +1,6 @@
 # Rust build output
 /target/
+/target-user/
 **/*.rs.bk
 
 # Generated boot/test artifacts (evidence summaries live in status/, not raw logs)

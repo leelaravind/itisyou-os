@@ -35,8 +35,22 @@ labels, commit SHAs, CI run links, or file paths.
 | FS-001 | VFS/initramfs mounts | IMPLEMENTED+VERIFIED | 7 host tar tests (incl. truncated/corrupt archives) + QEMU selftests `vfs_ls_root`, `vfs_cat_version`, `vfs_missing_path`, `vfs_traversal_rejected`, `vfs_relative_normalized`, `vfs_dir_not_file` |
 | SH-001 | Shell commands execute robustly | IMPLEMENTED+VERIFIED | shell-test-bios: 12 commands driven over serial, 9 required outputs matched, unknown-command + bounded-args paths exercised, stages through B150, exit 33 |
 | DIAG-001 | Panic produces useful serial evidence | IMPLEMENTED+VERIFIED | panic-test-bios outcome=Success: intentional panic emits single-line `[ITISYOU:PANIC] <msg> at <file:line>` |
-| USR-001 | Ring 3/userspace hello works (stretch) | NOT APPLICABLE (deferred) | V0.1 stretch not attempted: plan §4.1 permits the user-mode path to be "explicitly isolated as a stretch milestone", and §29 prioritizes the verified hard target over speculative stretch work. First deliverable of V0.2 (docs/ROADMAP.md) |
-| ABI-001 | Syscall ABI defined/tested (stretch) | NOT APPLICABLE (deferred) | same — architecture keeps the path open (kernel/user separation documented in SECURITY_MODEL.md; scheduler/task model designed to extend to processes without replacement) |
+| USR-001 | Ring 3 userspace program runs | IMPLEMENTED+VERIFIED | (V0.2) `/bin/init` loaded from initramfs ELF, entered via iretq, emits RING3-HELLO…RING3-DONE via write syscalls, exits 0 — selftest `usr_init_clean_exit`; CPL=3 hardware-proven by `#GP cs_rpl=3` on `hlt` and `#PF error=USER_MODE` on kernel-half read |
+| ABI-001 | Syscall ABI defined/tested | IMPLEMENTED+VERIFIED | (V0.2) ABI documented in kernel/src/syscall.rs + ADR-0004, mirrored by user/ulib; write/exit/yield/getpid round-trips + ERR_NOSYS + pointer-validation errors all exercised from Ring 3 (RING3-EINVAL-OK, RING3-BADPTR-OK, RING3-UNMAPPED-OK, RING3-YIELD-OK) |
+
+## V0.2 — Userspace Foundation
+
+| ID | Requirement | Status | Evidence |
+|---|---|---|---|
+| USR-002 | ELF64 parser/loader with strict validation | IMPLEMENTED+VERIFIED | 11 host tests (kernel-core::elf, every malformed class) + in-QEMU `usr_elf_reject_malformed` (/bin/broken) |
+| USR-003 | W^X + user-window + overlap load policy | IMPLEMENTED+VERIFIED | `usr_elf_reject_wx` (/bin/wx-test fixture); loader rejects out-of-window and already-mapped pages by construction |
+| USR-004 | Kernel/user memory separation | IMPLEMENTED+VERIFIED | user pages USER_ACCESSIBLE in [1 MiB, 512 GiB) only; kernel mappings supervisor-only; `usr_pf_contained` proves MMU blocks user reads of kernel half (CR2=0xffff8000dead0000, USER_MODE bit) |
+| USR-005 | Process lifecycle + clean termination + teardown | IMPLEMENTED+VERIFIED | pids assigned; exit(0) path (`user_exit pid=… code=0`); `usr_reload_after_teardown` re-loads at the same addresses after full unmap+frame-free |
+| USR-006 | Crash isolation (user fault ≠ kernel panic) | IMPLEMENTED+VERIFIED | `usr_gp_contained` (#GP on privileged `hlt` at CPL=3) + `usr_pf_contained`; `usr_kernel_alive_after_faults` (allocator + timer functional afterwards) |
+| USR-007 | Invalid syscall + invalid pointer handling | IMPLEMENTED+VERIFIED | ERR_NOSYS for nr=999; ERR_FAULT for kernel-half and unmapped-in-window pointers — validated before any dereference (RING3-EINVAL/BADPTR/UNMAPPED-OK) |
+| USR-008 | Scheduler integration (yield from Ring 3) | IMPLEMENTED+VERIFIED | yield syscall parks in the kernel scheduler and returns to Ring 3 (RING3-YIELD-OK) |
+| USR-009 | Userspace stdout path | IMPLEMENTED+VERIFIED | write(fd=1) → serial with UTF-8 sanitization; all RING3-* lines are user-produced output |
+| USR-010 | Per-process page tables / concurrent user processes | PLANNED (V0.2 follow-up) | single-address-space model documented in ADR-0004 + KNOWN_LIMITATIONS; required before concurrent processes |
 
 ## Testing & verification
 

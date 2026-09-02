@@ -5,6 +5,10 @@ members = [
     "crates/kernel-core",
     "tools/image-builder",
     "tools/qemu-runner",
+    "user/ulib",
+    "user/init",
+    "user/gp-test",
+    "user/pf-test",
 ]
 # The kernel must NEVER share a cargo invocation with host packages: cargo
 # resolves features once per invocation across all compile targets, so a
@@ -19,7 +23,7 @@ default-members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0-dev"
 edition = "2021"
 authors = ["leelaravind"]
 

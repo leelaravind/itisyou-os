@@ -6,7 +6,9 @@
 
 use spin::Mutex;
 use x86_64::registers::control::Cr3;
-use x86_64::structures::paging::mapper::{MapToError, TranslateResult, UnmapError};
+use x86_64::structures::paging::mapper::{
+    FlagUpdateError, MapToError, TranslateResult, UnmapError,
+};
 use x86_64::structures::paging::{
     Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, PhysFrame, Size4KiB, Translate,
 };
@@ -22,6 +24,7 @@ pub enum PagingError {
     WxViolation,
     MapTo(MapToError<Size4KiB>),
     Unmap(UnmapError),
+    FlagUpdate(FlagUpdateError),
 }
 
 /// Initialize the paging abstraction.
@@ -64,6 +67,82 @@ pub fn map_page(
             .flush();
     }
     Ok(())
+}
+
+/// Map a userspace page (V0.2). Leaf flags: PRESENT | USER_ACCESSIBLE,
+/// plus WRITABLE and/or NO_EXECUTE according to the requested protection.
+/// W^X is enforced: writable+executable is rejected.
+///
+/// Parent table entries are created with USER_ACCESSIBLE (required for
+/// Ring 3 translation) — this only affects the page-table path of the user
+/// window, never kernel leaf mappings.
+pub fn map_user_page(
+    page: Page<Size4KiB>,
+    frame: PhysFrame<Size4KiB>,
+    writable: bool,
+    executable: bool,
+) -> Result<(), PagingError> {
+    if writable && executable {
+        return Err(PagingError::WxViolation);
+    }
+    let mut flags = PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE;
+    if writable {
+        flags |= PageTableFlags::WRITABLE;
+    }
+    if !executable {
+        flags |= PageTableFlags::NO_EXECUTE;
+    }
+    let parent_flags =
+        PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
+    let mut guard = MAPPER.lock();
+    let mapper = guard.as_mut().ok_or(PagingError::NotInitialized)?;
+    let mut frame_source = crate::memory::PmmFrameSource;
+    // SAFETY: caller maps PMM-owned frames into the (verified-unmapped)
+    // user window; parent USER flag is confined to that window's path.
+    unsafe {
+        mapper
+            .map_to_with_table_flags(page, frame, flags, parent_flags, &mut frame_source)
+            .map_err(PagingError::MapTo)?
+            .flush();
+    }
+    Ok(())
+}
+
+/// Change the protection flags of an existing user mapping (used to drop
+/// WRITABLE / set executability after segment contents are copied in).
+/// W^X and USER/PRESENT invariants are enforced here, not trusted from the
+/// caller.
+pub fn update_user_flags(
+    page: Page<Size4KiB>,
+    writable: bool,
+    executable: bool,
+) -> Result<(), PagingError> {
+    if writable && executable {
+        return Err(PagingError::WxViolation);
+    }
+    let mut flags = PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE;
+    if writable {
+        flags |= PageTableFlags::WRITABLE;
+    }
+    if !executable {
+        flags |= PageTableFlags::NO_EXECUTE;
+    }
+    let mut guard = MAPPER.lock();
+    let mapper = guard.as_mut().ok_or(PagingError::NotInitialized)?;
+    // SAFETY: only flag bits change; the mapping itself was established by
+    // map_user_page.
+    unsafe {
+        mapper
+            .update_flags(page, flags)
+            .map_err(PagingError::FlagUpdate)?
+            .flush();
+    }
+    Ok(())
+}
+
+/// True when no mapping exists for the address (any level).
+pub fn is_unmapped(addr: VirtAddr) -> bool {
+    translate(addr).is_none()
 }
 
 /// Unmap `page`, returning the frame that backed it. The TLB entry is

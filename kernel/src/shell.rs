@@ -107,6 +107,7 @@ fn execute(line: &str) {
         "cat" => cmd_cat(args),
         "echo" => cmd_echo(args),
         "clear" => crate::serial_print!("\x1b[2J\x1b[H"),
+        "run" => cmd_run(args),
         "panic-test" => cmd_panic_test(args),
         "shutdown" => {
             crate::serial_println!("shutting down (QEMU exit)");
@@ -121,7 +122,7 @@ fn execute(line: &str) {
 
 fn cmd_help() {
     crate::serial_println!(
-        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU\n  reboot            8042 CPU reset"
+        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path>        load + run a Ring 3 ELF program\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU\n  reboot            8042 CPU reset"
     );
 }
 
@@ -214,6 +215,17 @@ fn cmd_echo(args: &[&str]) {
         first = false;
     }
     crate::serial_println!();
+}
+
+fn cmd_run(args: &[&str]) {
+    let Some(path) = args.first() else {
+        crate::serial_println!("run: missing program path (e.g. run /bin/init)");
+        return;
+    };
+    match crate::user::run_path(path) {
+        Ok(exit) => crate::serial_println!("run: {path}: {exit:?}"),
+        Err(err) => crate::serial_println!("run: {path}: load failed: {err:?}"),
+    }
 }
 
 fn cmd_panic_test(args: &[&str]) {

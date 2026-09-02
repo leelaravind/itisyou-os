@@ -9,6 +9,13 @@ use pic8259::ChainedPics;
 use spin::{Lazy, Mutex};
 use x86_64::instructions::port::Port;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
+use x86_64::PrivilegeLevel;
+
+/// True when the faulting context was Ring 3 — such faults are contained
+/// (the process is terminated) instead of panicking the kernel (V0.2).
+fn from_user(frame: &InterruptStackFrame) -> bool {
+    frame.code_segment.rpl() == PrivilegeLevel::Ring3
+}
 
 pub const PIC_1_OFFSET: u8 = 32;
 pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
@@ -103,6 +110,13 @@ extern "x86-interrupt" fn breakpoint_handler(frame: InterruptStackFrame) {
 }
 
 extern "x86-interrupt" fn invalid_opcode_handler(frame: InterruptStackFrame) {
+    if from_user(&frame) {
+        crate::serial_println!(
+            "[ITISYOU:INFO] exception=invalid_opcode cs_rpl=3 rip={:#x} action=terminate_process",
+            frame.instruction_pointer.as_u64()
+        );
+        crate::user::transition::abort_fault(6);
+    }
     panic!(
         "invalid opcode at rip={:#x}",
         frame.instruction_pointer.as_u64()
@@ -110,6 +124,16 @@ extern "x86-interrupt" fn invalid_opcode_handler(frame: InterruptStackFrame) {
 }
 
 extern "x86-interrupt" fn general_protection_handler(frame: InterruptStackFrame, error_code: u64) {
+    if from_user(&frame) {
+        // A privileged instruction executed at CPL=3 lands here — this is
+        // both containment and direct evidence the code ran in Ring 3.
+        crate::serial_println!(
+            "[ITISYOU:INFO] exception=general_protection cs_rpl=3 rip={:#x} error={:#x} action=terminate_process",
+            frame.instruction_pointer.as_u64(),
+            error_code
+        );
+        crate::user::transition::abort_fault(13);
+    }
     panic!(
         "general protection fault error_code={:#x} rip={:#x}",
         error_code,
@@ -122,6 +146,20 @@ extern "x86-interrupt" fn page_fault_handler(
     error_code: PageFaultErrorCode,
 ) {
     let addr = x86_64::registers::control::Cr2::read();
+    if from_user(&frame) {
+        use crate::user::transition;
+        if let Ok(a) = addr {
+            transition::FAULT_ADDR.store(a.as_u64(), Ordering::SeqCst);
+            transition::FAULT_HAS_ADDR.store(true, Ordering::SeqCst);
+        }
+        crate::serial_println!(
+            "[ITISYOU:INFO] exception=page_fault cs_rpl=3 rip={:#x} addr={:?} error={:?} action=terminate_process",
+            frame.instruction_pointer.as_u64(),
+            addr,
+            error_code
+        );
+        transition::abort_fault(14);
+    }
     panic!(
         "page fault addr={:?} error={:?} rip={:#x}",
         addr,

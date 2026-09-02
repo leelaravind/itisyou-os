@@ -6,6 +6,7 @@
 #![cfg_attr(not(test), no_std)]
 
 pub mod bitmap;
+pub mod elf;
 pub mod marker;
 pub mod memmap;
 pub mod path;

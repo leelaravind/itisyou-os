@@ -30,6 +30,6 @@ export const BOOT_STAGES: BootStage[] = [
   { code: 'B110', describe: 'VFS/initramfs initialized', moduleId: 'vfs' },
   { code: 'B120', describe: 'input path initialized', moduleId: 'shell' },
   { code: 'B130', describe: 'shell/init task running', moduleId: 'shell' },
-  { code: 'B140', describe: 'userspace transition ready', moduleId: 'userspace' },
+  { code: 'B140', describe: 'userspace transition ready', moduleId: 'ring3' },
   { code: 'B150', describe: 'V0.1 boot acceptance reached', moduleId: 'test-harness' },
 ];
