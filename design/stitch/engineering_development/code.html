@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>ITISYOU OS - Engineering Process</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-secondary": "#21323d",
+                        "outline": "#8e9192",
+                        "on-tertiary-fixed": "#410004",
+                        "on-primary-fixed": "#1a1c1c",
+                        "on-secondary-fixed-variant": "#384955",
+                        "background": "#131313",
+                        "surface-variant": "#353534",
+                        "surface-dim": "#131313",
+                        "on-tertiary": "#68000b",
+                        "on-error": "#690005",
+                        "tertiary-fixed-dim": "#ffb3ae",
+                        "primary-fixed-dim": "#c6c6c7",
+                        "outline-variant": "#444748",
+                        "surface-container": "#201f1f",
+                        "surface-container-high": "#2a2a2a",
+                        "primary-container": "#e2e2e2",
+                        "on-surface-variant": "#c4c7c8",
+                        "inverse-primary": "#5d5f5f",
+                        "on-tertiary-fixed-variant": "#930014",
+                        "secondary-container": "#384955",
+                        "on-primary": "#2f3131",
+                        "error": "#ffb4ab",
+                        "tertiary-container": "#ffdad7",
+                        "on-error-container": "#ffdad6",
+                        "on-primary-fixed-variant": "#454747",
+                        "surface-container-highest": "#353534",
+                        "surface-container-lowest": "#0e0e0e",
+                        "surface": "#131313",
+                        "on-primary-container": "#636565",
+                        "surface-tint": "#c6c6c7",
+                        "on-secondary-fixed": "#0b1d28",
+                        "on-tertiary-container": "#c31f29",
+                        "secondary-fixed-dim": "#b6c9d7",
+                        "on-surface": "#e5e2e1",
+                        "surface-bright": "#3a3939",
+                        "tertiary": "#ffffff",
+                        "inverse-surface": "#e5e2e1",
+                        "on-secondary-container": "#a5b8c5",
+                        "secondary-fixed": "#d2e5f3",
+                        "primary": "#ffffff",
+                        "on-background": "#e5e2e1",
+                        "primary-fixed": "#e2e2e2",
+                        "error-container": "#93000a",
+                        "secondary": "#b6c9d7",
+                        "tertiary-fixed": "#ffdad7",
+                        "inverse-on-surface": "#313030",
+                        "surface-container-low": "#1c1b1b"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "unit": "4px",
+                        "gutter": "24px",
+                        "container-max": "1440px",
+                        "margin": "40px"
+                    },
+                    "fontFamily": {
+                        "headline-md": ["Geist"],
+                        "body-base": ["Geist"],
+                        "mono-data": ["JetBrains Mono"],
+                        "status-tag": ["JetBrains Mono"],
+                        "mono-label": ["JetBrains Mono"],
+                        "display-lg": ["Geist"]
+                    },
+                    "fontSize": {
+                        "headline-md": ["24px", { "lineHeight": "1.2", "letterSpacing": "-0.01em", "fontWeight": "400" }],
+                        "body-base": ["14px", { "lineHeight": "1.6", "letterSpacing": "0em", "fontWeight": "400" }],
+                        "mono-data": ["13px", { "lineHeight": "1.5", "letterSpacing": "0em", "fontWeight": "400" }],
+                        "status-tag": ["10px", { "lineHeight": "1", "letterSpacing": "0.1em", "fontWeight": "700" }],
+                        "mono-label": ["12px", { "lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "500" }],
+                        "display-lg": ["48px", { "lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "300" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { background-color: #050505; color: #e5e2e1; }
+        .grid-bg {
+            background-image: linear-gradient(to right, #1A1A1A 1px, transparent 1px),
+                              linear-gradient(to bottom, #1A1A1A 1px, transparent 1px);
+            background-size: 24px 24px;
+        }
+        .cell-border { border: 1px solid #1A1A1A; }
+    </style>
+</head>
+<body class="font-body-base bg-background text-on-background antialiased min-h-screen flex flex-col grid-bg">
+<!-- TopNavBar -->
+<nav class="hidden md:flex justify-between items-center w-full px-margin py-4 max-w-container-max mx-auto bg-surface dark:bg-surface border-b border-outline-variant docked full-width top-0 z-50">
+<div class="flex items-center gap-gutter">
+<span class="font-mono-label text-mono-label font-bold tracking-tighter text-primary dark:text-primary">ITISYOU_OS</span>
+<div class="flex gap-6">
+<a class="text-on-surface-variant dark:text-on-surface-variant font-mono-label text-mono-label hover:text-primary dark:hover:text-primary transition-colors duration-150" href="#">Architecture</a>
+<a class="text-primary dark:text-primary border-b border-primary pb-2 font-mono-label text-mono-label hover:text-primary dark:hover:text-primary transition-colors duration-150 opacity-80" href="#">Build</a>
+<a class="text-on-surface-variant dark:text-on-surface-variant font-mono-label text-mono-label hover:text-primary dark:hover:text-primary transition-colors duration-150" href="#">Roadmap</a>
+<a class="text-on-surface-variant dark:text-on-surface-variant font-mono-label text-mono-label hover:text-primary dark:hover:text-primary transition-colors duration-150" href="#">Security</a>
+<a class="text-on-surface-variant dark:text-on-surface-variant font-mono-label text-mono-label hover:text-primary dark:hover:text-primary transition-colors duration-150" href="#">Docs</a>
+<a class="text-on-surface-variant dark:text-on-surface-variant font-mono-label text-mono-label hover:text-primary dark:hover:text-primary transition-colors duration-150" href="#">GitHub</a>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<span class="font-mono-label text-mono-label text-on-surface-variant">v0.4.2-alpha</span>
+<button class="font-mono-label text-mono-label border border-outline-variant px-4 py-2 hover:border-surface-variant transition-colors">BUILD_STABLE</button>
+</div>
+</nav>
+<div class="flex flex-1">
+<!-- SideNavBar (Hidden on Mobile) -->
+<aside class="hidden md:flex flex-col h-screen left-0 w-64 bg-surface-container-low dark:bg-surface-container-low border-r border-outline-variant fixed top-[73px]">
+<div class="p-6 border-b border-outline-variant flex flex-col gap-2">
+<span class="font-mono-label text-mono-label text-primary">ARCHITECTURE</span>
+<span class="font-body-base text-body-base text-on-surface-variant">v0.4.2_REV_82</span>
+</div>
+<nav class="flex-1 py-4 flex flex-col gap-1">
+<a class="flex items-center gap-4 px-6 py-3 text-on-surface-variant hover:bg-surface-container-high hover:bg-surface-container-highest transition-all" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">memory</span>
+<span class="font-mono-label text-mono-label">KERNEL</span>
+</a>
+<a class="flex items-center gap-4 px-6 py-3 bg-secondary-container text-on-secondary-container border-l-2 border-primary scale-[0.98]" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">folder_open</span>
+<span class="font-mono-label text-mono-label">FILESYSTEM</span>
+</a>
+<a class="flex items-center gap-4 px-6 py-3 text-on-surface-variant hover:bg-surface-container-high hover:bg-surface-container-highest transition-all" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">settings_input_component</span>
+<span class="font-mono-label text-mono-label">DRIVERS</span>
+</a>
+<a class="flex items-center gap-4 px-6 py-3 text-on-surface-variant hover:bg-surface-container-high hover:bg-surface-container-highest transition-all" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">lan</span>
+<span class="font-mono-label text-mono-label">NETWORK</span>
+</a>
+<a class="flex items-center gap-4 px-6 py-3 text-on-surface-variant hover:bg-surface-container-high hover:bg-surface-container-highest transition-all" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">person_pin</span>
+<span class="font-mono-label text-mono-label">USERSPACE</span>
+</a>
+</nav>
+<div class="p-4 mt-auto border-t border-outline-variant flex flex-col gap-2">
+<a class="flex items-center gap-4 px-2 py-2 text-on-surface-variant hover:bg-surface-container-high transition-all" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-mono-label text-mono-label">SETTINGS</span>
+</a>
+<a class="flex items-center gap-4 px-2 py-2 text-on-surface-variant hover:bg-surface-container-high transition-all" href="#">
+<span class="material-symbols-outlined">terminal</span>
+<span class="font-mono-label text-mono-label">TERMINAL</span>
+</a>
+<button class="mt-4 font-mono-label text-mono-label border border-outline-variant px-4 py-2 hover:border-surface-variant transition-colors w-full">COMMIT_LOGS</button>
+</div>
+</aside>
+<!-- Main Content -->
+<main class="flex-1 md:ml-64 p-margin max-w-container-max mx-auto w-full pt-[100px] md:pt-[40px]">
+<header class="mb-gutter">
+<h1 class="font-display-lg text-display-lg text-primary mb-2">Engineering Process</h1>
+<div class="font-mono-label text-mono-label text-on-surface-variant">
+                    SYSTEM / KERNEL / BUILD_LOG
+                </div>
+</header>
+<!-- Development Lifecycle Diagram -->
+<section class="mb-margin cell-border bg-[#0C0C0C] p-gutter relative">
+<h2 class="font-headline-md text-headline-md text-primary mb-6">Development Lifecycle</h2>
+<div class="flex flex-col md:flex-row items-center justify-between gap-4 font-mono-label text-mono-label">
+<div class="flex flex-col items-center p-4 border border-outline-variant bg-[#131313] min-w-[120px]">
+<span class="material-symbols-outlined mb-2 text-primary">description</span>
+<span class="text-on-surface">Specification</span>
+</div>
+<span class="material-symbols-outlined text-outline-variant hidden md:block">arrow_forward</span>
+<div class="flex flex-col items-center p-4 border border-outline-variant bg-[#131313] min-w-[120px]">
+<span class="material-symbols-outlined mb-2 text-primary">code</span>
+<span class="text-on-surface">Implementation</span>
+</div>
+<span class="material-symbols-outlined text-outline-variant hidden md:block">arrow_forward</span>
+<div class="flex flex-col items-center p-4 border border-outline-variant bg-[#131313] min-w-[120px]">
+<span class="material-symbols-outlined mb-2 text-primary">build</span>
+<span class="text-on-surface">Compile</span>
+</div>
+<span class="material-symbols-outlined text-outline-variant hidden md:block">arrow_forward</span>
+<div class="flex flex-col items-center p-4 border border-outline-variant bg-[#131313] min-w-[120px]">
+<span class="material-symbols-outlined mb-2 text-primary">terminal</span>
+<span class="text-on-surface">QEMU Boot</span>
+</div>
+<span class="material-symbols-outlined text-outline-variant hidden md:block">arrow_forward</span>
+<div class="flex flex-col items-center p-4 border border-outline-variant bg-[#131313] min-w-[120px]">
+<span class="material-symbols-outlined mb-2 text-primary">verified</span>
+<span class="text-on-surface">Verification</span>
+</div>
+</div>
+</section>
+<!-- Build Terminal & Development Story Grid -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-gutter">
+<!-- Build Terminal -->
+<section class="lg:col-span-7 cell-border bg-[#080808] p-gutter flex flex-col font-mono-data text-mono-data h-[500px] overflow-hidden">
+<div class="flex justify-between items-center border-b border-[#1A1A1A] pb-2 mb-4">
+<span class="text-on-surface-variant font-mono-label text-mono-label">TERMINAL - BUILD LOG</span>
+<span class="text-primary font-mono-label text-mono-label">ROOT@ITISYOU</span>
+</div>
+<div class="flex-1 overflow-y-auto pr-2 text-on-surface-variant">
+<div class="flex gap-4 mb-1"><span class="text-green-500">[  OK  ]</span><span>Started Boot Process.</span></div>
+<div class="flex gap-4 mb-1"><span class="text-green-500">[  OK  ]</span><span>Loaded kernel from memory.</span></div>
+<div class="flex gap-4 mb-1"><span class="text-yellow-500">[  ..  ]</span><span>Initializing memory management...</span></div>
+<div class="flex gap-4 mb-1"><span class="text-green-500">[  OK  ]</span><span>Memory management initialized.</span></div>
+<div class="flex gap-4 mb-1"><span class="text-gray-500">[  --  ]</span><span>Skipping optional ACPI checks.</span></div>
+<div class="flex gap-4 mb-1"><span class="text-green-500">[  OK  ]</span><span>Mounted root filesystem.</span></div>
+<div class="flex gap-4 mb-1"><span class="text-yellow-500">[  ..  ]</span><span>Starting userspace init...</span></div>
+<div class="flex gap-4 mb-1"><span class="text-green-500">[  OK  ]</span><span>Init started successfully. PID 1.</span></div>
+<div class="flex gap-4 mb-1"><span class="text-green-500">[  OK  ]</span><span>Network interface eth0 up.</span></div>
+<div class="flex gap-4 mt-4 animate-pulse"><span class="text-primary">&gt;_</span><span></span></div>
+</div>
+</section>
+<!-- Development Story -->
+<section class="lg:col-span-5 cell-border bg-[#0C0C0C] p-gutter flex flex-col">
+<div class="border-b border-[#1A1A1A] pb-2 mb-6">
+<h2 class="font-headline-md text-headline-md text-primary">Development Journal</h2>
+</div>
+<div class="flex flex-col gap-6 flex-1 overflow-y-auto pr-2">
+<!-- Entry 1 -->
+<div class="border-l border-outline-variant pl-4">
+<div class="flex items-center gap-2 mb-2 font-mono-label text-mono-label text-on-surface-variant">
+<span>Day 42</span>
+<span>/</span>
+<span>Build v0.4.1</span>
+<span class="border border-white px-2 py-0.5 text-white font-status-tag text-status-tag ml-auto">Implemented</span>
+</div>
+<h3 class="font-body-base text-body-base text-primary font-bold mb-2">VFS Implementation Stable</h3>
+<p class="font-body-base text-body-base text-on-surface mb-2">
+                                Virtual Filesystem abstraction is now correctly routing read/write calls to the underlying ext2 driver. 
+                            </p>
+<div class="bg-[#131313] p-2 border border-outline-variant font-mono-data text-mono-data text-on-surface-variant text-xs">
+                                Verification: Passed 1500 concurrent read tests.
+                            </div>
+</div>
+<!-- Entry 2 -->
+<div class="border-l border-outline-variant pl-4">
+<div class="flex items-center gap-2 mb-2 font-mono-label text-mono-label text-on-surface-variant">
+<span>Day 40</span>
+<span>/</span>
+<span>Build v0.4.0</span>
+<span class="border border-red-500 text-red-500 px-2 py-0.5 font-status-tag text-status-tag ml-auto">Blocked</span>
+</div>
+<h3 class="font-body-base text-body-base text-primary font-bold mb-2">Page Faults during Interrupts</h3>
+<p class="font-body-base text-body-base text-on-surface mb-2">
+                                Root cause analysis: Timer interrupt is firing before the IDT is fully configured in stage 2 boot.
+                            </p>
+<div class="bg-[#131313] p-2 border border-outline-variant font-mono-data text-mono-data text-on-surface-variant text-xs">
+                                Fix: Defer `sti` instruction until after memory maps are secured.
+                            </div>
+</div>
+</div>
+</section>
+</div>
+</main>
+</div>
+<!-- Footer -->
+<footer class="flex justify-between items-center px-margin py-gutter w-full border-t border-outline-variant mt-20 bg-surface dark:bg-surface z-50">
+<span class="font-mono-label text-mono-label font-bold text-primary dark:text-primary">PART OF ITISYOU / 2024</span>
+<div class="flex gap-6">
+<a class="font-mono-label text-mono-label text-on-surface-variant hover:text-primary underline Transition-opacity duration-200" href="#">Experimental Status</a>
+<a class="font-mono-label text-mono-label text-on-surface-variant hover:text-primary underline Transition-opacity duration-200" href="#">Source</a>
+<a class="font-mono-label text-mono-label text-on-surface-variant hover:text-primary underline Transition-opacity duration-200" href="#">Kernel Documentation</a>
+<a class="font-mono-label text-mono-label text-on-surface-variant hover:text-primary underline Transition-opacity duration-200" href="#">Security Policy</a>
+</div>
+</footer>
+</body></html>

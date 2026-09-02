@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Changelog - ITISYOU OS</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary-container": "#e2e2e2",
+                        "background": "#131313",
+                        "tertiary-fixed": "#ffdad7",
+                        "inverse-primary": "#5d5f5f",
+                        "secondary-container": "#384955",
+                        "surface-tint": "#c6c6c7",
+                        "on-primary-container": "#636565",
+                        "surface-container-highest": "#353534",
+                        "surface-container-low": "#1c1b1b",
+                        "on-surface-variant": "#c4c7c8",
+                        "error-container": "#93000a",
+                        "secondary-fixed-dim": "#b6c9d7",
+                        "outline-variant": "#444748",
+                        "on-primary": "#2f3131",
+                        "secondary-fixed": "#d2e5f3",
+                        "inverse-surface": "#e5e2e1",
+                        "on-tertiary-fixed-variant": "#930014",
+                        "on-secondary-fixed-variant": "#384955",
+                        "surface-container-high": "#2a2a2a",
+                        "on-background": "#e5e2e1",
+                        "tertiary-container": "#ffdad7",
+                        "on-tertiary": "#68000b",
+                        "surface-dim": "#131313",
+                        "tertiary-fixed-dim": "#ffb3ae",
+                        "surface": "#131313",
+                        "on-tertiary-container": "#c31f29",
+                        "on-secondary-fixed": "#0b1d28",
+                        "error": "#ffb4ab",
+                        "outline": "#8e9192",
+                        "on-surface": "#e5e2e1",
+                        "on-error": "#690005",
+                        "on-primary-fixed": "#1a1c1c",
+                        "tertiary": "#ffffff",
+                        "primary": "#ffffff",
+                        "primary-fixed-dim": "#c6c6c7",
+                        "on-secondary-container": "#a5b8c5",
+                        "surface-variant": "#353534",
+                        "surface-bright": "#3a3939",
+                        "inverse-on-surface": "#313030",
+                        "on-primary-fixed-variant": "#454747",
+                        "surface-container-lowest": "#0e0e0e",
+                        "primary-fixed": "#e2e2e2",
+                        "on-error-container": "#ffdad6",
+                        "on-secondary": "#21323d",
+                        "secondary": "#b6c9d7",
+                        "on-tertiary-fixed": "#410004",
+                        "surface-container": "#201f1f"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "container-max": "1440px",
+                        "gutter": "24px",
+                        "margin": "40px",
+                        "unit": "4px"
+                    },
+                    "fontFamily": {
+                        "headline-md": ["Geist"],
+                        "mono-data": ["JetBrains Mono"],
+                        "mono-label": ["JetBrains Mono"],
+                        "display-lg": ["Geist"],
+                        "status-tag": ["JetBrains Mono"],
+                        "body-base": ["Geist"]
+                    },
+                    "fontSize": {
+                        "headline-md": ["24px", { "lineHeight": "1.2", "letterSpacing": "-0.01em", "fontWeight": "400" }],
+                        "mono-data": ["13px", { "lineHeight": "1.5", "letterSpacing": "0em", "fontWeight": "400" }],
+                        "mono-label": ["12px", { "lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "500" }],
+                        "display-lg": ["48px", { "lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "300" }],
+                        "status-tag": ["10px", { "lineHeight": "1", "letterSpacing": "0.1em", "fontWeight": "700" }],
+                        "body-base": ["14px", { "lineHeight": "1.6", "letterSpacing": "0em", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            background-color: #050505;
+            color: theme('colors.on-surface');
+            background-image: 
+                linear-gradient(to right, #1A1A1A 1px, transparent 1px),
+                linear-gradient(to bottom, #1A1A1A 1px, transparent 1px);
+            background-size: 24px 24px;
+            background-position: center top;
+        }
+        .content-area {
+            background-color: #0C0C0C;
+        }
+        .grid-lines {
+            background-image: linear-gradient(to right, #1A1A1A 1px, transparent 1px);
+            background-size: calc((100% - 11 * 24px) / 12 + 24px) 100%;
+        }
+        /* Custom Scrollbar for systemic feel */
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #050505; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #333333; 
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555555; 
+        }
+    </style>
+</head>
+<body class="font-body-base text-body-base min-h-screen flex flex-col relative overflow-x-hidden">
+<!-- TopNavBar Shared Component -->
+<nav class="bg-background dark:bg-background w-full top-0 sticky border-b border-outline-variant flat no shadows z-50">
+<div class="flex justify-between items-center h-16 px-margin max-w-container-max mx-auto">
+<div class="flex items-center gap-8">
+<a class="font-headline-md text-headline-md text-on-surface uppercase tracking-tighter" href="#">ITISYOU OS</a>
+<div class="hidden md:flex items-center gap-6">
+<a class="text-on-surface-variant font-mono-label text-mono-label hover:text-primary hover:border-b hover:border-outline transition-colors duration-150 ease-in-out py-4" href="#">Architecture</a>
+<a class="text-on-surface-variant font-mono-label text-mono-label hover:text-primary hover:border-b hover:border-outline transition-colors duration-150 ease-in-out py-4" href="#">Build</a>
+<a class="text-primary border-b border-primary pb-1 font-mono-label text-mono-label duration-150 ease-in-out pt-4" href="#">Roadmap</a>
+<a class="text-on-surface-variant font-mono-label text-mono-label hover:text-primary hover:border-b hover:border-outline transition-colors duration-150 ease-in-out py-4" href="#">Security</a>
+<a class="text-on-surface-variant font-mono-label text-mono-label hover:text-primary hover:border-b hover:border-outline transition-colors duration-150 ease-in-out py-4" href="#">Docs</a>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<div class="relative hidden sm:block">
+<span class="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-outline text-[18px]">search</span>
+<input class="bg-surface-container-lowest border-b border-outline-variant focus:border-outline focus:outline-none focus:ring-0 text-mono-data font-mono-data text-on-surface py-1 pl-8 pr-2 w-48 transition-colors bg-transparent placeholder:text-outline-variant" placeholder="Search logs..." type="text"/>
+</div>
+<a class="font-mono-label text-mono-label border border-outline-variant px-3 py-1 hover:border-outline hover:text-primary transition-colors text-on-surface-variant" href="#">GitHub</a>
+</div>
+</div>
+</nav>
+<!-- Main Content Canvas -->
+<main class="flex-grow w-full max-w-container-max mx-auto px-margin py-12 relative">
+<!-- Background Grid overlay for architectural feel -->
+<div class="absolute inset-0 grid-lines pointer-events-none opacity-20 hidden md:block"></div>
+<!-- Header -->
+<header class="mb-16 border-b border-[#1A1A1A] pb-8 relative z-10">
+<div class="font-mono-label text-mono-label text-outline mb-4">SYSTEM / KERNEL / CHANGELOG</div>
+<h1 class="font-display-lg text-display-lg text-primary mb-4">System Ledger</h1>
+<p class="text-on-surface-variant max-w-2xl">Chronological record of systemic changes, architecture modifications, and stability patches.</p>
+</header>
+<!-- Ledger Entries -->
+<div class="relative z-10 flex flex-col gap-12">
+<!-- Entry 1 -->
+<article class="content-area border border-[#1A1A1A] w-full flex flex-col md:flex-row group">
+<!-- Meta Sidebar -->
+<div class="w-full md:w-64 border-b md:border-b-0 md:border-r border-[#1A1A1A] p-6 flex flex-col gap-4 bg-[#0A0A0A]">
+<div>
+<div class="font-mono-label text-mono-label text-outline mb-1">DATE</div>
+<div class="font-mono-data text-mono-data text-on-surface">2024-10-24 14:32Z</div>
+</div>
+<div>
+<div class="font-mono-label text-mono-label text-outline mb-1">BUILD</div>
+<div class="font-mono-data text-mono-data text-primary">v2.4.1-rc.3</div>
+</div>
+<div>
+<div class="font-mono-label text-mono-label text-outline mb-1">SHA</div>
+<div class="font-mono-data text-mono-data text-on-surface-variant">a7f9b2e</div>
+</div>
+<div class="mt-2">
+<span class="inline-block border border-primary text-primary px-2 py-0.5 font-status-tag text-status-tag uppercase">Implemented</span>
+</div>
+</div>
+<!-- Content Body -->
+<div class="flex-grow p-6 flex flex-col gap-6">
+<div>
+<h2 class="font-headline-md text-headline-md text-primary mb-2">Memory Allocation Overhaul</h2>
+<div class="font-mono-label text-mono-label text-outline border-b border-[#1A1A1A] pb-2 mb-4">AUTHOR: SYS_ENG_01</div>
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+<div>
+<h3 class="font-mono-label text-mono-label text-secondary mb-2">WHAT CHANGED</h3>
+<p class="text-on-surface-variant text-sm">Refactored the core kernel memory allocator to utilize a slab-based approach for small objects, reducing fragmentation by 24% under high concurrent load.</p>
+</div>
+<div>
+<h3 class="font-mono-label text-mono-label text-secondary mb-2">WHY IT CHANGED</h3>
+<p class="text-on-surface-variant text-sm">Previous buddy allocator was causing excessive page faults during continuous I/O operations, leading to micro-stutters in the UI thread rendering cycle.</p>
+</div>
+</div>
+</div>
+<!-- Evidence/Logs -->
+<div class="bg-[#080808] border border-[#1A1A1A] p-4 mt-auto">
+<div class="flex items-center justify-between mb-2">
+<span class="font-mono-label text-mono-label text-outline">VERIFICATION_EVIDENCE.LOG</span>
+<span class="material-symbols-outlined text-outline text-[16px]">terminal</span>
+</div>
+<pre class="font-mono-data text-mono-data text-on-surface-variant overflow-x-auto whitespace-pre-wrap text-[11px] leading-tight">&gt; sys_mem_bench --iterations 10000 --threads 64
+[INIT] Allocating test vectors...
+[RUN] Executing concurrent allocation/free cycle...
+[OK] Fragmentation index: 0.042 (prev: 0.315)
+[OK] Avg latency: 12ns (prev: 45ns)
+[PASS] Validation complete. Zero leaks detected.
+                        </pre>
+</div>
+</div>
+</article>
+<!-- Entry 2 -->
+<article class="content-area border border-[#1A1A1A] w-full flex flex-col md:flex-row group">
+<!-- Meta Sidebar -->
+<div class="w-full md:w-64 border-b md:border-b-0 md:border-r border-[#1A1A1A] p-6 flex flex-col gap-4 bg-[#0A0A0A]">
+<div>
+<div class="font-mono-label text-mono-label text-outline mb-1">DATE</div>
+<div class="font-mono-data text-mono-data text-on-surface">2024-10-21 09:15Z</div>
+</div>
+<div>
+<div class="font-mono-label text-mono-label text-outline mb-1">BUILD</div>
+<div class="font-mono-data text-mono-data text-primary">v2.4.0</div>
+</div>
+<div>
+<div class="font-mono-label text-mono-label text-outline mb-1">SHA</div>
+<div class="font-mono-data text-mono-data text-on-surface-variant">c3d4e5f</div>
+</div>
+<div class="mt-2">
+<span class="inline-block border border-blue-500 text-blue-500 px-2 py-0.5 font-status-tag text-status-tag uppercase">Verified</span>
+</div>
+</div>
+<!-- Content Body -->
+<div class="flex-grow p-6 flex flex-col gap-6">
+<div>
+<h2 class="font-headline-md text-headline-md text-primary mb-2">Security Module Integration</h2>
+<div class="font-mono-label text-mono-label text-outline border-b border-[#1A1A1A] pb-2 mb-4">AUTHOR: SEC_OPS_99</div>
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+<div>
+<h3 class="font-mono-label text-mono-label text-secondary mb-2">WHAT CHANGED</h3>
+<p class="text-on-surface-variant text-sm">Integrated hardware-backed enclave support for cryptographic key generation and storage. Deprecated software-only fallback paths.</p>
+</div>
+<div>
+<h3 class="font-mono-label text-mono-label text-secondary mb-2">WHY IT CHANGED</h3>
+<p class="text-on-surface-variant text-sm">Compliance requirement for Tier 3 architectural certification. Prevents memory scraping attacks from accessing private keys during runtime.</p>
+</div>
+</div>
+</div>
+<!-- Evidence/Logs -->
+<div class="bg-[#080808] border border-[#1A1A1A] p-4 mt-auto">
+<div class="flex items-center justify-between mb-2">
+<span class="font-mono-label text-mono-label text-outline">SEC_AUDIT.LOG</span>
+<span class="material-symbols-outlined text-outline text-[16px]">security</span>
+</div>
+<pre class="font-mono-data text-mono-data text-on-surface-variant overflow-x-auto whitespace-pre-wrap text-[11px] leading-tight">&gt; enclave_status_check
+[INFO] Probing hardware TrustZone... OK
+[INFO] Verifying key attestation... OK
+[WARN] Software fallback disabled via policy.
+[PASS] Cryptographic boundary established.
+                        </pre>
+</div>
+</div>
+</article>
+</div>
+</main>
+<!-- Footer Shared Component -->
+<footer class="bg-surface-container-lowest dark:bg-surface-container-lowest w-full mt-auto border-t border-outline-variant flat no shadows relative z-50">
+<div class="flex flex-col md:flex-row justify-between items-center py-gutter px-margin max-w-container-max mx-auto gap-unit">
+<div class="font-mono-label text-mono-label text-primary">
+                © 2024 ITISYOU OS. ALL RIGHTS RESERVED.
+            </div>
+<div class="flex flex-wrap justify-center gap-6">
+<a class="text-on-surface-variant hover:text-primary transition-colors duration-200 font-mono-label text-mono-label" href="#">Experimental Status</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors duration-200 font-mono-label text-mono-label" href="#">Privacy Policy</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors duration-200 font-mono-label text-mono-label" href="#">Security Disclosure</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors duration-200 font-mono-label text-mono-label" href="#">Kernel Source</a>
+</div>
+</div>
+</footer>
+</body></html>

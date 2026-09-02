@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>ITISYOU OS - FAQ</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary-container": "#e2e2e2",
+                        "background": "#131313",
+                        "tertiary-fixed": "#ffdad7",
+                        "inverse-primary": "#5d5f5f",
+                        "secondary-container": "#384955",
+                        "surface-tint": "#c6c6c7",
+                        "on-primary-container": "#636565",
+                        "surface-container-highest": "#353534",
+                        "surface-container-low": "#1c1b1b",
+                        "on-surface-variant": "#c4c7c8",
+                        "error-container": "#93000a",
+                        "secondary-fixed-dim": "#b6c9d7",
+                        "outline-variant": "#444748",
+                        "on-primary": "#2f3131",
+                        "secondary-fixed": "#d2e5f3",
+                        "inverse-surface": "#e5e2e1",
+                        "on-tertiary-fixed-variant": "#930014",
+                        "on-secondary-fixed-variant": "#384955",
+                        "surface-container-high": "#2a2a2a",
+                        "on-background": "#e5e2e1",
+                        "tertiary-container": "#ffdad7",
+                        "on-tertiary": "#68000b",
+                        "surface-dim": "#131313",
+                        "tertiary-fixed-dim": "#ffb3ae",
+                        "surface": "#131313",
+                        "on-tertiary-container": "#c31f29",
+                        "on-secondary-fixed": "#0b1d28",
+                        "error": "#ffb4ab",
+                        "outline": "#8e9192",
+                        "on-surface": "#e5e2e1",
+                        "on-error": "#690005",
+                        "on-primary-fixed": "#1a1c1c",
+                        "tertiary": "#ffffff",
+                        "primary": "#ffffff",
+                        "primary-fixed-dim": "#c6c6c7",
+                        "on-secondary-container": "#a5b8c5",
+                        "surface-variant": "#353534",
+                        "surface-bright": "#3a3939",
+                        "inverse-on-surface": "#313030",
+                        "on-primary-fixed-variant": "#454747",
+                        "surface-container-lowest": "#0e0e0e",
+                        "primary-fixed": "#e2e2e2",
+                        "on-error-container": "#ffdad6",
+                        "on-secondary": "#21323d",
+                        "secondary": "#b6c9d7",
+                        "on-tertiary-fixed": "#410004",
+                        "surface-container": "#201f1f"
+                    },
+                    borderRadius: {
+                        DEFAULT: "0.25rem",
+                        lg: "0.5rem",
+                        xl: "0.75rem",
+                        full: "9999px"
+                    },
+                    spacing: {
+                        "container-max": "1440px",
+                        "gutter": "24px",
+                        "margin": "40px",
+                        "unit": "4px"
+                    },
+                    fontFamily: {
+                        "headline-md": ["Geist"],
+                        "mono-data": ["JetBrains Mono"],
+                        "mono-label": ["JetBrains Mono"],
+                        "display-lg": ["Geist"],
+                        "status-tag": ["JetBrains Mono"],
+                        "body-base": ["Geist"]
+                    },
+                    fontSize: {
+                        "headline-md": ["24px", { lineHeight: "1.2", letterSpacing: "-0.01em", fontWeight: "400" }],
+                        "mono-data": ["13px", { lineHeight: "1.5", letterSpacing: "0em", fontWeight: "400" }],
+                        "mono-label": ["12px", { lineHeight: "1", letterSpacing: "0.05em", fontWeight: "500" }],
+                        "display-lg": ["48px", { lineHeight: "1.1", letterSpacing: "-0.02em", fontWeight: "300" }],
+                        "status-tag": ["10px", { lineHeight: "1", letterSpacing: "0.1em", fontWeight: "700" }],
+                        "body-base": ["14px", { lineHeight: "1.6", letterSpacing: "0em", fontWeight: "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .accordion-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }
+        .accordion-toggle.active .accordion-icon {
+            transform: rotate(180deg);
+        }
+        .grid-bg {
+            background-image: linear-gradient(to right, #1A1A1A 1px, transparent 1px),
+                              linear-gradient(to bottom, #1A1A1A 1px, transparent 1px);
+            background-size: 24px 24px;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body-base antialiased min-h-screen flex flex-col selection:bg-primary-container selection:text-on-primary-container grid-bg">
+<!-- TopNavBar -->
+<header class="bg-background dark:bg-background font-body-base text-body-base w-full top-0 sticky border-b border-outline-variant flat no shadows z-50">
+<div class="flex justify-between items-center h-16 px-margin max-w-container-max mx-auto w-full">
+<div class="font-headline-md text-headline-md text-on-surface uppercase tracking-tighter text-primary dark:text-primary">
+                ITISYOU OS
+            </div>
+<!-- Desktop Nav -->
+<nav class="hidden md:flex items-center gap-gutter h-full">
+<a class="text-on-surface-variant font-mono-label text-mono-label hover:text-primary hover:border-b hover:border-outline transition-colors duration-150 ease-in-out h-full flex items-center" href="#">Architecture</a>
+<a class="text-on-surface-variant font-mono-label text-mono-label hover:text-primary hover:border-b hover:border-outline transition-colors duration-150 ease-in-out h-full flex items-center" href="#">Build</a>
+<a class="text-on-surface-variant font-mono-label text-mono-label hover:text-primary hover:border-b hover:border-outline transition-colors duration-150 ease-in-out h-full flex items-center" href="#">Roadmap</a>
+<a class="text-on-surface-variant font-mono-label text-mono-label hover:text-primary hover:border-b hover:border-outline transition-colors duration-150 ease-in-out h-full flex items-center" href="#">Security</a>
+<a class="text-primary border-b border-primary pb-1 font-mono-label text-mono-label hover:text-primary hover:border-b hover:border-outline transition-colors duration-150 ease-in-out h-full flex items-center" href="#">Docs</a>
+</nav>
+<div class="flex items-center gap-unit">
+<button class="hidden md:flex text-on-surface-variant hover:text-primary transition-colors border border-outline-variant px-4 py-2 font-mono-label text-mono-label hover:border-outline">
+                    GitHub
+                </button>
+<button class="md:hidden text-on-surface">
+<span class="material-symbols-outlined">menu</span>
+</button>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-grow w-full max-w-container-max mx-auto px-margin py-margin relative z-10 flex flex-col gap-margin">
+<!-- Header Section -->
+<div class="border-b border-[#1A1A1A] pb-margin mb-margin bg-[#0C0C0C] p-margin border border-[#1A1A1A]">
+<h1 class="font-display-lg text-display-lg text-on-surface mb-unit">FAQ / System Queries</h1>
+<p class="text-on-surface-variant font-mono-data text-mono-data">v0.9.4-alpha // Documentation verified</p>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-12 gap-gutter">
+<!-- Sidebar Navigation -->
+<aside class="md:col-span-3 border-r border-[#1A1A1A] pr-gutter hidden md:block">
+<nav class="sticky top-32 flex flex-col gap-unit">
+<p class="font-mono-label text-mono-label text-on-surface-variant mb-4 uppercase">Categories</p>
+<a class="font-mono-label text-mono-label text-primary border-l-2 border-primary pl-4 py-2 bg-[#121212]" href="#general">General</a>
+<a class="font-mono-label text-mono-label text-on-surface-variant hover:text-on-surface border-l-2 border-transparent hover:border-[#333333] pl-4 py-2 transition-colors" href="#technical">Technical</a>
+<a class="font-mono-label text-mono-label text-on-surface-variant hover:text-on-surface border-l-2 border-transparent hover:border-[#333333] pl-4 py-2 transition-colors" href="#security">Security</a>
+<a class="font-mono-label text-mono-label text-on-surface-variant hover:text-on-surface border-l-2 border-transparent hover:border-[#333333] pl-4 py-2 transition-colors" href="#contribution">Contribution</a>
+</nav>
+</aside>
+<!-- FAQ Content -->
+<div class="md:col-span-9 flex flex-col gap-margin">
+<!-- Category: General -->
+<section class="scroll-mt-32" id="general">
+<div class="flex items-center gap-unit mb-6 border-b border-[#1A1A1A] pb-2">
+<span class="material-symbols-outlined text-primary">info</span>
+<h2 class="font-headline-md text-headline-md text-on-surface">General</h2>
+</div>
+<div class="flex flex-col gap-unit">
+<!-- Q1 -->
+<div class="bg-[#0C0C0C] border border-[#1A1A1A]">
+<button class="accordion-toggle w-full flex items-center justify-between p-6 hover:bg-[#121212] transition-colors text-left" onclick="toggleAccordion(this)">
+<span class="font-body-base text-body-base text-on-surface">Is this a Linux distro?</span>
+<div class="flex items-center gap-4">
+<span class="border border-[#444748] px-2 py-1 font-status-tag text-status-tag text-[#c4c7c8]">CORE</span>
+<span class="material-symbols-outlined accordion-icon transition-transform duration-300 text-on-surface-variant">expand_more</span>
+</div>
+</button>
+<div class="accordion-content bg-[#080808]">
+<div class="p-6 border-t border-[#1A1A1A] text-on-surface-variant">
+<p class="mb-4">No. ITISYOU OS is built on a custom microkernel architecture designed specifically for embedded AI processing and deterministic real-time operations. It does not utilize the Linux kernel or GNU userland.</p>
+</div>
+</div>
+</div>
+<!-- Q2 -->
+<div class="bg-[#0C0C0C] border border-[#1A1A1A]">
+<button class="accordion-toggle w-full flex items-center justify-between p-6 hover:bg-[#121212] transition-colors text-left" onclick="toggleAccordion(this)">
+<span class="font-body-base text-body-base text-on-surface">Can I install it on my laptop?</span>
+<div class="flex items-center gap-4">
+<span class="border border-[#444748] px-2 py-1 font-status-tag text-status-tag text-[#c4c7c8]">HARDWARE</span>
+<span class="material-symbols-outlined accordion-icon transition-transform duration-300 text-on-surface-variant">expand_more</span>
+</div>
+</button>
+<div class="accordion-content bg-[#080808]">
+<div class="p-6 border-t border-[#1A1A1A] text-on-surface-variant">
+<p>Currently, ITISYOU OS targets specific RISC-V and ARMv9 hardware profiles. x86_64 support is in the experimental phase. See the HCL (Hardware Compatibility List) in the documentation for verified devices.</p>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Category: Technical -->
+<section class="scroll-mt-32" id="technical">
+<div class="flex items-center gap-unit mb-6 border-b border-[#1A1A1A] pb-2">
+<span class="material-symbols-outlined text-primary">memory</span>
+<h2 class="font-headline-md text-headline-md text-on-surface">Technical</h2>
+</div>
+<div class="flex flex-col gap-unit">
+<!-- Q3 -->
+<div class="bg-[#0C0C0C] border border-[#1A1A1A]">
+<button class="accordion-toggle w-full flex items-center justify-between p-6 hover:bg-[#121212] transition-colors text-left" onclick="toggleAccordion(this)">
+<span class="font-body-base text-body-base text-on-surface">How does the AI policy engine work?</span>
+<div class="flex items-center gap-4">
+<span class="border-solid border-[#ffffff] px-2 py-1 font-status-tag text-status-tag text-[#ffffff] border">IMPLEMENTED</span>
+<span class="material-symbols-outlined accordion-icon transition-transform duration-300 text-on-surface-variant">expand_more</span>
+</div>
+</button>
+<div class="accordion-content bg-[#080808]">
+<div class="p-6 border-t border-[#1A1A1A] text-on-surface-variant flex flex-col gap-4">
+<p>The policy engine sits between the system call interface and the hardware abstraction layer. It evaluates application intent dynamically rather than relying solely on static permissions.</p>
+<div class="bg-[#050505] border border-[#1A1A1A] p-4 font-mono-data text-mono-data text-[#8e9192]">
+                                        // Example Policy Flow
+                                        1. App requests hardware access
+                                        2. Request queued to Intent Verifier (Ring -1)
+                                        3. Model evaluates request context
+                                        4. Access granted/denied deterministically
+                                    </div>
+</div>
+</div>
+</div>
+</div>
+</section>
+</div>
+</div>
+</main>
+<!-- Footer -->
+<footer class="bg-surface-container-lowest dark:bg-surface-container-lowest font-mono-label text-mono-label w-full mt-auto border-t border-outline-variant flat no shadows relative z-50">
+<div class="flex flex-col md:flex-row justify-between items-center py-gutter px-margin max-w-container-max mx-auto gap-unit w-full">
+<div class="font-mono-label text-mono-label text-primary">
+                © 2024 ITISYOU OS. ALL RIGHTS RESERVED.
+            </div>
+<nav class="flex flex-wrap gap-gutter justify-center">
+<a class="text-on-surface-variant hover:text-primary transition-colors duration-200" href="#">Experimental Status</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors duration-200" href="#">Privacy Policy</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors duration-200" href="#">Security Disclosure</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors duration-200" href="#">Kernel Source</a>
+</nav>
+</div>
+</footer>
+<script>
+        function toggleAccordion(button) {
+            const content = button.nextElementSibling;
+            const allToggles = document.querySelectorAll('.accordion-toggle');
+            
+            // Close others
+            allToggles.forEach(t => {
+                if(t !== button && t.classList.contains('active')) {
+                    t.classList.remove('active');
+                    t.nextElementSibling.style.maxHeight = null;
+                }
+            });
+
+            button.classList.toggle('active');
+            
+            if (button.classList.contains('active')) {
+                content.style.maxHeight = content.scrollHeight + "px";
+            } else {
+                content.style.maxHeight = null;
+            }
+        }
+    </script>
+</body></html>

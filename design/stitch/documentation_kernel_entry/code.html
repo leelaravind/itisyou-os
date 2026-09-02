@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>ITISYOU OS - Documentation - Kernel Entry &amp; UEFI Hand-off</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-secondary": "#21323d",
+                        "outline": "#8e9192",
+                        "on-tertiary-fixed": "#410004",
+                        "on-primary-fixed": "#1a1c1c",
+                        "on-secondary-fixed-variant": "#384955",
+                        "background": "#131313",
+                        "surface-variant": "#353534",
+                        "surface-dim": "#131313",
+                        "on-tertiary": "#68000b",
+                        "on-error": "#690005",
+                        "tertiary-fixed-dim": "#ffb3ae",
+                        "primary-fixed-dim": "#c6c6c7",
+                        "outline-variant": "#444748",
+                        "surface-container": "#201f1f",
+                        "surface-container-high": "#2a2a2a",
+                        "primary-container": "#e2e2e2",
+                        "on-surface-variant": "#c4c7c8",
+                        "inverse-primary": "#5d5f5f",
+                        "on-tertiary-fixed-variant": "#930014",
+                        "secondary-container": "#384955",
+                        "on-primary": "#2f3131",
+                        "error": "#ffb4ab",
+                        "tertiary-container": "#ffdad7",
+                        "on-error-container": "#ffdad6",
+                        "on-primary-fixed-variant": "#454747",
+                        "surface-container-highest": "#353534",
+                        "surface-container-lowest": "#0e0e0e",
+                        "surface": "#131313",
+                        "on-primary-container": "#636565",
+                        "surface-tint": "#c6c6c7",
+                        "on-secondary-fixed": "#0b1d28",
+                        "on-tertiary-container": "#c31f29",
+                        "secondary-fixed-dim": "#b6c9d7",
+                        "on-surface": "#e5e2e1",
+                        "surface-bright": "#3a3939",
+                        "tertiary": "#ffffff",
+                        "inverse-surface": "#e5e2e1",
+                        "on-secondary-container": "#a5b8c5",
+                        "secondary-fixed": "#d2e5f3",
+                        "primary": "#ffffff",
+                        "on-background": "#e5e2e1",
+                        "primary-fixed": "#e2e2e2",
+                        "error-container": "#93000a",
+                        "secondary": "#b6c9d7",
+                        "tertiary-fixed": "#ffdad7",
+                        "inverse-on-surface": "#313030",
+                        "surface-container-low": "#1c1b1b"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "unit": "4px",
+                        "gutter": "24px",
+                        "container-max": "1440px",
+                        "margin": "40px"
+                    },
+                    "fontFamily": {
+                        "headline-md": ["Geist"],
+                        "body-base": ["Geist"],
+                        "mono-data": ["JetBrains Mono"],
+                        "status-tag": ["JetBrains Mono"],
+                        "mono-label": ["JetBrains Mono"],
+                        "display-lg": ["Geist"]
+                    },
+                    "fontSize": {
+                        "headline-md": ["24px", { "lineHeight": "1.2", "letterSpacing": "-0.01em", "fontWeight": "400" }],
+                        "body-base": ["14px", { "lineHeight": "1.6", "letterSpacing": "0em", "fontWeight": "400" }],
+                        "mono-data": ["13px", { "lineHeight": "1.5", "letterSpacing": "0em", "fontWeight": "400" }],
+                        "status-tag": ["10px", { "lineHeight": "1", "letterSpacing": "0.1em", "fontWeight": "700" }],
+                        "mono-label": ["12px", { "lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "500" }],
+                        "display-lg": ["48px", { "lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "300" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            background-color: theme('colors.background');
+            color: theme('colors.on-background');
+        }
+        /* Custom scrollbar for technical feel */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: theme('colors.surface-container');
+        }
+        ::-webkit-scrollbar-thumb {
+            background: theme('colors.outline-variant');
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: theme('colors.outline');
+        }
+        .code-block-bg {
+            background-color: #080808;
+        }
+        .structural-line-h { border-bottom: 1px solid theme('colors.outline-variant'); }
+        .structural-line-v { border-right: 1px solid theme('colors.outline-variant'); }
+        .structural-line-l { border-left: 1px solid theme('colors.outline-variant'); }
+    </style>
+</head>
+<body class="flex flex-col min-h-screen font-body-base text-body-base antialiased selection:bg-primary-container selection:text-on-primary-container">
+<!-- TopNavBar -->
+<header class="bg-surface dark:bg-surface font-headline-md text-headline-md font-mono-label text-mono-label docked full-width top-0 border-b border-outline-variant flat no shadows flex justify-between items-center w-full px-margin py-4 max-w-container-max mx-auto z-50 sticky">
+<div class="flex items-center gap-gutter">
+<div class="font-mono-label text-mono-label font-bold tracking-tighter text-primary dark:text-primary">ITISYOU_OS</div>
+<nav class="hidden md:flex gap-6 structural-line-l pl-gutter">
+<a class="text-on-surface-variant dark:text-on-surface-variant font-mono-label text-mono-label hover:text-primary dark:hover:text-primary transition-colors duration-150" href="#">Architecture</a>
+<a class="text-on-surface-variant dark:text-on-surface-variant font-mono-label text-mono-label hover:text-primary dark:hover:text-primary transition-colors duration-150" href="#">Build</a>
+<a class="text-on-surface-variant dark:text-on-surface-variant font-mono-label text-mono-label hover:text-primary dark:hover:text-primary transition-colors duration-150" href="#">Roadmap</a>
+<a class="text-on-surface-variant dark:text-on-surface-variant font-mono-label text-mono-label hover:text-primary dark:hover:text-primary transition-colors duration-150" href="#">Security</a>
+<a class="text-primary dark:text-primary border-b border-primary pb-2 opacity-80" href="#">Docs</a>
+<a class="text-on-surface-variant dark:text-on-surface-variant font-mono-label text-mono-label hover:text-primary dark:hover:text-primary transition-colors duration-150" href="#">GitHub</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<div class="hidden lg:flex items-center gap-2 text-on-surface-variant font-mono-data text-mono-data border-b border-outline-variant py-1 focus-within:border-primary transition-colors">
+<span class="material-symbols-outlined text-[16px]">search</span>
+<input class="bg-transparent border-none p-0 focus:ring-0 text-primary w-48 font-mono-data text-mono-data placeholder-on-surface-variant/50" placeholder="Search Docs..." type="text"/>
+</div>
+<span class="font-status-tag text-status-tag border border-primary text-primary px-2 py-1">v0.4.2-alpha</span>
+<button class="font-mono-label text-mono-label border border-primary text-primary hover:bg-primary hover:text-on-primary transition-colors px-4 py-2 uppercase">BUILD_STABLE</button>
+</div>
+</header>
+<!-- Main Layout Grid -->
+<div class="flex-1 max-w-container-max mx-auto w-full grid grid-cols-12 flex-grow">
+<!-- Left Sidebar (Documentation Navigation) -->
+<aside class="col-span-12 md:col-span-3 lg:col-span-2 structural-line-v bg-surface-container-lowest hidden md:block pt-gutter relative">
+<div class="sticky top-[73px] h-[calc(100vh-73px)] overflow-y-auto pb-margin">
+<div class="px-6 mb-6">
+<h2 class="font-mono-label text-mono-label text-on-surface-variant mb-2">SYSTEM / DOCS</h2>
+<div class="font-headline-md text-headline-md text-primary">KERNEL</div>
+</div>
+<nav class="flex flex-col">
+<div class="px-6 py-2">
+<span class="font-status-tag text-status-tag text-on-surface-variant mb-1 block">CORE BOOT</span>
+</div>
+<a class="flex items-center gap-3 px-6 py-2 bg-secondary-container text-on-secondary-container border-l-2 border-primary scale-[0.98]" href="#">
+<span class="material-symbols-outlined text-[16px]">power_settings_new</span>
+<span class="font-mono-label text-mono-label">Entry &amp; UEFI Hand-off</span>
+</a>
+<a class="flex items-center gap-3 px-6 py-2 text-on-surface-variant hover:bg-surface-container-highest transition-all border-l-2 border-transparent" href="#">
+<span class="material-symbols-outlined text-[16px]">memory</span>
+<span class="font-mono-label text-mono-label">Paging Setup</span>
+</a>
+<a class="flex items-center gap-3 px-6 py-2 text-on-surface-variant hover:bg-surface-container-highest transition-all border-l-2 border-transparent" href="#">
+<span class="material-symbols-outlined text-[16px]">speed</span>
+<span class="font-mono-label text-mono-label">GDT &amp; IDT Init</span>
+</a>
+<div class="px-6 py-2 mt-4">
+<span class="font-status-tag text-status-tag text-on-surface-variant mb-1 block">MEMORY MGT</span>
+</div>
+<a class="flex items-center gap-3 px-6 py-2 text-on-surface-variant hover:bg-surface-container-highest transition-all border-l-2 border-transparent" href="#">
+<span class="material-symbols-outlined text-[16px]">data_array</span>
+<span class="font-mono-label text-mono-label">Physical Allocator</span>
+</a>
+<a class="flex items-center gap-3 px-6 py-2 text-on-surface-variant hover:bg-surface-container-highest transition-all border-l-2 border-transparent" href="#">
+<span class="material-symbols-outlined text-[16px]">schema</span>
+<span class="font-mono-label text-mono-label">Virtual Mapper</span>
+</a>
+<div class="px-6 py-2 mt-4">
+<span class="font-status-tag text-status-tag text-on-surface-variant mb-1 block">HARDWARE</span>
+</div>
+<a class="flex items-center gap-3 px-6 py-2 text-on-surface-variant hover:bg-surface-container-highest transition-all border-l-2 border-transparent" href="#">
+<span class="material-symbols-outlined text-[16px]">bolt</span>
+<span class="font-mono-label text-mono-label">Interrupts (APIC)</span>
+</a>
+<a class="flex items-center gap-3 px-6 py-2 text-on-surface-variant hover:bg-surface-container-highest transition-all border-l-2 border-transparent" href="#">
+<span class="material-symbols-outlined text-[16px]">developer_board</span>
+<span class="font-mono-label text-mono-label">PCIe Enumeration</span>
+</a>
+</nav>
+</div>
+</aside>
+<!-- Central Article Content -->
+<main class="col-span-12 md:col-span-9 lg:col-span-8 bg-surface-dim pt-gutter px-gutter md:px-margin pb-margin relative">
+<!-- Breadcrumbs & Meta -->
+<div class="flex items-center gap-2 font-mono-label text-mono-label text-on-surface-variant mb-8 uppercase tracking-widest">
+<a class="hover:text-primary transition-colors" href="#">SYSTEM</a>
+<span>/</span>
+<a class="hover:text-primary transition-colors" href="#">DOCS</a>
+<span>/</span>
+<a class="hover:text-primary transition-colors" href="#">KERNEL</a>
+<span>/</span>
+<span class="text-primary">UEFI_HANDOFF</span>
+</div>
+<!-- Article Header -->
+<header class="mb-12">
+<div class="flex items-center gap-3 mb-4">
+<span class="font-status-tag text-status-tag border border-outline text-on-surface-variant px-2 py-1">v0.4.2+</span>
+<span class="font-status-tag text-status-tag border border-primary text-primary px-2 py-1">IMPLEMENTED</span>
+</div>
+<h1 class="font-display-lg text-display-lg text-primary mb-6">Kernel Entry &amp; UEFI Hand-off</h1>
+<p class="font-body-base text-body-base text-on-surface-variant text-lg max-w-3xl">
+                    The critical transition phase where the bootloader relinquishes control of system resources, terminates boot services, and transfers execution to the ITISYOU kernel entry point.
+                </p>
+</header>
+<!-- Article Body -->
+<article class="space-y-12 max-w-4xl">
+<section class="scroll-mt-32" id="overview">
+<h2 class="font-headline-md text-headline-md text-primary mb-4 structural-line-h pb-2">1. Overview</h2>
+<p class="mb-4">
+                        ITISYOU OS relies on UEFI for initial hardware initialization and loading. The hand-off process is a delicate procedure that requires extracting the final memory map, exiting UEFI boot services, and setting up a minimal environment before jumping to the main kernel C/C++ code.
+                    </p>
+<div class="p-4 border border-outline-variant bg-surface-container-low mb-6">
+<div class="flex items-start gap-3">
+<span class="material-symbols-outlined text-tertiary-container mt-1">warning</span>
+<div>
+<h4 class="font-mono-label text-mono-label text-tertiary-container mb-1">CRITICAL REQUIREMENT</h4>
+<p class="font-body-base text-body-base text-on-surface-variant text-sm">
+                                    Once <code>ExitBootServices()</code> is called, the system is completely on its own. Attempting to use any UEFI boot service function after this point will result in an immediate page fault or unpredictable hardware behavior.
+                                </p>
+</div>
+</div>
+</div>
+</section>
+<section class="scroll-mt-32" id="memory-map">
+<h2 class="font-headline-md text-headline-md text-primary mb-4 structural-line-h pb-2">2. Retrieving the Memory Map</h2>
+<p class="mb-4">
+                        Before exiting, the bootloader must acquire the physical memory map. Because calling <code>GetMemoryMap()</code> can allocate memory, it might change the map key. A typical loop is required to ensure the key is valid when exiting.
+                    </p>
+<!-- Code Block -->
+<div class="border border-outline-variant rounded-sm overflow-hidden mb-6">
+<div class="bg-surface-container flex items-center justify-between px-4 py-2 structural-line-h">
+<span class="font-mono-label text-mono-label text-on-surface-variant">bootloader/efi_main.c</span>
+<button class="font-mono-label text-mono-label text-on-surface-variant hover:text-primary transition-colors flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">content_copy</span> COPY
+                            </button>
+</div>
+<div class="code-block-bg p-4 overflow-x-auto">
+<pre class="font-mono-data text-mono-data text-on-surface"><code><span class="text-secondary">EFI_STATUS</span> status;
+<span class="text-secondary">UINTN</span> memory_map_size = <span class="text-error">0</span>;
+<span class="text-secondary">EFI_MEMORY_DESCRIPTOR</span>* memory_map = <span class="text-error">NULL</span>;
+<span class="text-secondary">UINTN</span> map_key;
+<span class="text-secondary">UINTN</span> descriptor_size;
+<span class="text-secondary">UINT32</span> descriptor_version;
+
+<span class="text-outline-variant">/* First call to get required size */</span>
+SystemTable-&gt;BootServices-&gt;GetMemoryMap(
+    &amp;memory_map_size, memory_map, &amp;map_key, &amp;descriptor_size, &amp;descriptor_version
+);
+
+memory_map_size += <span class="text-error">2</span> * descriptor_size; <span class="text-outline-variant">/* Buffer for extra allocations */</span>
+
+SystemTable-&gt;BootServices-&gt;AllocatePool(
+    EfiLoaderData, memory_map_size, (<span class="text-secondary">void</span>**)&amp;memory_map
+);</code></pre>
+</div>
+</div>
+</section>
+<section class="scroll-mt-32" id="exit-boot-services">
+<h2 class="font-headline-md text-headline-md text-primary mb-4 structural-line-h pb-2">3. Exiting Boot Services</h2>
+<p class="mb-4">
+                        With the memory map secured, the transition occurs. The kernel parameter block (containing the framebuffer info, memory map, and RSDP pointer) is finalized.
+                    </p>
+<div class="border border-secondary/30 bg-surface-container-low p-4 mb-6">
+<div class="flex items-start gap-3">
+<span class="material-symbols-outlined text-secondary mt-1">verified</span>
+<div>
+<h4 class="font-mono-label text-mono-label text-secondary mb-1">VERIFICATION STEP</h4>
+<p class="font-body-base text-body-base text-on-surface-variant text-sm">
+                                    Verify the <code>status</code> of <code>ExitBootServices</code>. If it returns <code>EFI_INVALID_PARAMETER</code>, the memory map key was stale, and you must re-fetch the map and try exactly once more.
+                                </p>
+</div>
+</div>
+</div>
+</section>
+<section class="scroll-mt-32" id="kernel-entry">
+<h2 class="font-headline-md text-headline-md text-primary mb-4 structural-line-h pb-2">4. The Kernel Entry Point (_start)</h2>
+<p class="mb-4">
+                        Execution arrives at <code>_start</code> in the kernel space. At this point, the system is in long mode (64-bit), but using the identity-mapped paging set up by UEFI. The first priority is switching to a dedicated kernel page table.
+                    </p>
+</section>
+</article>
+</main>
+<!-- Right Sidebar (Table of Contents) -->
+<aside class="hidden lg:block lg:col-span-2 pt-gutter pl-6 structural-line-l">
+<div class="sticky top-[73px]">
+<h3 class="font-mono-label text-mono-label text-on-surface-variant mb-4 uppercase">On This Page</h3>
+<nav class="flex flex-col gap-3 font-mono-data text-mono-data">
+<a class="text-primary hover:text-primary transition-colors border-l border-primary pl-3 -ml-[1px]" href="#overview">1. Overview</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors border-l border-transparent hover:border-outline-variant pl-3 -ml-[1px]" href="#memory-map">2. Retrieving Map</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors border-l border-transparent hover:border-outline-variant pl-3 -ml-[1px]" href="#exit-boot-services">3. Exit Boot Svc</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors border-l border-transparent hover:border-outline-variant pl-3 -ml-[1px]" href="#kernel-entry">4. Kernel Entry</a>
+</nav>
+</div>
+</aside>
+</div>
+<!-- Footer -->
+<footer class="bg-surface dark:bg-surface font-mono-label text-mono-label text-on-surface-variant full-width bottom-0 border-t border-outline-variant flat no shadows flex justify-between items-center px-margin py-gutter w-full mt-20 transition-opacity duration-200">
+<div class="font-bold text-on-surface-variant">PART OF ITISYOU / 2024</div>
+<div class="flex gap-6">
+<a class="hover:text-primary underline transition-colors" href="#">Experimental Status</a>
+<a class="hover:text-primary underline transition-colors" href="#">Source</a>
+<a class="hover:text-primary underline transition-colors" href="#">Kernel Documentation</a>
+<a class="hover:text-primary underline transition-colors" href="#">Security Policy</a>
+</div>
+</footer>
+</body></html>

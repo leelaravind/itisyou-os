@@ -1,0 +1,7 @@
+[package]
+name = "kernel-core"
+version.workspace = true
+edition.workspace = true
+description = "Pure, host-testable kernel logic: boot-stage contract, serial marker grammar. no_std; std only under #[cfg(test)]."
+
+[dependencies]

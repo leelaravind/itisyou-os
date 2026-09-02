@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>ITISYOU OS Architecture</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;700&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "primary-container": "#e2e2e2",
+                      "on-tertiary": "#68000b",
+                      "on-primary-fixed": "#1a1c1c",
+                      "secondary-fixed": "#d2e5f3",
+                      "on-secondary-fixed": "#0b1d28",
+                      "surface": "#131313",
+                      "on-secondary": "#21323d",
+                      "inverse-on-surface": "#313030",
+                      "surface-container-lowest": "#0e0e0e",
+                      "tertiary-fixed": "#ffdad7",
+                      "on-tertiary-fixed": "#410004",
+                      "tertiary-fixed-dim": "#ffb3ae",
+                      "on-secondary-container": "#a5b8c5",
+                      "surface-tint": "#c6c6c7",
+                      "secondary-fixed-dim": "#b6c9d7",
+                      "inverse-primary": "#5d5f5f",
+                      "outline": "#8e9192",
+                      "error": "#ffb4ab",
+                      "secondary-container": "#384955",
+                      "secondary": "#b6c9d7",
+                      "surface-container-low": "#1c1b1b",
+                      "on-error-container": "#ffdad6",
+                      "error-container": "#93000a",
+                      "on-error": "#690005",
+                      "on-tertiary-fixed-variant": "#930014",
+                      "inverse-surface": "#e5e2e1",
+                      "on-secondary-fixed-variant": "#384955",
+                      "primary-fixed-dim": "#c6c6c7",
+                      "on-surface-variant": "#c4c7c8",
+                      "tertiary": "#ffffff",
+                      "surface-container-high": "#2a2a2a",
+                      "on-background": "#e5e2e1",
+                      "surface-dim": "#131313",
+                      "on-primary-container": "#636565",
+                      "surface-variant": "#353534",
+                      "primary-fixed": "#e2e2e2",
+                      "surface-bright": "#3a3939",
+                      "background": "#131313",
+                      "on-tertiary-container": "#c31f29",
+                      "on-primary-fixed-variant": "#454747",
+                      "outline-variant": "#444748",
+                      "surface-container": "#201f1f",
+                      "on-surface": "#e5e2e1",
+                      "surface-container-highest": "#353534",
+                      "primary": "#ffffff",
+                      "tertiary-container": "#ffdad7",
+                      "on-primary": "#2f3131"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "gutter": "24px",
+                      "container-max": "1440px",
+                      "margin": "40px",
+                      "unit": "4px"
+              },
+              "fontFamily": {
+                      "body-base": [
+                              "Geist"
+                      ],
+                      "headline-md": [
+                              "Geist"
+                      ],
+                      "display-lg": [
+                              "Geist"
+                      ],
+                      "status-tag": [
+                              "JetBrains Mono"
+                      ],
+                      "mono-data": [
+                              "JetBrains Mono"
+                      ],
+                      "mono-label": [
+                              "JetBrains Mono"
+                      ]
+              },
+              "fontSize": {
+                      "body-base": [
+                              "14px",
+                              {
+                                      "lineHeight": "1.6",
+                                      "letterSpacing": "0em",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-md": [
+                              "24px",
+                              {
+                                      "lineHeight": "1.2",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "display-lg": [
+                              "48px",
+                              {
+                                      "lineHeight": "1.1",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "300"
+                              }
+                      ],
+                      "status-tag": [
+                              "10px",
+                              {
+                                      "lineHeight": "1",
+                                      "letterSpacing": "0.1em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "mono-data": [
+                              "13px",
+                              {
+                                      "lineHeight": "1.5",
+                                      "letterSpacing": "0em",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "mono-label": [
+                              "12px",
+                              {
+                                      "lineHeight": "1",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "500"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+      </script>
+<style>
+        body { background-color: #050505; color: #e5e2e1; }
+        .grid-bg {
+            background-image: linear-gradient(to right, #1a1a1a 1px, transparent 1px),
+                              linear-gradient(to bottom, #1a1a1a 1px, transparent 1px);
+            background-size: 24px 24px;
+        }
+      </style>
+</head>
+<body class="font-body-base text-body-base overflow-x-hidden antialiased">
+<!-- Background Shader -->
+<div class="fixed inset-0 z-[-1] opacity-20 pointer-events-none mix-blend-screen">
+
+</div>
+<div class="fixed inset-0 z-[-2] grid-bg pointer-events-none"></div>
+<!-- Top Navigation (Mobile) -->
+<nav class="md:hidden bg-surface dark:bg-surface flex justify-between items-center w-full px-margin py-4 border-b border-outline-variant fixed top-0 z-50">
+<div class="font-mono-label text-mono-label font-bold tracking-tighter text-primary dark:text-primary">ITISYOU_OS</div>
+<div class="flex gap-4">
+<span class="text-on-surface-variant font-mono-label text-mono-label">v0.4.2-alpha</span>
+</div>
+</nav>
+<div class="flex min-h-screen pt-[73px] md:pt-0">
+<!-- Side Navigation (Desktop) -->
+<aside class="hidden md:flex flex-col h-screen left-0 w-64 border-r border-outline-variant bg-surface-container-low dark:bg-surface-container-low fixed top-0 z-40">
+<div class="p-gutter border-b border-outline-variant">
+<div class="font-mono-label text-mono-label text-primary mb-2">ITISYOU_OS</div>
+<div class="text-xs text-on-surface-variant font-mono-data">v0.4.2_REV_82</div>
+<div class="mt-6 text-[10px] text-on-surface-variant tracking-widest font-bold">ARCHITECTURE</div>
+</div>
+<div class="flex-1 overflow-y-auto py-4">
+<nav class="flex flex-col gap-1 px-4">
+<a class="flex items-center gap-3 px-3 py-2 bg-secondary-container text-on-secondary-container border-l-2 border-primary font-mono-label text-mono-label" href="#">
+<span class="material-symbols-outlined text-[18px]">memory</span>
+                        KERNEL
+                    </a>
+<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-high transition-all font-mono-label text-mono-label" href="#">
+<span class="material-symbols-outlined text-[18px]">folder_open</span>
+                        FILESYSTEM
+                    </a>
+<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-high transition-all font-mono-label text-mono-label" href="#">
+<span class="material-symbols-outlined text-[18px]">settings_input_component</span>
+                        DRIVERS
+                    </a>
+<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-high transition-all font-mono-label text-mono-label" href="#">
+<span class="material-symbols-outlined text-[18px]">lan</span>
+                        NETWORK
+                    </a>
+<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-high transition-all font-mono-label text-mono-label" href="#">
+<span class="material-symbols-outlined text-[18px]">person_pin</span>
+                        USERSPACE
+                    </a>
+</nav>
+</div>
+<div class="p-gutter border-t border-outline-variant">
+<button class="w-full py-2 border border-outline text-primary font-mono-label text-mono-label hover:border-primary hover:bg-surface-container-high transition-colors text-center uppercase tracking-widest">COMMIT_LOGS</button>
+</div>
+</aside>
+<!-- Main Content -->
+<main class="flex-1 md:ml-64 p-margin max-w-[1200px] mx-auto">
+<header class="mb-16">
+<div class="flex items-center gap-2 mb-4">
+<span class="text-on-surface-variant font-mono-data text-xs">SYSTEM / KERNEL / ARCH</span>
+</div>
+<h1 class="font-display-lg text-display-lg text-primary mb-4">System Architecture</h1>
+<p class="text-on-surface-variant max-w-2xl">Deterministic security boundaries ensuring hardware isolation while facilitating AI agent operations through strict policy evaluation constraints.</p>
+</header>
+<!-- Architecture Diagram Layout -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-gutter mb-20 relative">
+<!-- Connection Lines Layer (Conceptual) -->
+<div class="absolute inset-0 pointer-events-none hidden lg:block border-l border-r border-[#1a1a1a] z-[-1] left-[33.33%] w-[33.33%]"></div>
+<!-- Column 1: Hardware & Low Level -->
+<div class="lg:col-span-4 flex flex-col gap-gutter">
+<!-- Layer -->
+<div class="border border-outline-variant bg-[#0c0c0c] p-6 hover:border-[#333333] transition-colors relative group">
+<div class="absolute top-0 right-0 p-2 opacity-50"><span class="material-symbols-outlined text-sm">memory</span></div>
+<div class="font-mono-label text-mono-label text-primary mb-4 tracking-widest">LAYER 00</div>
+<h3 class="font-headline-md text-headline-md text-primary mb-2">Hardware</h3>
+<p class="text-on-surface-variant text-sm mb-4">Physical substrate execution environment.</p>
+<ul class="font-mono-data text-mono-data text-on-surface-variant text-xs space-y-1">
+<li>&gt; CPU / SMP Architecture</li>
+<li>&gt; Physical Memory (RAM)</li>
+<li>&gt; Peripheral Buses (PCIe)</li>
+</ul>
+</div>
+<!-- Layer -->
+<div class="border border-outline-variant bg-[#0c0c0c] p-6 hover:border-[#333333] transition-colors">
+<div class="font-mono-label text-mono-label text-primary mb-4 tracking-widest">LAYER 01</div>
+<h3 class="font-headline-md text-headline-md text-primary mb-2">Boot Layer</h3>
+<p class="text-on-surface-variant text-sm mb-4">Secure initialization and kernel payload handoff.</p>
+<div class="flex gap-2">
+<span class="border border-solid border-primary text-primary px-2 py-1 font-status-tag text-status-tag uppercase">Verified</span>
+</div>
+</div>
+</div>
+<!-- Column 2: Kernel (The Core) -->
+<div class="lg:col-span-4 flex flex-col gap-gutter">
+<div class="border border-primary bg-[#121212] p-6 shadow-[0_0_15px_rgba(255,255,255,0.05)] relative h-full">
+<div class="absolute top-0 left-0 w-full h-1 bg-primary"></div>
+<div class="font-mono-label text-mono-label text-primary mb-4 tracking-widest flex justify-between">
+<span>LAYER 02</span>
+<span class="text-error">RING_0</span>
+</div>
+<h3 class="font-headline-md text-headline-md text-primary mb-4">Kernel Space</h3>
+<div class="space-y-4">
+<div class="bg-[#080808] p-3 border border-[#1a1a1a]">
+<div class="font-mono-label text-[10px] text-on-surface-variant mb-1">SCHEDULING</div>
+<div class="font-mono-data text-xs text-primary">Preemptive Multitasking</div>
+</div>
+<div class="bg-[#080808] p-3 border border-[#1a1a1a]">
+<div class="font-mono-label text-[10px] text-on-surface-variant mb-1">MEMORY MGMT</div>
+<div class="font-mono-data text-xs text-primary">Virtual Address Spaces</div>
+</div>
+<div class="bg-[#080808] p-3 border border-[#1a1a1a]">
+<div class="font-mono-label text-[10px] text-on-surface-variant mb-1">VFS &amp; IPC</div>
+<div class="font-mono-data text-xs text-primary">Abstracted I/O &amp; Messaging</div>
+</div>
+</div>
+<div class="mt-6 pt-4 border-t border-[#1a1a1a]">
+<p class="text-xs text-on-surface-variant font-mono-data">Total Isolation Enforced</p>
+</div>
+</div>
+</div>
+<!-- Column 3: Security & Userspace -->
+<div class="lg:col-span-4 flex flex-col gap-gutter">
+<!-- Security Boundary Box -->
+<div class="border border-error bg-[#1a0505] p-6 relative">
+<div class="font-mono-label text-mono-label text-error mb-2 tracking-widest flex items-center gap-2">
+<span class="material-symbols-outlined text-[14px]">shield</span>
+                            SECURITY BOUNDARY
+                        </div>
+<h4 class="font-headline-md text-primary mb-2 text-lg">Policy Engine</h4>
+<p class="text-on-surface-variant text-xs mb-3">AI Agent action requests are intercepted, cryptographically verified, and evaluated against deterministic policies before kernel syscall execution.</p>
+<div class="bg-[#050505] border border-error p-2 font-mono-data text-[10px] text-error">
+                            DENY_BY_DEFAULT = TRUE
+                        </div>
+</div>
+<!-- Layer -->
+<div class="border border-outline-variant bg-[#0c0c0c] p-6 hover:border-[#333333] transition-colors flex-1">
+<div class="font-mono-label text-mono-label text-primary mb-4 tracking-widest flex justify-between">
+<span>LAYER 03</span>
+<span class="text-on-surface-variant">RING_3</span>
+</div>
+<h3 class="font-headline-md text-headline-md text-primary mb-2">Userspace Runtime</h3>
+<p class="text-on-surface-variant text-sm mb-4">Isolated environments for system services, daemons, and application logic.</p>
+<div class="flex flex-wrap gap-2 mt-auto">
+<span class="border border-solid border-on-surface-variant text-on-surface-variant px-2 py-1 font-status-tag text-status-tag uppercase">In Development</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Detailed Component Breakdown (Bento Style) -->
+<section class="mb-20">
+<h2 class="font-headline-md text-headline-md text-primary mb-8 border-b border-outline-variant pb-4">Subsystem Analysis</h2>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-1">
+<div class="bg-[#0c0c0c] border border-outline-variant p-6 col-span-1 md:col-span-2 lg:col-span-2">
+<h4 class="font-mono-label text-mono-label text-primary mb-2 tracking-widest">INTERRUPT HANDLING</h4>
+<p class="text-on-surface-variant text-sm mb-4">Top-half and bottom-half processing mechanisms ensuring low latency hardware response while deferring non-critical workloads to scheduler contexts.</p>
+<div class="bg-[#080808] p-4 font-mono-data text-xs text-on-surface-variant border border-[#1a1a1a] overflow-x-auto">
+<pre class="text-secondary-fixed">struct irq_desc {
+    irq_flow_handler_t handle_irq;
+    struct irq_chip *chip;
+    struct irqaction *action;
+    unsigned int status_use_accessors;
+    // ... isolation pads
+};
+</pre>
+</div>
+</div>
+<div class="bg-[#0c0c0c] border border-outline-variant p-6 col-span-1 flex flex-col justify-between">
+<div>
+<h4 class="font-mono-label text-mono-label text-primary mb-2 tracking-widest">SYSCALL INTERFACE</h4>
+<p class="text-on-surface-variant text-sm">Strictly defined entry points from Ring 3 to Ring 0.</p>
+</div>
+<div class="mt-4">
+<div class="flex justify-between items-center py-2 border-b border-[#1a1a1a]">
+<span class="font-mono-data text-xs">sys_read</span>
+<span class="material-symbols-outlined text-xs text-primary">check</span>
+</div>
+<div class="flex justify-between items-center py-2 border-b border-[#1a1a1a]">
+<span class="font-mono-data text-xs">sys_write</span>
+<span class="material-symbols-outlined text-xs text-primary">check</span>
+</div>
+<div class="flex justify-between items-center py-2">
+<span class="font-mono-data text-xs">sys_execve</span>
+<span class="text-[10px] text-error font-mono-label border border-error px-1">POLICY_REQ</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+</div>
+<!-- Footer -->
+<footer class="md:ml-64 bg-surface border-t border-outline-variant flex flex-col md:flex-row justify-between items-center px-margin py-gutter mt-20 z-10 relative">
+<div class="font-mono-label text-mono-label font-bold text-primary mb-4 md:mb-0">
+            PART OF ITISYOU / 2024
+        </div>
+<div class="flex flex-wrap justify-center gap-6">
+<a class="font-mono-label text-mono-label text-on-surface-variant hover:text-primary transition-opacity duration-200 hover:underline" href="#">Experimental Status</a>
+<a class="font-mono-label text-mono-label text-on-surface-variant hover:text-primary transition-opacity duration-200 hover:underline" href="#">Source</a>
+<a class="font-mono-label text-mono-label text-on-surface-variant hover:text-primary transition-opacity duration-200 hover:underline" href="#">Kernel Documentation</a>
+<a class="font-mono-label text-mono-label text-on-surface-variant hover:text-primary transition-opacity duration-200 hover:underline" href="#">Security Policy</a>
+</div>
+</footer>
+</body></html>

@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>ITISYOU_OS</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-error": "#690005",
+                      "secondary-fixed-dim": "#b6c9d7",
+                      "surface-container-low": "#1c1b1b",
+                      "surface": "#131313",
+                      "secondary": "#b6c9d7",
+                      "surface-variant": "#353534",
+                      "tertiary": "#ffffff",
+                      "outline": "#8e9192",
+                      "tertiary-fixed-dim": "#ffb3ae",
+                      "background": "#131313",
+                      "on-primary-fixed": "#1a1c1c",
+                      "on-error-container": "#ffdad6",
+                      "inverse-surface": "#e5e2e1",
+                      "on-secondary-fixed-variant": "#384955",
+                      "tertiary-fixed": "#ffdad7",
+                      "on-primary-container": "#636565",
+                      "on-tertiary-fixed": "#410004",
+                      "surface-container-highest": "#353534",
+                      "on-surface-variant": "#c4c7c8",
+                      "on-primary-fixed-variant": "#454747",
+                      "outline-variant": "#444748",
+                      "surface-bright": "#3a3939",
+                      "on-tertiary": "#68000b",
+                      "on-tertiary-fixed-variant": "#930014",
+                      "primary-container": "#e2e2e2",
+                      "tertiary-container": "#ffdad7",
+                      "surface-tint": "#c6c6c7",
+                      "on-tertiary-container": "#c31f29",
+                      "on-surface": "#e5e2e1",
+                      "inverse-on-surface": "#313030",
+                      "surface-container": "#201f1f",
+                      "surface-container-high": "#2a2a2a",
+                      "on-secondary-fixed": "#0b1d28",
+                      "secondary-fixed": "#d2e5f3",
+                      "on-secondary-container": "#a5b8c5",
+                      "on-background": "#e5e2e1",
+                      "on-secondary": "#21323d",
+                      "error": "#ffb4ab",
+                      "surface-dim": "#131313",
+                      "primary-fixed-dim": "#c6c6c7",
+                      "error-container": "#93000a",
+                      "primary": "#ffffff",
+                      "secondary-container": "#384955",
+                      "on-primary": "#2f3131",
+                      "primary-fixed": "#e2e2e2",
+                      "inverse-primary": "#5d5f5f",
+                      "surface-container-lowest": "#0e0e0e"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "gutter": "24px",
+                      "unit": "4px",
+                      "margin": "40px",
+                      "container-max": "1440px"
+              },
+              "fontFamily": {
+                      "headline-md": [
+                              "Geist"
+                      ],
+                      "mono-label": [
+                              "JetBrains Mono"
+                      ],
+                      "status-tag": [
+                              "JetBrains Mono"
+                      ],
+                      "body-base": [
+                              "Geist"
+                      ],
+                      "mono-data": [
+                              "JetBrains Mono"
+                      ],
+                      "display-lg": [
+                              "Geist"
+                      ]
+              },
+              "fontSize": {
+                      "headline-md": [
+                              "24px",
+                              {
+                                      "lineHeight": "1.2",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "mono-label": [
+                              "12px",
+                              {
+                                      "lineHeight": "1",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "status-tag": [
+                              "10px",
+                              {
+                                      "lineHeight": "1",
+                                      "letterSpacing": "0.1em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "body-base": [
+                              "14px",
+                              {
+                                      "lineHeight": "1.6",
+                                      "letterSpacing": "0em",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "mono-data": [
+                              "13px",
+                              {
+                                      "lineHeight": "1.5",
+                                      "letterSpacing": "0em",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "display-lg": [
+                              "48px",
+                              {
+                                      "lineHeight": "1.1",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "300"
+                              }
+                      ]
+              }
+            }
+          }
+        }
+    </script>
+<style>
+        body {
+            background-color: theme('colors.background');
+            color: theme('colors.on-background');
+            font-family: theme('fontFamily.body-base');
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        .grid-bg {
+            background-image: linear-gradient(to right, theme('colors.outline-variant') 1px, transparent 1px),
+                              linear-gradient(to bottom, theme('colors.outline-variant') 1px, transparent 1px);
+            background-size: 24px 24px;
+            opacity: 0.1;
+        }
+        
+        .layer-cell {
+            border: 1px solid theme('colors.outline-variant');
+            background-color: theme('colors.surface-container-low');
+        }
+        
+        .tech-button {
+            border: 1px solid theme('colors.outline-variant');
+            background-color: transparent;
+            transition: all 0.2s;
+        }
+        
+        .tech-button:hover {
+            border-color: theme('colors.primary');
+            background-color: theme('colors.surface-container-high');
+        }
+        
+        .tech-button-primary {
+            border: 1px solid theme('colors.primary');
+            background-color: transparent;
+            color: theme('colors.primary');
+            transition: all 0.2s;
+        }
+        
+        .tech-button-primary:hover {
+            background-color: theme('colors.primary');
+            color: theme('colors.background');
+        }
+
+    </style>
+</head>
+<body class="antialiased font-body-base text-body-base bg-surface text-on-surface">
+<div class="fixed inset-0 grid-bg pointer-events-none z-[-1]"></div>
+<!-- TopNavBar (Mobile Header Context) -->
+<header class="flex justify-between items-center w-full px-6 py-4 bg-surface dark:bg-surface border-b border-outline-variant z-50 sticky top-0">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">terminal</span>
+<span class="font-mono-label text-mono-label font-bold tracking-tighter text-primary dark:text-primary">ITISYOU_OS</span>
+</div>
+<div class="flex items-center gap-4">
+<span class="font-status-tag text-status-tag border border-outline px-2 py-1 text-on-surface-variant">v0.4.2-alpha</span>
+<button class="md:hidden text-primary">
+<span class="material-symbols-outlined">menu</span>
+</button>
+<nav class="hidden md:flex gap-6 font-mono-label text-mono-label text-on-surface-variant">
+<a class="hover:text-primary transition-colors duration-150" href="#">Architecture</a>
+<a class="hover:text-primary transition-colors duration-150" href="#">Build</a>
+<a class="hover:text-primary transition-colors duration-150" href="#">Roadmap</a>
+<a class="hover:text-primary transition-colors duration-150" href="#">Security</a>
+<a class="hover:text-primary transition-colors duration-150" href="#">Docs</a>
+<a class="hover:text-primary transition-colors duration-150" href="#">GitHub</a>
+</nav>
+</div>
+</header>
+<main class="flex-grow flex flex-col w-full max-w-container-max mx-auto px-6 py-8 gap-12">
+<!-- Hero Section -->
+<section class="flex flex-col gap-6 pt-12 pb-8 border-b border-outline-variant relative">
+<div class="absolute top-0 right-0 p-4 opacity-20">
+<span class="font-mono-data text-mono-data">SYS_INIT_OK</span>
+</div>
+<h1 class="font-display-lg text-display-lg font-light text-primary tracking-tighter leading-tight">
+                ITISYOU OS
+            </h1>
+<p class="font-body-base text-body-base text-on-surface-variant max-w-md">
+                An independent operating system architecture prioritizing structural clarity, mathematical isolation, and engineering precision. Built for environments demanding absolute reliability over decorative softness.
+            </p>
+<div class="flex flex-col sm:flex-row gap-4 mt-4">
+<a class="tech-button-primary font-mono-label text-mono-label px-6 py-3 text-center uppercase tracking-widest inline-flex items-center justify-center gap-2" href="#">
+                    Explore Architecture
+                    <span class="material-symbols-outlined text-sm">arrow_forward</span>
+</a>
+<a class="tech-button font-mono-label text-mono-label px-6 py-3 text-center uppercase tracking-widest text-on-surface inline-flex items-center justify-center gap-2" href="#">
+                    View Build_Logs
+                    <span class="material-symbols-outlined text-sm">terminal</span>
+</a>
+</div>
+</section>
+<!-- Architecture Stack -->
+<section class="flex flex-col gap-6 py-8">
+<div class="flex items-center gap-2 border-b border-outline-variant pb-2">
+<span class="material-symbols-outlined text-primary text-sm">layers</span>
+<h2 class="font-mono-label text-mono-label uppercase tracking-widest text-primary">System_Architecture_Stack</h2>
+</div>
+<div class="flex flex-col gap-2">
+<!-- App Layer -->
+<div class="layer-cell p-4 flex justify-between items-center relative overflow-hidden">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-surface-variant"></div>
+<div class="flex flex-col">
+<span class="font-mono-label text-mono-label text-on-surface-variant">L4</span>
+<span class="font-headline-md text-headline-md text-primary">Applications</span>
+</div>
+<span class="material-symbols-outlined text-outline">apps</span>
+</div>
+<!-- Services Layer -->
+<div class="layer-cell p-4 flex justify-between items-center relative overflow-hidden">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-surface-variant"></div>
+<div class="flex flex-col">
+<span class="font-mono-label text-mono-label text-on-surface-variant">L3</span>
+<span class="font-headline-md text-headline-md text-primary">System Services</span>
+</div>
+<span class="material-symbols-outlined text-outline">settings_applications</span>
+</div>
+<!-- Policy Layer -->
+<div class="layer-cell p-4 flex justify-between items-center relative overflow-hidden">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-primary"></div>
+<div class="flex flex-col">
+<span class="font-mono-label text-mono-label text-primary">L2</span>
+<span class="font-headline-md text-headline-md text-primary">Policy &amp; Security</span>
+</div>
+<span class="material-symbols-outlined text-primary">security</span>
+</div>
+<!-- Kernel Layer -->
+<div class="layer-cell p-4 flex justify-between items-center relative overflow-hidden">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-surface-variant"></div>
+<div class="flex flex-col">
+<span class="font-mono-label text-mono-label text-on-surface-variant">L1</span>
+<span class="font-headline-md text-headline-md text-primary">Micro-Kernel</span>
+</div>
+<span class="material-symbols-outlined text-outline">memory</span>
+</div>
+<!-- Hardware Layer -->
+<div class="layer-cell p-4 flex justify-between items-center relative overflow-hidden">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-surface-variant"></div>
+<div class="flex flex-col">
+<span class="font-mono-label text-mono-label text-on-surface-variant">L0</span>
+<span class="font-headline-md text-headline-md text-primary">Hardware Abstraction</span>
+</div>
+<span class="material-symbols-outlined text-outline">dns</span>
+</div>
+</div>
+</section>
+<!-- Current Development -->
+<section class="flex flex-col gap-6 py-8">
+<div class="flex items-center justify-between border-b border-outline-variant pb-2">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-sm">build</span>
+<h2 class="font-mono-label text-mono-label uppercase tracking-widest text-primary">Active_Development</h2>
+</div>
+<span class="font-status-tag text-status-tag border border-primary text-primary px-2 py-1 bg-surface-container-low">v0.1_KERNEL_FOUNDATION</span>
+</div>
+<div class="grid grid-cols-1 gap-4">
+<div class="border border-outline-variant bg-surface p-5 flex flex-col gap-4">
+<div class="flex justify-between items-start">
+<h3 class="font-mono-label text-mono-label text-primary">Memory Management Subsystem</h3>
+<span class="font-status-tag text-status-tag border border-primary text-primary px-2 py-0.5">Verified</span>
+</div>
+<p class="font-body-base text-body-base text-on-surface-variant">Implementation of virtual memory spaces, page table manipulation, and basic slab allocation routines.</p>
+<div class="bg-surface-container-highest p-3 mt-2 border border-outline-variant">
+<code class="font-mono-data text-mono-data text-on-surface-variant block whitespace-pre">
+&gt; init_vm() ... OK
+&gt; map_kernel_pages() ... OK
+&gt; alloc_slab_cache() ... OK
+                        </code>
+</div>
+</div>
+<div class="border border-outline-variant bg-surface p-5 flex flex-col gap-4">
+<div class="flex justify-between items-start">
+<h3 class="font-mono-label text-mono-label text-primary">Scheduler Core</h3>
+<span class="font-status-tag text-status-tag border border-secondary text-secondary px-2 py-0.5">In Development</span>
+</div>
+<p class="font-body-base text-body-base text-on-surface-variant">Preemptive multitasking architecture, priority queues, and context switching primitives.</p>
+<div class="w-full bg-surface-container-low h-1 mt-2">
+<div class="bg-secondary h-full w-[65%]"></div>
+</div>
+</div>
+<div class="border border-outline-variant bg-surface p-5 flex flex-col gap-4">
+<div class="flex justify-between items-start">
+<h3 class="font-mono-label text-mono-label text-primary">IPC Mechanisms</h3>
+<span class="font-status-tag text-status-tag border border-outline text-outline px-2 py-0.5">Planned</span>
+</div>
+<p class="font-body-base text-body-base text-on-surface-variant">Design of synchronous message passing, capability-based security tokens, and shared memory mapping.</p>
+</div>
+</div>
+</section>
+</main>
+<!-- Footer -->
+<footer class="flex flex-col md:flex-row justify-between items-center px-6 py-8 w-full border-t border-outline-variant mt-12 bg-surface dark:bg-surface gap-6">
+<div class="font-mono-label text-mono-label font-bold text-primary dark:text-primary">
+            PART OF ITISYOU / 2024
+        </div>
+<div class="flex flex-col md:flex-row gap-4 font-mono-label text-mono-label text-center md:text-left">
+<a class="text-on-surface-variant hover:text-primary underline transition-opacity duration-200" href="#">Experimental Status</a>
+<a class="text-on-surface-variant hover:text-primary underline transition-opacity duration-200" href="#">Source</a>
+<a class="text-on-surface-variant hover:text-primary underline transition-opacity duration-200" href="#">Kernel Documentation</a>
+<a class="text-on-surface-variant hover:text-primary underline transition-opacity duration-200" href="#">Security Policy</a>
+</div>
+</footer>
+</body></html>

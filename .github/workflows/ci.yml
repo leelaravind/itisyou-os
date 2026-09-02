@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  kernel:
+    name: Kernel build, tests, QEMU boot matrix
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # rust-toolchain.toml pins the exact nightly + components + target.
+      - name: Install pinned Rust toolchain
+        run: rustup show
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (deny warnings)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Host unit tests
+        run: cargo test -p kernel-core -p image-builder -p qemu-runner
+
+      - name: Build bootable images
+        run: cargo run -p image-builder -- target/images
+
+      - name: Install QEMU + OVMF
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf
+
+      - name: QEMU boot smoke (BIOS)
+        run: |
+          cargo run -q -p qemu-runner -- \
+            --image target/images/itisyou-kernel-bios.img \
+            --expect B010 --expect B020 --expect B030 \
+            --exit-after-markers \
+            --timeout-secs 120 --label boot-smoke-bios
+
+# UEFI legs disabled: bootloader-x86_64-uefi fails to link on current
+# nightlies (upstream rust-osdev/bootloader#579). Restore when fixed.
+
+      - name: QEMU selftest (BIOS)
+        run: |
+          cargo run -q -p qemu-runner -- \
+            --image target/images/itisyou-kernel-selftest-bios.img \
+            --expect B010 --expect B020 --expect B030 --expect-selftest \
+            --timeout-secs 180 --label selftest-bios
+
+      - name: Upload QEMU evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-evidence
+          path: artifacts/qemu/
+          if-no-files-found: ignore
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

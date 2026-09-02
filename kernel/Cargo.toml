@@ -1,0 +1,40 @@
+cargo-features = ["per-package-target"]
+
+[package]
+name = "itisyou-kernel"
+version.workspace = true
+edition.workspace = true
+description = "ITISYOU OS x86_64 kernel (no_std, boots via the rust-osdev bootloader crate)"
+# The kernel is only ever built for bare metal; per-package-target keeps
+# plain `cargo build` at the workspace root correct on every package.
+forced-target = "x86_64-unknown-none"
+
+[dependencies]
+bootloader_api = "0.11"
+kernel-core = { path = "../crates/kernel-core" }
+raw-cpuid = "11"
+spin = "0.9"
+uart_16550 = "0.3"
+x86_64 = "0.15"
+
+# test/bench harnesses are disabled: there is no `test` crate for the
+# bare-metal target. Host-testable logic lives in crates/kernel-core;
+# in-QEMU verification runs through the selftest binary.
+[lib]
+name = "itisyou_kernel"
+path = "src/lib.rs"
+test = false
+bench = false
+doctest = false
+
+[[bin]]
+name = "itisyou-kernel"
+path = "src/bin/itisyou-kernel.rs"
+test = false
+bench = false
+
+[[bin]]
+name = "itisyou-kernel-selftest"
+path = "src/bin/itisyou-kernel-selftest.rs"
+test = false
+bench = false
