@@ -67,7 +67,7 @@ Write-Output '=== QEMU shell interaction (BIOS) ==='
     '--send', 'echo shell-echo-check', '--send', 'definitely-not-a-command',
     '--send', 'run /bin/init', '--send', 'run /bin/broken',
     '--send', 'panic-test', '--send', 'shutdown',
-    '--require', 'itisyou-os 0.2.0-dev',
+    '--require', 'itisyou-os 0.3.0-dev',
     '--require', 'task 0: kmain',
     '--require', 'RING3-DONE',
     '--require', 'run: /bin/init: Exit(0)',
