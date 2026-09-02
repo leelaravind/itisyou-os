@@ -65,6 +65,32 @@ const outcomes = [
       </div>
     </section>
 
+    <!-- ============ V0.5 desktop evidence ============ -->
+    <section class="mb-16" aria-labelledby="desktop-title">
+      <h2 id="desktop-title" class="font-sans text-headline-md text-ink border-b border-line-soft pb-4 mb-8">
+        The desktop, produced by the OS
+      </h2>
+      <div class="panel p-4">
+        <img
+          src="/desktop-v0.5.png"
+          width="1280"
+          height="720"
+          loading="lazy"
+          alt="ITISYOU OS desktop rendered inside QEMU: a top bar reading ITISYOU OS, a window titled ITISYOU Desktop showing live PS/2 input (keys pressed, last key, mouse events, cursor position), and the mouse cursor."
+          class="w-full h-auto border border-line"
+        />
+      </div>
+      <p class="text-body-base text-meta-bright text-sm mt-4 max-w-3xl">
+        Not a mock-up. This is a raw framebuffer <span class="font-mono text-mono-data">screendump</span> captured
+        from QEMU while the V0.5 <span class="font-mono text-mono-data">desktop-input</span> test ran: the OS itself
+        draws the wallpaper, top bar, window and cursor into a bootloader-provided framebuffer. The test injects real
+        keyboard and mouse events through the QEMU monitor into the emulated PS/2 devices; the kernel’s IRQ1/IRQ12
+        handlers observe them (the window shows <span class="font-mono text-mono-data">keys pressed: 5</span>,
+        <span class="font-mono text-mono-data">last key: o</span>, and a moved cursor) before
+        <span class="font-mono text-mono-data">DESKTOP-INPUT-VERIFIED</span> gates the run green.
+      </p>
+    </section>
+
     <!-- ============ Status vocabulary ============ -->
     <section class="mb-16" aria-labelledby="vocab-title">
       <h2 id="vocab-title" class="font-sans text-headline-md text-ink border-b border-line-soft pb-4 mb-8">

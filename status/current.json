@@ -4,8 +4,8 @@
   "architecture": "x86_64",
   "environment": "QEMU",
   "milestone": "V0.5 — Graphics + Input + Basic Desktop/Compositor",
-  "commit": "PENDING",
-  "lastVerifiedAt": "2026-09-02T12:00:00Z",
+  "commit": "71dbc5a",
+  "lastVerifiedAt": "2026-09-02T12:45:00Z",
   "verification": "locally-verified",
   "modules": [
     { "id": "boot", "name": "Boot path (BIOS + UEFI via bootloader crate)", "status": "verified" },
