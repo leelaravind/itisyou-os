@@ -192,6 +192,12 @@ pub fn init_subsystems(boot_info: &'static mut BootInfo) {
             bootstage::emit(Stage::B180DesktopReady);
         }
     }
+
+    // B190: device model — enumerate PCI into Device records (sized BARs +
+    // capability lists), report them, and bind registered drivers (V0.6).
+    let devices = device::init();
+    serial_println!("[ITISYOU:INFO] devmodel_ready devices={devices}");
+    bootstage::emit(Stage::B190DeviceModelReady);
 }
 
 /// Enumerate PCI, find the NVMe controller, and initialize it. Used by the
