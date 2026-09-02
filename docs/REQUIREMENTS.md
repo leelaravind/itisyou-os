@@ -35,8 +35,8 @@ labels, commit SHAs, CI run links, or file paths.
 | FS-001 | VFS/initramfs mounts | IMPLEMENTED+VERIFIED | 7 host tar tests (incl. truncated/corrupt archives) + QEMU selftests `vfs_ls_root`, `vfs_cat_version`, `vfs_missing_path`, `vfs_traversal_rejected`, `vfs_relative_normalized`, `vfs_dir_not_file` |
 | SH-001 | Shell commands execute robustly | IMPLEMENTED+VERIFIED | shell-test-bios: 12 commands driven over serial, 9 required outputs matched, unknown-command + bounded-args paths exercised, stages through B150, exit 33 |
 | DIAG-001 | Panic produces useful serial evidence | IMPLEMENTED+VERIFIED | panic-test-bios outcome=Success: intentional panic emits single-line `[ITISYOU:PANIC] <msg> at <file:line>` |
-| USR-001 | Ring 3/userspace hello works (stretch) | PLANNED | QEMU proof required; must not destabilize hard target |
-| ABI-001 | Syscall ABI defined/tested (stretch) | PLANNED | tests/docs |
+| USR-001 | Ring 3/userspace hello works (stretch) | NOT APPLICABLE (deferred) | V0.1 stretch not attempted: plan §4.1 permits the user-mode path to be "explicitly isolated as a stretch milestone", and §29 prioritizes the verified hard target over speculative stretch work. First deliverable of V0.2 (docs/ROADMAP.md) |
+| ABI-001 | Syscall ABI defined/tested (stretch) | NOT APPLICABLE (deferred) | same — architecture keeps the path open (kernel/user separation documented in SECURITY_MODEL.md; scheduler/task model designed to extend to processes without replacement) |
 
 ## Testing & verification
 
@@ -52,7 +52,7 @@ labels, commit SHAs, CI run links, or file paths.
 
 | ID | Requirement | Status | Evidence |
 |---|---|---|---|
-| DOC-001 | Required docs maintained | IN PROGRESS | docs/ tree; development story + ADRs started |
+| DOC-001 | Required docs maintained | IMPLEMENTED+VERIFIED | full set current and updated during (not after) implementation: ARCHITECTURE, IMPLEMENTATION_PLAN (verbatim copy), REQUIREMENTS, THREAT_MODEL, SECURITY_MODEL, TESTING, BUILD_AND_RUN, DEPLOYMENT, RECOVERY, KNOWN_LIMITATIONS, ROADMAP, DEVELOPMENT_STORY, SESSION_CHECKPOINT, UNSAFE_INVENTORY, ADRs 0001–0003 |
 
 ## Website & deployment
 
@@ -62,7 +62,7 @@ labels, commit SHAs, CI run links, or file paths.
 | WEB-002 | Status is evidence-backed | IMPLEMENTED+VERIFIED | `sync-status.mjs` copies + vocabulary-validates `status/current.json` on every build (build fails on drift); /build states the truth policy; commit field renders "—" until stamped |
 | WEB-003 | Responsive/accessibility gate | IMPLEMENTED+VERIFIED (with noted limit) | astro check 0 errors; semantic landmarks/skip link/focus states/contrast computed ≥4.5:1/reduced-motion in build output; zero client JS; live mobile-viewport screenshot not capturable (maximized-window environment prevented browser resize) — responsive breakpoints verified in built CSS |
 | CF-001 | os.itisyou.app deployed & verified | IMPLEMENTED+VERIFIED | Worker os-itisyou-app-production + custom domain; verified live: HTTP 200 + TLS, 11 routes 200, /nope → 404, strict CSP/nosniff/DENY headers observed, browser journey with zero console errors (staging identically verified first) |
-| CI-001 | CI checks repo on push/PR | IN PROGRESS | run 33598093709: website + secret-scan jobs green; kernel job failed at clippy (Linux-only bindeps feature-unification) — fixed by removing artifact deps (subprocess kernel build); re-verification on next push |
+| CI-001 | CI checks repo on push/PR | IMPLEMENTED+VERIFIED | run 33598999034 (commit 9a1d847) **success**: fmt, split clippy, 41 host tests, image build, all 6 QEMU legs (BIOS+UEFI smoke, selftests, shell interaction, intentional panic), website check+build, gitleaks — all green on ubuntu-24.04 |
 
 Update this file as evidence lands. Never delete an original requirement
 because it is difficult (plan §19).
