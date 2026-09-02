@@ -1,42 +1,42 @@
 # Session checkpoint — resumable state
 
-**Timestamp:** 2026-09-02 ~03:50 Europe/London (session 1 in progress)
+**Timestamp:** 2026-09-02 ~07:45 Europe/London (session 1, final phase)
 **Repository:** `E:\Project\itisyou-os` · branch `main`
-**Remote:** https://github.com/leelaravind/itisyou-os (private) · pushed through `caae006`
-**Milestone:** V0.1 Kernel Foundation — Phase 2 complete, deployment phase starting
+**Remote:** https://github.com/leelaravind/itisyou-os (private)
+**Milestone:** V0.1 Kernel Foundation — hard target complete and verified
 
-## Verified state (evidence in artifacts/qemu/*.result.json + docs/REQUIREMENTS.md)
+## Final verified state
 
-- Kernel: B010→B150 all stages green in QEMU. Selftests **pass=27 fail=0 on
-  BIOS AND UEFI**. Shell driven over TCP serial: 12 commands verified.
-  Intentional-panic negative path verified. 41 host unit tests green.
-  fmt + clippy (-D warnings) clean.
-- Toolchain pinned nightly-2026-08-01 (see rust-toolchain.toml comment for
-  the upstream-regression rationale).
-- Website: built + independently verified (`npm run verify` exit 0; 20
-  routes; CSP-strict; zero client JS). Not yet deployed.
-- Cloudflare: wrangler OAuth session verified (`workers (write)` scope,
-  account a0365f6aaae5fe32b3fdb8fa08fd000c). Deploy config committed at
-  `website/wrangler.jsonc` (os-itisyou-app-{staging,production}).
+- **Kernel**: boots QEMU via BIOS and UEFI/OVMF to B150 acceptance; all
+  subsystems verified (PMM, paging W^X, heap, GDT/TSS/IDT + exceptions,
+  PIC/PIT timer, cooperative scheduler with real context switch,
+  VFS/initramfs, 13-command serial shell). Selftests 27/0 both firmwares;
+  intentional-panic path verified; 41 host unit tests.
+- **Gates**: `scripts/verify.ps1` full run green (doctor, fmt, split
+  clippy, tests, QEMU matrix, website, secret scan).
+- **Website**: https://os.itisyou.app LIVE and verified (TLS, 11 routes,
+  404, strict CSP headers, console-clean browser journey, truthful
+  status driven by `status/current.json` stamped with the verified commit).
+  Staging: os-itisyou-app-staging.kpleelaaravind.workers.dev.
+- **CI**: fmt/clippy/tests/images green on Linux after the cross-target
+  feature-unification fix; QEMU matrix status recorded in
+  `docs/REQUIREMENTS.md` (CI-001).
 
-## Deployment state (verified)
+## How to resume (any fresh session)
 
-- **https://os.itisyou.app LIVE**: Worker `os-itisyou-app-production` +
-  custom domain; TLS, 11 routes 200, 404 handling, strict security headers,
-  console-clean browser journey. Staging at
-  `os-itisyou-app-staging.kpleelaaravind.workers.dev` (same checks).
-- CI: website + secret-scan jobs green; kernel job was red at clippy
-  (Linux-only bindeps feature-unification) — fixed by replacing artifact
-  deps with a subprocess kernel build; re-run pending on next push.
+1. Read `CLAUDE.md` → `AGENT_OPERATING_RULES.md` + `docs/IMPLEMENTATION_PLAN.md`.
+2. Dot-source `scripts/env.ps1`; run `scripts/doctor.ps1`.
+3. `scripts/verify.ps1` must be green before new work.
+4. Next milestone: **V0.2 Userspace Foundation** (docs/ROADMAP.md) — ring 3,
+   syscall ABI, ELF loading; also V0.1 leftovers: PS/2 keyboard input,
+   timer-driven preemption, stack guard pages (docs/KNOWN_LIMITATIONS.md).
 
-## Next actions (exact order)
+## Environment keys (details in docs/BUILD_AND_RUN.md)
 
-1. Confirm test.ps1 fully green after bindeps removal (running).
-2. Commit CI fix + docs; secret-scan; push; watch `gh run` until green.
-3. Stamp `status/current.json` commit field; rebuild + redeploy production.
-4. Full `scripts/verify.ps1` end-to-end (TEST-001 evidence).
-5. Reconcile docs/REQUIREMENTS.md; final report; update this checkpoint.
+nightly-2026-08-01 pin (upstream #579); toolchains on E:; QEMU 11.1.0 at
+E:\tools\qemu; TEMP → G:\claude-tmp\tmp; wrangler OAuth on this machine;
+never mix kernel + host packages in one cargo invocation (Cargo.toml note).
 
 ## Blockers
 
-None. (Usage-limit wake-up timer armed for 06:52 local.)
+None.

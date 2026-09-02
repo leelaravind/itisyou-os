@@ -134,3 +134,15 @@ harness, root causes from serial evidence:
 - Full `scripts/verify.ps1` executed end-to-end afterwards: doctor, fmt,
   clippy, 41 host tests, 6/6 QEMU legs, website check+build (0 errors),
   secret scan — "VERIFY: OK".
+
+### 07:35 — Session 1 close: everything green everywhere
+
+- CI run 33598999034 (commit 9a1d847): **success** — the kernel boots,
+  self-tests (27/0), runs its shell to B150, and panics-on-demand
+  identically on the ubuntu-24.04 runner (TCG) as on the Windows host.
+- Production redeployed with the stamped verified commit; live /build page
+  confirmed serving commit `ceb24f9` + verification timestamp.
+- V0.1 hard target: complete, verified on two firmware paths and two host
+  platforms. Userspace stretch explicitly deferred to V0.2 (see
+  REQUIREMENTS USR-001/ABI-001). Remaining V0.1-adjacent work: PS/2
+  keyboard, timer preemption, guard pages (KNOWN_LIMITATIONS.md).
