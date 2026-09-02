@@ -4,9 +4,9 @@
   "architecture": "x86_64",
   "environment": "QEMU",
   "milestone": "V0.3 — Process Isolation + Storage",
-  "commit": null,
-  "lastVerifiedAt": null,
-  "verification": "not-yet-verified",
+  "commit": "d83942b",
+  "lastVerifiedAt": "2026-09-02T08:35:00Z",
+  "verification": "locally-verified",
   "modules": [
     { "id": "boot", "name": "Boot path (BIOS + UEFI via bootloader crate)", "status": "verified" },
     { "id": "serial", "name": "Serial console & structured boot stages", "status": "verified" },
