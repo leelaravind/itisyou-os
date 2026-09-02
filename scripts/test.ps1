@@ -110,6 +110,23 @@ Remove-Item $deskShot -ErrorAction SilentlyContinue
     '--require', 'DESKTOP-INPUT-VERIFIED',
     '--timeout-secs', '150', '--label', 'desktop-input-bios')
 
+Write-Output '=== QEMU device model + AC97 audio (BIOS) ==='
+# Attach an AC97 audio controller whose output is captured to a WAV via QEMU's
+# `wav` backend. The OS binds the ac97 driver (B190 device model), the `beep`
+# command synthesizes a tone and DMAs it through the PCM-Out bus master, and
+# the runner asserts (a) the driver init + full buffer consumption markers and
+# (b) that the captured WAV contains non-silent PCM — proving the generated
+# samples traversed driver -> controller -> output, not just init.
+$audioWav = Join-Path (Resolve-Path 'artifacts/qemu') 'audio.wav'
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B190',
+    '--audio', '--audio-out', $audioWav,
+    '--send', 'lsdev', '--send', 'beep', '--send', 'shutdown',
+    '--require', 'devmodel devices=',
+    '--require', 'driver_bound name=', '--require', 'ac97 init',
+    '--require', 'ac97 play', '--require', 'halted=true',
+    '--timeout-secs', '150', '--label', 'audio-bios')
+
 Write-Output '=== QEMU intentional panic (BIOS) ==='
 & $runner @('--image', 'target/images/itisyou-kernel-panictest-bios.img',
     '--expect', 'B010', '--expect', 'B020', '--expect-panic',

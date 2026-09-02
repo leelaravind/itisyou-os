@@ -88,6 +88,13 @@ struct Options {
     /// Milliseconds to wait between injected monitor commands so each PS/2 IRQ
     /// is processed before the next event arrives.
     inject_delay_ms: u64,
+    /// Attach an emulated AC97 audio controller whose output is captured to a
+    /// WAV file via QEMU's `wav` audio backend, so a test can prove the OS's
+    /// generated PCM samples traversed the full driver → controller → output
+    /// path (not just that init succeeded).
+    audio: bool,
+    /// WAV output path for `--audio` (default `<artifacts>/<label>.wav`).
+    audio_out: Option<PathBuf>,
     /// Attach an emulated NVMe controller backed by a generated raw disk
     /// whose first sector carries a known magic (for storage read tests).
     nvme: bool,
@@ -120,6 +127,8 @@ fn parse_args() -> Result<Options, String> {
     let mut inject_after = None;
     let mut monitor_cmds = Vec::new();
     let mut inject_delay_ms = 250u64;
+    let mut audio = false;
+    let mut audio_out = None;
     let mut nvme = false;
     let mut nvme_persist = None;
     let mut timeout = Duration::from_secs(60);
@@ -161,6 +170,11 @@ fn parse_args() -> Result<Options, String> {
                     .parse()
                     .map_err(|e| format!("bad inject-delay-ms: {e}"))?;
             }
+            "--audio" => audio = true,
+            "--audio-out" => {
+                audio_out = Some(PathBuf::from(value("--audio-out")?));
+                audio = true;
+            }
             "--nvme" => nvme = true,
             "--nvme-persist" => nvme_persist = Some(PathBuf::from(value("--nvme-persist")?)),
             "--timeout-secs" => {
@@ -190,6 +204,8 @@ fn parse_args() -> Result<Options, String> {
         inject_after,
         monitor_cmds,
         inject_delay_ms,
+        audio,
+        audio_out,
         nvme,
         nvme_persist,
         timeout,
@@ -281,6 +297,21 @@ fn build_command(opts: &Options, serial_port: u16, monitor_port: Option<u16>) ->
         // PS/2 keyboard/mouse input and capturing framebuffer screendumps.
         cmd.arg("-monitor")
             .arg(format!("tcp:127.0.0.1:{mport},nodelay"));
+    }
+    if opts.audio {
+        // AC97 output → WAV file, so the OS's generated samples are captured
+        // for inspection. `wav` backend needs no host audio hardware.
+        let wav = opts
+            .audio_out
+            .clone()
+            .unwrap_or_else(|| opts.artifacts.join(format!("{}.wav", opts.label)));
+        if let Some(parent) = wav.parent() {
+            std::fs::create_dir_all(parent).ok();
+        }
+        std::fs::remove_file(&wav).ok();
+        cmd.arg("-audiodev")
+            .arg(format!("wav,id=snd0,path={}", wav.display()))
+            .args(["-device", "AC97,audiodev=snd0"]);
     }
     if opts.nvme {
         match make_nvme_disk(&opts.artifacts) {
@@ -606,12 +637,26 @@ fn run(opts: &Options) -> RunResult {
         .filter(|s| !stages_seen.contains(s))
         .map(|s| s.code().to_string())
         .collect();
-    let missing_required: Vec<String> = opts
+    let mut missing_required: Vec<String> = opts
         .require
         .iter()
         .filter(|needle| !serial_lines.iter().any(|l| l.contains(needle.as_str())))
         .cloned()
         .collect();
+
+    // Audio evidence: the captured WAV must contain non-silent PCM — proof the
+    // OS's generated samples actually reached the output backend, not just that
+    // the driver initialized. QEMU may not finalize the WAV header on an
+    // isa-debug-exit kill, so the data chunk is scanned leniently.
+    if opts.audio {
+        let wav = opts
+            .audio_out
+            .clone()
+            .unwrap_or_else(|| opts.artifacts.join(format!("{}.wav", opts.label)));
+        if !wav_has_nonsilent_pcm(&wav) {
+            missing_required.push(format!("audio-nonsilent-wav:{}", wav.display()));
+        }
+    }
 
     let outcome = if opts.expect_panic {
         // Negative-path run: the panic IS the expected evidence.
@@ -716,6 +761,36 @@ fn run_injection(
             std::thread::sleep(delay);
         }
     }
+}
+
+/// Scan a captured WAV for non-silent 16-bit PCM. Tolerant of an unfinalized
+/// header (QEMU may not rewrite the RIFF/`data` sizes on an isa-debug-exit
+/// kill): locate the `data` chunk if present, else fall back to a 44-byte
+/// header offset, and require a meaningful count of above-noise-floor samples.
+fn wav_has_nonsilent_pcm(path: &std::path::Path) -> bool {
+    let Ok(bytes) = std::fs::read(path) else {
+        return false;
+    };
+    if bytes.len() < 64 {
+        return false;
+    }
+    let data_off = bytes
+        .windows(4)
+        .position(|w| w == b"data")
+        .map(|p| p + 8)
+        .unwrap_or(44);
+    if data_off + 4 > bytes.len() {
+        return false;
+    }
+    let mut nonzero = 0usize;
+    let (samples, _) = bytes[data_off..].as_chunks::<2>();
+    for chunk in samples {
+        let s = i16::from_le_bytes(*chunk);
+        if s.unsigned_abs() > 64 {
+            nonzero += 1;
+        }
+    }
+    nonzero >= 256
 }
 
 /// Outcome classification. Precedence: panic > timeout > selftest verdict >

@@ -109,6 +109,7 @@ fn execute(line: &str) {
         "clear" => crate::serial_print!("\x1b[2J\x1b[H"),
         "run" => cmd_run(args),
         "lsdev" => cmd_lsdev(),
+        "beep" => cmd_beep(),
         "desktop" => crate::desktop::run(),
         "panic-test" => cmd_panic_test(args),
         "shutdown" => {
@@ -124,7 +125,7 @@ fn execute(line: &str) {
 
 fn cmd_help() {
     crate::serial_println!(
-        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path>        load + run a Ring 3 ELF program\n  lsdev             list detected hardware devices\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU\n  reboot            8042 CPU reset"
+        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path>        load + run a Ring 3 ELF program\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU\n  reboot            8042 CPU reset"
     );
 }
 
@@ -227,6 +228,22 @@ fn cmd_run(args: &[&str]) {
     match crate::user::run_path(path) {
         Ok(exit) => crate::serial_println!("run: {path}: {exit:?}"),
         Err(err) => crate::serial_println!("run: {path}: load failed: {err:?}"),
+    }
+}
+
+fn cmd_beep() {
+    if !crate::device::ac97::available() {
+        crate::serial_println!("beep: no AC97 audio device");
+        return;
+    }
+    match crate::device::ac97::play_test_tone() {
+        Some(r) => crate::serial_println!(
+            "beep: played {} buffers (civ={} halted={})",
+            r.buffers,
+            r.consumed,
+            r.halted
+        ),
+        None => crate::serial_println!("beep: playback failed"),
     }
 }
 

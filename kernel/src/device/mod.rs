@@ -10,6 +10,7 @@
 //! [`Driver`] trait and is listed in [`DRIVERS`]; the model owns discovery,
 //! binding, and the device table, never a specific device's registers.
 
+pub mod ac97;
 pub mod block;
 pub mod nvme;
 pub mod pci;
@@ -75,8 +76,8 @@ pub trait Driver: Sync {
 
 /// Registered drivers, probed in order against each device. Kept small and
 /// explicit — no dynamic registration — so binding is deterministic. Drivers
-/// are appended here as they land (audio, USB, ...).
-static DRIVERS: &[&dyn Driver] = &[];
+/// are appended here as they land (USB, ...).
+static DRIVERS: &[&dyn Driver] = &[&ac97::AC97_DRIVER];
 
 /// The device table, populated by [`enumerate`].
 static DEVICES: Mutex<Vec<Device>> = Mutex::new(Vec::new());
