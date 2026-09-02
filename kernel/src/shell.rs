@@ -108,6 +108,7 @@ fn execute(line: &str) {
         "echo" => cmd_echo(args),
         "clear" => crate::serial_print!("\x1b[2J\x1b[H"),
         "run" => cmd_run(args),
+        "lsdev" => cmd_lsdev(),
         "desktop" => crate::desktop::run(),
         "panic-test" => cmd_panic_test(args),
         "shutdown" => {
@@ -123,7 +124,7 @@ fn execute(line: &str) {
 
 fn cmd_help() {
     crate::serial_println!(
-        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path>        load + run a Ring 3 ELF program\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU\n  reboot            8042 CPU reset"
+        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path>        load + run a Ring 3 ELF program\n  lsdev             list detected hardware devices\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU\n  reboot            8042 CPU reset"
     );
 }
 
@@ -227,6 +228,56 @@ fn cmd_run(args: &[&str]) {
         Ok(exit) => crate::serial_println!("run: {path}: {exit:?}"),
         Err(err) => crate::serial_println!("run: {path}: load failed: {err:?}"),
     }
+}
+
+fn cmd_lsdev() {
+    use kernel_core::pci::Bar;
+    crate::device::with_devices(|devs| {
+        crate::serial_println!("{} device(s):", devs.len());
+        for d in devs {
+            crate::serial_println!(
+                "  {:02x}:{:02x}.{}  {:04x}:{:04x}  class {:#04x}/{:#04x}  {}",
+                d.pci.bus,
+                d.pci.slot,
+                d.pci.func,
+                d.id().vendor,
+                d.id().device,
+                d.id().class,
+                d.id().subclass,
+                d.id().class_name(),
+            );
+            for (i, b) in d.bars.iter().enumerate() {
+                match b {
+                    Bar::Io { port, size } if *size > 0 => {
+                        crate::serial_println!("      bar{i}: io   port={port:#06x} size={size:#x}")
+                    }
+                    Bar::Memory {
+                        addr, size, is_64, ..
+                    } if *size > 0 => crate::serial_println!(
+                        "      bar{i}: mem  addr={addr:#x} size={size:#x} {}",
+                        if *is_64 { "64-bit" } else { "32-bit" }
+                    ),
+                    _ => {}
+                }
+            }
+            if !d.caps.is_empty() {
+                let mut caps = alloc::string::String::new();
+                for (i, (c, off)) in d.caps.iter().enumerate() {
+                    if i > 0 {
+                        caps.push(' ');
+                    }
+                    let _ = core::fmt::Write::write_fmt(
+                        &mut caps,
+                        format_args!("{}@{:#x}", c.name(), off),
+                    );
+                }
+                crate::serial_println!("      caps: {caps}");
+            }
+            if let Some(name) = d.driver {
+                crate::serial_println!("      driver: {name}");
+            }
+        }
+    });
 }
 
 fn cmd_panic_test(args: &[&str]) {

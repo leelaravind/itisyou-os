@@ -45,6 +45,9 @@ pub enum Stage {
     B170GraphicsReady,
     /// PS/2 input online + desktop composited (V0.5).
     B180DesktopReady,
+    /// Device model built — PCI enumerated, BARs/capabilities probed, drivers
+    /// bound (V0.6).
+    B190DeviceModelReady,
 }
 
 impl Stage {
@@ -70,6 +73,7 @@ impl Stage {
             Stage::B160StorageReady => "B160",
             Stage::B170GraphicsReady => "B170",
             Stage::B180DesktopReady => "B180",
+            Stage::B190DeviceModelReady => "B190",
         }
     }
 
@@ -95,6 +99,7 @@ impl Stage {
             Stage::B160StorageReady => "device layer / storage ready",
             Stage::B170GraphicsReady => "graphics framebuffer + compositor ready",
             Stage::B180DesktopReady => "PS/2 input online + desktop composited",
+            Stage::B190DeviceModelReady => "device model built — PCI/BAR/caps + drivers",
         }
     }
 
@@ -105,7 +110,7 @@ impl Stage {
 }
 
 /// Every stage in canonical order.
-pub const ALL_STAGES: [Stage; 19] = [
+pub const ALL_STAGES: [Stage; 20] = [
     Stage::B000FirmwareHandoff,
     Stage::B010KernelEntry,
     Stage::B020SerialReady,
@@ -125,6 +130,7 @@ pub const ALL_STAGES: [Stage; 19] = [
     Stage::B160StorageReady,
     Stage::B170GraphicsReady,
     Stage::B180DesktopReady,
+    Stage::B190DeviceModelReady,
 ];
 
 #[cfg(test)]

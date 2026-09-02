@@ -50,6 +50,58 @@ pub fn run_all(suite: &mut Suite) {
     userspace_tests(suite);
     storage_tests(suite);
     graphics_tests(suite);
+    device_tests(suite);
+}
+
+/// V0.6: device model — enumeration, BAR sizing, capability walking, and the
+/// non-destructiveness of the BAR-probe procedure.
+fn device_tests(suite: &mut Suite) {
+    use crate::device;
+    use kernel_core::pci::Bar;
+
+    suite.check("device_model_enumerated", device::device_count() > 0);
+
+    device::with_devices(|devs| {
+        // Every QEMU pc topology decodes at least one known class (host bridge).
+        let classified = devs.iter().any(|d| d.id().class_name() != "device");
+        suite.check("device_class_decoded", classified);
+
+        // The NVMe controller (attached via --nvme) exposes a sized MMIO BAR.
+        let nvme_bar = devs
+            .iter()
+            .find(|d| d.id().class == 0x01 && d.id().subclass == 0x08)
+            .and_then(|d| d.first_mem_bar());
+        suite.check(
+            "device_nvme_bar_sized",
+            matches!(nvme_bar, Some((addr, size)) if addr != 0 && size >= 0x1000),
+        );
+
+        // At least one device advertises a PCI capability (NVMe: MSI-X + PM).
+        suite.check(
+            "device_caps_walked",
+            devs.iter().any(|d| !d.caps.is_empty()),
+        );
+
+        // BAR sizing must restore config space: a probed memory BAR must still
+        // read back its original base address (the probe writes all-ones then
+        // restores). Proves probe_bars is non-destructive.
+        let restored = devs
+            .iter()
+            .find_map(|d| {
+                d.bars.iter().enumerate().find_map(|(i, b)| match b {
+                    Bar::Memory {
+                        addr, is_64: false, ..
+                    } if *addr != 0 => Some((d, i, *addr)),
+                    _ => None,
+                })
+            })
+            .map(|(d, i, addr)| {
+                let live = (d.pci.read_config(0x10 + (i as u8) * 4) as u64) & 0xFFFF_FFF0;
+                live == (addr & 0xFFFF_FFF0)
+            })
+            .unwrap_or(false);
+        suite.check("device_bar_probe_nondestructive", restored);
+    });
 }
 
 /// V0.5: framebuffer, compositor, GUI syscalls, input decoding.
