@@ -1,0 +1,23 @@
+[package]
+name = "image-builder"
+version.workspace = true
+edition.workspace = true
+description = "Builds bootable BIOS/UEFI disk images from the kernel ELF binaries (pure Rust, no external image tools)"
+
+[dependencies]
+anyhow = "1"
+# UEFI stage disabled by default: bootloader-x86_64-uefi 0.11.17 fails to
+# link on current nightlies (upstream rust-osdev/bootloader#579, undefined
+# symbol wcslen). Re-enable via the `uefi` feature once upstream is fixed.
+bootloader = { version = "0.11.17", default-features = false, features = ["bios"] }
+
+[features]
+default = []
+uefi = ["bootloader/uefi"]
+
+# Artifact dependencies: building this tool builds both kernel binaries for
+# x86_64-unknown-none and exposes their paths at compile time.
+[dependencies.itisyou-kernel]
+path = "../../kernel"
+artifact = "bin"
+target = "x86_64-unknown-none"

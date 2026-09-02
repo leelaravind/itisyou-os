@@ -1,0 +1,24 @@
+{
+  "version": "0.1.0-dev",
+  "maturity": "pre-alpha",
+  "architecture": "x86_64",
+  "environment": "QEMU",
+  "milestone": "Kernel Foundation",
+  "commit": null,
+  "lastVerifiedAt": null,
+  "verification": "not-yet-verified",
+  "modules": [
+    { "id": "boot", "name": "Boot path (BIOS/UEFI via bootloader crate)", "status": "in-development" },
+    { "id": "serial", "name": "Serial console & structured boot stages", "status": "in-development" },
+    { "id": "cpu", "name": "CPU identification", "status": "in-development" },
+    { "id": "memory-physical", "name": "Physical memory manager", "status": "planned" },
+    { "id": "memory-virtual", "name": "Virtual memory / paging", "status": "planned" },
+    { "id": "heap", "name": "Kernel heap allocator", "status": "planned" },
+    { "id": "interrupts", "name": "GDT/IDT, exceptions, timer", "status": "planned" },
+    { "id": "scheduler", "name": "Kernel tasks & scheduler", "status": "planned" },
+    { "id": "vfs", "name": "VFS & initramfs", "status": "planned" },
+    { "id": "shell", "name": "Interactive kernel shell", "status": "planned" },
+    { "id": "userspace", "name": "Ring 3 / syscalls (stretch)", "status": "planned" },
+    { "id": "test-harness", "name": "QEMU boot/regression harness", "status": "in-development" }
+  ]
+}

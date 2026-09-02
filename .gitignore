@@ -1,0 +1,22 @@
+# Rust build output
+/target/
+**/*.rs.bk
+
+# Generated boot/test artifacts (evidence summaries live in status/, not raw logs)
+/artifacts/
+
+# Website
+website/node_modules/
+website/dist/
+website/.astro/
+website/.wrangler/
+
+# Editor/OS noise
+.DS_Store
+Thumbs.db
+*.swp
+
+# Local-only environment files (never commit secrets)
+.env
+.env.*
+.dev.vars

@@ -1,0 +1,9 @@
+# Workspace cargo configuration.
+# bindeps: lets image-builder depend on the kernel binaries as artifacts
+# (built for x86_64-unknown-none) while itself building for the host.
+[unstable]
+bindeps = true
+
+[alias]
+# Build kernel + bootable images into target/images
+images = "run -p image-builder -- target/images"

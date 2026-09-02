@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>ITISYOU OS - Roadmap</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                            "primary-container": "#e2e2e2",
+                            "on-tertiary": "#68000b",
+                            "on-primary-fixed": "#1a1c1c",
+                            "secondary-fixed": "#d2e5f3",
+                            "on-secondary-fixed": "#0b1d28",
+                            "surface": "#131313",
+                            "on-secondary": "#21323d",
+                            "inverse-on-surface": "#313030",
+                            "surface-container-lowest": "#0e0e0e",
+                            "tertiary-fixed": "#ffdad7",
+                            "on-tertiary-fixed": "#410004",
+                            "tertiary-fixed-dim": "#ffb3ae",
+                            "on-secondary-container": "#a5b8c5",
+                            "surface-tint": "#c6c6c7",
+                            "secondary-fixed-dim": "#b6c9d7",
+                            "inverse-primary": "#5d5f5f",
+                            "outline": "#8e9192",
+                            "error": "#ffb4ab",
+                            "secondary-container": "#384955",
+                            "secondary": "#b6c9d7",
+                            "surface-container-low": "#1c1b1b",
+                            "on-error-container": "#ffdad6",
+                            "error-container": "#93000a",
+                            "on-error": "#690005",
+                            "on-tertiary-fixed-variant": "#930014",
+                            "inverse-surface": "#e5e2e1",
+                            "on-secondary-fixed-variant": "#384955",
+                            "primary-fixed-dim": "#c6c6c7",
+                            "on-surface-variant": "#c4c7c8",
+                            "tertiary": "#ffffff",
+                            "surface-container-high": "#2a2a2a",
+                            "on-background": "#e5e2e1",
+                            "surface-dim": "#131313",
+                            "on-primary-container": "#636565",
+                            "surface-variant": "#353534",
+                            "primary-fixed": "#e2e2e2",
+                            "surface-bright": "#3a3939",
+                            "background": "#131313",
+                            "on-tertiary-container": "#c31f29",
+                            "on-primary-fixed-variant": "#454747",
+                            "outline-variant": "#444748",
+                            "surface-container": "#201f1f",
+                            "on-surface": "#e5e2e1",
+                            "surface-container-highest": "#353534",
+                            "primary": "#ffffff",
+                            "tertiary-container": "#ffdad7",
+                            "on-primary": "#2f3131"
+                    },
+                    "borderRadius": {
+                            "DEFAULT": "0.25rem",
+                            "lg": "0.5rem",
+                            "xl": "0.75rem",
+                            "full": "9999px"
+                    },
+                    "spacing": {
+                            "gutter": "24px",
+                            "container-max": "1440px",
+                            "margin": "40px",
+                            "unit": "4px"
+                    },
+                    "fontFamily": {
+                            "body-base": ["Geist"],
+                            "headline-md": ["Geist"],
+                            "display-lg": ["Geist"],
+                            "status-tag": ["JetBrains Mono"],
+                            "mono-data": ["JetBrains Mono"],
+                            "mono-label": ["JetBrains Mono"]
+                    },
+                    "fontSize": {
+                            "body-base": ["14px", {"lineHeight": "1.6", "letterSpacing": "0em", "fontWeight": "400"}],
+                            "headline-md": ["24px", {"lineHeight": "1.2", "letterSpacing": "-0.01em", "fontWeight": "400"}],
+                            "display-lg": ["48px", {"lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "300"}],
+                            "status-tag": ["10px", {"lineHeight": "1", "letterSpacing": "0.1em", "fontWeight": "700"}],
+                            "mono-data": ["13px", {"lineHeight": "1.5", "letterSpacing": "0em", "fontWeight": "400"}],
+                            "mono-label": ["12px", {"lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "500"}]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            background-color: #050505; /* Global Background Level 0 */
+            color: theme('colors.on-background');
+        }
+        
+        .content-area {
+            background-color: #0C0C0C; /* Content Area Level 1 */
+            border: 1px solid #1A1A1A;
+        }
+
+        .status-verified {
+            border: 1px solid theme('colors.secondary-fixed');
+            color: theme('colors.secondary-fixed');
+        }
+        
+        .status-dev {
+            border: 1px solid theme('colors.secondary-container');
+            color: theme('colors.secondary-container');
+        }
+        
+        .status-planned {
+            border: 1px solid theme('colors.outline');
+            color: theme('colors.outline');
+        }
+        
+        .status-research {
+            border: 1px dashed theme('colors.error');
+            color: theme('colors.error');
+        }
+        
+        .status-experimental {
+            background-color: theme('colors.error');
+            color: theme('colors.background');
+            clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 0 100%);
+        }
+
+        .timeline-line {
+            background: linear-gradient(to bottom, theme('colors.outline-variant') 0%, theme('colors.outline-variant') 50%, transparent 50%, transparent 100%);
+            background-size: 1px 16px;
+            width: 1px;
+        }
+        
+        .grid-bg {
+            background-size: 24px 24px;
+            background-image:
+                linear-gradient(to right, #1A1A1A 1px, transparent 1px),
+                linear-gradient(to bottom, #1A1A1A 1px, transparent 1px);
+        }
+    </style>
+</head>
+<body class="font-body-base text-body-base min-h-screen flex flex-col relative grid-bg">
+<!-- TopNavBar -->
+<nav class="bg-surface dark:bg-surface font-headline-md text-headline-md docked full-width top-0 border-b border-outline-variant flat no shadows flex justify-between items-center w-full px-margin py-4 max-w-container-max mx-auto hidden md:flex z-50 sticky">
+<div class="flex items-center gap-8">
+<span class="font-mono-label text-mono-label font-bold tracking-tighter text-primary dark:text-primary">ITISYOU_OS</span>
+<div class="flex gap-6 items-center">
+<a class="text-on-surface-variant dark:text-on-surface-variant font-mono-label text-mono-label hover:text-primary dark:hover:text-primary transition-colors duration-150" href="#">Architecture</a>
+<a class="text-on-surface-variant dark:text-on-surface-variant font-mono-label text-mono-label hover:text-primary dark:hover:text-primary transition-colors duration-150" href="#">Build</a>
+<a class="text-primary dark:text-primary border-b border-primary pb-2 font-mono-label text-mono-label opacity-80" href="#">Roadmap</a>
+<a class="text-on-surface-variant dark:text-on-surface-variant font-mono-label text-mono-label hover:text-primary dark:hover:text-primary transition-colors duration-150" href="#">Security</a>
+<a class="text-on-surface-variant dark:text-on-surface-variant font-mono-label text-mono-label hover:text-primary dark:hover:text-primary transition-colors duration-150" href="#">Docs</a>
+<a class="text-on-surface-variant dark:text-on-surface-variant font-mono-label text-mono-label hover:text-primary dark:hover:text-primary transition-colors duration-150" href="#">GitHub</a>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<span class="font-mono-label text-mono-label text-on-surface-variant border border-outline-variant px-3 py-1">v0.4.2-alpha</span>
+<button class="font-mono-label text-mono-label border border-primary text-primary px-4 py-1 hover:bg-surface-container-high transition-colors">BUILD_STABLE</button>
+</div>
+</nav>
+<!-- Main Content -->
+<main class="flex-grow w-full max-w-container-max mx-auto px-margin py-gutter mt-8 relative">
+<header class="mb-16 border-b border-outline-variant pb-8">
+<h1 class="font-display-lg text-display-lg text-primary mb-4">SYSTEM ROADMAP</h1>
+<p class="font-mono-data text-mono-data text-on-surface-variant max-w-2xl">
+                Engineering trajectory for ITISYOU OS core architecture. Dependencies map linearly until V0.8, where experimental non-deterministic subsystems introduce variable completion vectors.
+            </p>
+</header>
+<div class="relative pl-12 md:pl-32">
+<!-- Timeline Line -->
+<div class="absolute left-6 md:left-16 top-0 bottom-0 timeline-line"></div>
+<!-- Milestone V0.1 -->
+<div class="relative mb-24">
+<div class="absolute -left-[54px] md:-left-[90px] top-0 flex items-center justify-center w-8 h-8 bg-background border border-secondary-fixed rounded-full z-10">
+<div class="w-3 h-3 bg-secondary-fixed rounded-full"></div>
+</div>
+<div class="content-area p-8 group hover:border-[#333333] transition-colors relative">
+<div class="flex flex-col md:flex-row md:items-start justify-between mb-6 gap-4">
+<div>
+<span class="font-mono-label text-mono-label text-primary block mb-2">MILESTONE V0.1</span>
+<h2 class="font-headline-md text-headline-md text-primary">Kernel Foundation</h2>
+</div>
+<span class="font-status-tag text-status-tag status-verified px-3 py-1 inline-block h-fit uppercase">Verified</span>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<div class="border border-outline-variant p-4 bg-[#080808]">
+<span class="font-mono-label text-mono-label text-on-surface-variant block mb-2">COMPONENT_01</span>
+<span class="font-mono-data text-mono-data text-primary block">Bootloader &amp; init</span>
+</div>
+<div class="border border-outline-variant p-4 bg-[#080808]">
+<span class="font-mono-label text-mono-label text-on-surface-variant block mb-2">COMPONENT_02</span>
+<span class="font-mono-data text-mono-data text-primary block">Memory Management (Paging)</span>
+</div>
+<div class="border border-outline-variant p-4 bg-[#080808]">
+<span class="font-mono-label text-mono-label text-on-surface-variant block mb-2">COMPONENT_03</span>
+<span class="font-mono-data text-mono-data text-primary block">Interrupts &amp; Exceptions (IDT)</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Milestone V0.2 -->
+<div class="relative mb-24">
+<div class="absolute -left-[54px] md:-left-[90px] top-0 flex items-center justify-center w-8 h-8 bg-background border border-secondary-container rounded-full z-10">
+<div class="w-3 h-3 bg-secondary-container rounded-full animate-pulse"></div>
+</div>
+<div class="content-area p-8 group hover:border-[#333333] transition-colors relative">
+<div class="flex flex-col md:flex-row md:items-start justify-between mb-6 gap-4">
+<div>
+<span class="font-mono-label text-mono-label text-primary block mb-2">MILESTONE V0.2</span>
+<h2 class="font-headline-md text-headline-md text-primary">Userspace Runtime</h2>
+</div>
+<span class="font-status-tag text-status-tag status-dev px-3 py-1 inline-block h-fit uppercase">In Development</span>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<div class="border border-outline-variant p-4 bg-[#080808]">
+<span class="font-mono-label text-mono-label text-on-surface-variant block mb-2">COMPONENT_01</span>
+<span class="font-mono-data text-mono-data text-primary block">Ring 3 Transition</span>
+</div>
+<div class="border border-outline-variant p-4 bg-[#080808]">
+<span class="font-mono-label text-mono-label text-on-surface-variant block mb-2">COMPONENT_02</span>
+<span class="font-mono-data text-mono-data text-primary block">ELF Loader Execution</span>
+</div>
+<div class="border border-outline-variant p-4 bg-[#080808]">
+<span class="font-mono-label text-mono-label text-on-surface-variant block mb-2">COMPONENT_03</span>
+<span class="font-mono-data text-mono-data text-primary block">Syscall Interface (int 0x80)</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Milestone V0.3 -->
+<div class="relative mb-24">
+<div class="absolute -left-[54px] md:-left-[90px] top-0 flex items-center justify-center w-8 h-8 bg-background border border-outline rounded-full z-10">
+</div>
+<div class="content-area p-8 group hover:border-[#333333] transition-colors relative opacity-75">
+<div class="flex flex-col md:flex-row md:items-start justify-between mb-6 gap-4">
+<div>
+<span class="font-mono-label text-mono-label text-primary block mb-2">MILESTONE V0.3</span>
+<h2 class="font-headline-md text-headline-md text-primary">Storage Subsystem</h2>
+</div>
+<span class="font-status-tag text-status-tag status-planned px-3 py-1 inline-block h-fit uppercase">Planned</span>
+</div>
+<ul class="font-mono-data text-mono-data text-on-surface-variant space-y-2 border-l border-outline-variant pl-4">
+<li class="flex items-center gap-2"><span class="material-symbols-outlined text-[16px]">hardware</span> PCI Bus Enumeration</li>
+<li class="flex items-center gap-2"><span class="material-symbols-outlined text-[16px]">storage</span> Block Device Abstraction</li>
+<li class="flex items-center gap-2"><span class="material-symbols-outlined text-[16px]">folder</span> Virtual File System (VFS) Layer</li>
+</ul>
+</div>
+</div>
+<!-- Milestone V0.8 -->
+<div class="relative mb-24">
+<div class="absolute -left-[54px] md:-left-[90px] top-0 flex items-center justify-center w-8 h-8 bg-background border border-error border-dashed rounded-full z-10">
+</div>
+<!-- Uncertainty visual indicator starts here -->
+<div class="absolute -left-[38px] md:-left-[74px] top-8 bottom-0 w-[1px] bg-gradient-to-b from-transparent to-surface-variant border-r border-dashed border-error opacity-50 -ml-[0.5px]"></div>
+<div class="content-area p-8 group hover:border-[#333333] transition-colors relative bg-surface-container-low border-dashed border-outline-variant">
+<div class="flex flex-col md:flex-row md:items-start justify-between mb-6 gap-4">
+<div>
+<span class="font-mono-label text-mono-label text-primary block mb-2">MILESTONE V0.8</span>
+<h2 class="font-headline-md text-headline-md text-primary">AI-Native System Layer</h2>
+<p class="font-mono-data text-mono-data text-on-surface-variant mt-2 max-w-lg">Integration of deterministic kernel operations with non-deterministic probabilistic models.</p>
+</div>
+<span class="font-status-tag text-status-tag status-research px-3 py-1 inline-block h-fit uppercase">Research</span>
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+<div class="border border-outline-variant p-3">
+<span class="font-mono-data text-mono-data text-primary">Local LLM Execution (Ring 3)</span>
+</div>
+<div class="border border-outline-variant p-3">
+<span class="font-mono-data text-mono-data text-primary">System-wide RAG Indexing</span>
+</div>
+<div class="border border-outline-variant p-3 sm:col-span-2">
+<span class="font-mono-data text-mono-data text-primary">Policy-Controlled Kernel Actions via AI Agent</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Milestone V1.0 -->
+<div class="relative mb-12">
+<div class="absolute -left-[54px] md:-left-[90px] top-0 flex items-center justify-center w-8 h-8 bg-error z-10" style="clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);">
+<div class="w-3 h-3 bg-background"></div>
+</div>
+<div class="content-area p-8 group hover:border-[#333333] transition-colors relative border-error">
+<div class="flex flex-col md:flex-row md:items-start justify-between mb-6 gap-4">
+<div>
+<span class="font-mono-label text-mono-label text-primary block mb-2">MILESTONE V1.0</span>
+<h2 class="font-headline-md text-headline-md text-primary">Experimental Personal OS</h2>
+</div>
+<span class="font-status-tag text-status-tag status-experimental px-3 py-1 inline-block h-fit uppercase">Experimental</span>
+</div>
+<p class="font-mono-data text-mono-data text-on-surface-variant">
+                        Long-term research direction. A fully autonomous operating environment tailored to the user's workflow, where the OS itself generates temporary subsystems based on immediate need.
+                    </p>
+</div>
+</div>
+</div>
+</main>
+<!-- Footer -->
+<footer class="bg-surface dark:bg-surface font-mono-label text-mono-label full-width bottom-0 border-t border-outline-variant flat no shadows flex justify-between items-center px-margin py-gutter w-full mt-20">
+<div class="font-mono-label text-mono-label font-bold text-primary dark:text-primary">
+            PART OF ITISYOU / 2024
+        </div>
+<div class="flex gap-6">
+<a class="text-on-surface-variant hover:text-primary underline transition-opacity duration-200" href="#">Experimental Status</a>
+<a class="text-on-surface-variant hover:text-primary underline transition-opacity duration-200" href="#">Source</a>
+<a class="text-on-surface-variant hover:text-primary underline transition-opacity duration-200" href="#">Kernel Documentation</a>
+<a class="text-on-surface-variant hover:text-primary underline transition-opacity duration-200" href="#">Security Policy</a>
+</div>
+</footer>
+</body></html>

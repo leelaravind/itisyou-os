@@ -1,0 +1,23 @@
+[workspace]
+resolver = "2"
+members = [
+    "kernel",
+    "crates/kernel-core",
+    "tools/image-builder",
+    "tools/qemu-runner",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["leelaravind"]
+
+[profile.release]
+panic = "abort"
+lto = true
+codegen-units = 1
+
+# Kernel is always built with panic=abort semantics; dev profile keeps
+# debug assertions for early fault detection in QEMU.
+[profile.dev]
+panic = "abort"

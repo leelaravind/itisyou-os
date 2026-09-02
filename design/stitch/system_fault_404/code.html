@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>FAULT: PAGE_NOT_PRESENT - ITISYOU OS</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-error": "#690005",
+                        "secondary-fixed-dim": "#b6c9d7",
+                        "surface-container-low": "#1c1b1b",
+                        "surface": "#131313",
+                        "secondary": "#b6c9d7",
+                        "surface-variant": "#353534",
+                        "tertiary": "#ffffff",
+                        "outline": "#8e9192",
+                        "tertiary-fixed-dim": "#ffb3ae",
+                        "background": "#131313",
+                        "on-primary-fixed": "#1a1c1c",
+                        "on-error-container": "#ffdad6",
+                        "inverse-surface": "#e5e2e1",
+                        "on-secondary-fixed-variant": "#384955",
+                        "tertiary-fixed": "#ffdad7",
+                        "on-primary-container": "#636565",
+                        "on-tertiary-fixed": "#410004",
+                        "surface-container-highest": "#353534",
+                        "on-surface-variant": "#c4c7c8",
+                        "on-primary-fixed-variant": "#454747",
+                        "outline-variant": "#444748",
+                        "surface-bright": "#3a3939",
+                        "on-tertiary": "#68000b",
+                        "on-tertiary-fixed-variant": "#930014",
+                        "primary-container": "#e2e2e2",
+                        "tertiary-container": "#ffdad7",
+                        "surface-tint": "#c6c6c7",
+                        "on-tertiary-container": "#c31f29",
+                        "on-surface": "#e5e2e1",
+                        "inverse-on-surface": "#313030",
+                        "surface-container": "#201f1f",
+                        "surface-container-high": "#2a2a2a",
+                        "on-secondary-fixed": "#0b1d28",
+                        "secondary-fixed": "#d2e5f3",
+                        "on-secondary-container": "#a5b8c5",
+                        "on-background": "#e5e2e1",
+                        "on-secondary": "#21323d",
+                        "error": "#ffb4ab",
+                        "surface-dim": "#131313",
+                        "primary-fixed-dim": "#c6c6c7",
+                        "error-container": "#93000a",
+                        "primary": "#ffffff",
+                        "secondary-container": "#384955",
+                        "on-primary": "#2f3131",
+                        "primary-fixed": "#e2e2e2",
+                        "inverse-primary": "#5d5f5f",
+                        "surface-container-lowest": "#0e0e0e"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    spacing: {
+                        "gutter": "24px",
+                        "unit": "4px",
+                        "margin": "40px",
+                        "container-max": "1440px"
+                    },
+                    fontFamily: {
+                        "headline-md": ["Geist"],
+                        "mono-label": ["JetBrains Mono"],
+                        "status-tag": ["JetBrains Mono"],
+                        "body-base": ["Geist"],
+                        "mono-data": ["JetBrains Mono"],
+                        "display-lg": ["Geist"]
+                    },
+                    fontSize: {
+                        "headline-md": ["24px", { "lineHeight": "1.2", "letterSpacing": "-0.01em", "fontWeight": "400" }],
+                        "mono-label": ["12px", { "lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "500" }],
+                        "status-tag": ["10px", { "lineHeight": "1", "letterSpacing": "0.1em", "fontWeight": "700" }],
+                        "body-base": ["14px", { "lineHeight": "1.6", "letterSpacing": "0em", "fontWeight": "400" }],
+                        "mono-data": ["13px", { "lineHeight": "1.5", "letterSpacing": "0em", "fontWeight": "400" }],
+                        "display-lg": ["48px", { "lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "300" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            background-color: #050505;
+            background-image: 
+                linear-gradient(to right, #1A1A1A 1px, transparent 1px),
+                linear-gradient(to bottom, #1A1A1A 1px, transparent 1px);
+            background-size: 24px 24px;
+            background-position: center top;
+        }
+    </style>
+</head>
+<body class="text-on-background min-h-screen flex flex-col font-body-base bg-background antialiased selection:bg-secondary-container selection:text-on-secondary-container">
+<!-- Top Navigation (Shell logic: Suppressed on 404, but maintaining OS wrapper vibe. Decided to keep a minimal header for context return) -->
+<header class="w-full flex justify-between items-center px-margin py-4 max-w-container-max mx-auto border-b border-outline-variant bg-surface-container-lowest z-10 relative">
+<div class="font-mono-label text-mono-label font-bold tracking-tighter text-primary">
+            ITISYOU_OS <span class="text-on-surface-variant font-normal">/ FAULT_HANDLER</span>
+</div>
+<div class="font-mono-label text-mono-label text-on-surface-variant">
+            v0.4.2-alpha
+        </div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-grow flex items-center justify-center p-margin w-full max-w-container-max mx-auto relative z-10">
+<div class="w-full max-w-3xl grid grid-cols-12 gap-gutter relative">
+<!-- Fault Header Section -->
+<div class="col-span-12 mb-8 border-l-2 border-error pl-6">
+<div class="flex items-center gap-2 mb-2 text-error">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">warning</span>
+<span class="font-mono-label text-mono-label">SYSTEM FAULT DETECTED</span>
+</div>
+<h1 class="font-display-lg text-display-lg text-primary mb-2">FAULT: PAGE_NOT_PRESENT</h1>
+<p class="font-mono-data text-mono-data text-on-surface-variant">The requested memory block or resource endpoint could not be located.</p>
+</div>
+<!-- Metadata / Stack Trace Block -->
+<div class="col-span-12 md:col-span-8 bg-surface border border-outline-variant p-6">
+<h2 class="font-mono-label text-mono-label text-on-surface-variant border-b border-outline-variant pb-2 mb-4">DIAGNOSTIC DATA</h2>
+<div class="space-y-4 font-mono-data text-mono-data">
+<div class="grid grid-cols-3">
+<span class="text-on-surface-variant">Error Code:</span>
+<span class="col-span-2 text-error">0x00000194</span>
+</div>
+<div class="grid grid-cols-3">
+<span class="text-on-surface-variant">Instruction Pointer:</span>
+<span class="col-span-2 text-primary">RIP_NOT_FOUND</span>
+</div>
+<div class="grid grid-cols-3">
+<span class="text-on-surface-variant">Timestamp:</span>
+<span class="col-span-2 text-primary" id="fault-time">Loading...</span>
+</div>
+<div class="grid grid-cols-3">
+<span class="text-on-surface-variant">Request URI:</span>
+<span class="col-span-2 text-primary truncate" id="fault-uri">Loading...</span>
+</div>
+</div>
+<div class="mt-8">
+<h3 class="font-mono-label text-mono-label text-on-surface-variant border-b border-outline-variant pb-2 mb-2">SYSTEM LOG (STACK TRACE)</h3>
+<div class="bg-[#080808] p-4 font-mono-data text-mono-data text-on-surface-variant h-48 overflow-y-auto border border-outline-variant">
+<div class="text-error mb-1">&gt; FATAL_EXCEPTION: Page fault in nonpaged area</div>
+<div class="mb-1">&gt; Attempting to access segment 0x0... FAILED</div>
+<div class="mb-1">&gt; Frame 0: sys_read_nav_table (offset +0x4A)</div>
+<div class="mb-1">&gt; Frame 1: resolve_path_entry (offset +0x12C)</div>
+<div class="mb-1">&gt; Frame 2: handle_user_request (offset +0x88)</div>
+<div class="mb-1">&gt; Frame 3: kernel_dispatch_thread (offset +0x2B)</div>
+<div class="mb-1 text-primary">&gt; Initiating graceful failure mode...</div>
+<div class="animate-pulse">&gt; Awaiting user input...</div>
+</div>
+</div>
+</div>
+<!-- Action Panel -->
+<div class="col-span-12 md:col-span-4 flex flex-col gap-4">
+<div class="bg-surface border border-outline-variant p-6 flex flex-col h-full justify-between">
+<div>
+<h2 class="font-mono-label text-mono-label text-on-surface-variant border-b border-outline-variant pb-2 mb-4">RECOVERY ACTIONS</h2>
+<p class="font-body-base text-body-base text-on-surface-variant mb-6">Select a recovery vector to exit fault state and resume normal operation.</p>
+</div>
+<div class="flex flex-col gap-3">
+<a class="flex items-center justify-between p-3 border border-primary text-primary hover:bg-surface-container-high transition-colors group cursor-pointer" href="/">
+<span class="font-mono-label text-mono-label">REBOOT_TO_HOME</span>
+<span class="material-symbols-outlined group-hover:translate-x-1 transition-transform">arrow_forward</span>
+</a>
+<a class="flex items-center justify-between p-3 border border-outline-variant text-on-surface-variant hover:border-primary hover:text-primary transition-colors group cursor-pointer" href="/docs">
+<span class="font-mono-label text-mono-label">RETURN_TO_DOCS</span>
+<span class="material-symbols-outlined group-hover:translate-x-1 transition-transform">menu_book</span>
+</a>
+</div>
+</div>
+</div>
+</div>
+</main>
+<script>
+        // Simulate dynamic fault data
+        document.getElementById('fault-time').textContent = new Date().toISOString();
+        document.getElementById('fault-uri').textContent = window.location.pathname || '/unknown_segment';
+    </script>
+</body></html>
