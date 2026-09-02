@@ -1,0 +1,7 @@
+Welcome to ITISYOU OS.
+
+This system is a research kernel booted from an embedded initramfs.
+Nothing here persists across reboots; the filesystem is read-only and
+lives entirely in memory.
+
+Project: https://os.itisyou.app

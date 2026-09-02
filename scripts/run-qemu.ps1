@@ -2,9 +2,7 @@
 # -Firmware uefi (default) boots via OVMF; bios uses the legacy image.
 # -Headless suppresses the display window (serial only).
 param(
-    # Default is BIOS while the bootloader crate's UEFI stage is blocked
-    # upstream (rust-osdev/bootloader#579).
-    [ValidateSet('bios', 'uefi')] [string]$Firmware = 'bios',
+    [ValidateSet('bios', 'uefi')] [string]$Firmware = 'uefi',
     [switch]$Headless,
     [switch]$Selftest
 )

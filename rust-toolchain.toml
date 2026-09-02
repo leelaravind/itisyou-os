@@ -1,4 +1,10 @@
 [toolchain]
-channel = "nightly-2026-09-01"
+# Pinned to the newest nightly on which the bootloader crate's UEFI stage
+# still links (rust-osdev/bootloader#579 broke nightlies after ~2026-08-01:
+# `rust-lld: undefined symbol: wcslen`). Verified by direct probe:
+# `cargo +nightly-2026-08-01 install bootloader-x86_64-uefi@0.11.17 --locked
+#  --target x86_64-unknown-uefi -Zbuild-std=core
+#  -Zbuild-std-features=compiler-builtins-mem` → success (2026-09-02).
+channel = "nightly-2026-08-01"
 components = ["rust-src", "rustfmt", "clippy", "llvm-tools"]
 targets = ["x86_64-unknown-none"]

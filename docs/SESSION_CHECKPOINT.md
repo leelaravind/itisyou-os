@@ -1,34 +1,37 @@
 # Session checkpoint — resumable state
 
-**Timestamp:** 2026-09-02 ~02:45 Europe/London (session 1 in progress)
-**Repository:** `E:\Project\itisyou-os` · branch `main` · remote: pending first push
-**Milestone:** V0.1 Kernel Foundation — Phase 1 (repository & build skeleton)
+**Timestamp:** 2026-09-02 ~03:50 Europe/London (session 1 in progress)
+**Repository:** `E:\Project\itisyou-os` · branch `main`
+**Remote:** https://github.com/leelaravind/itisyou-os (private) · pushed through `caae006`
+**Milestone:** V0.1 Kernel Foundation — Phase 2 complete, deployment phase starting
 
-## Environment (verified)
+## Verified state (evidence in artifacts/qemu/*.result.json + docs/REQUIREMENTS.md)
 
-- Rust nightly-2026-09-01 + `x86_64-unknown-none` at `E:\toolchains\{rustup,cargo}`
-- QEMU 11.1.0 at `E:\tools\qemu` (OVMF: `share\edk2-x86_64-code.fd`)
-- GitHub CLI authenticated (`leelaravind`); Cloudflare auth not yet discovered
-- Design ZIP preserved: `design/stitch_itisyou_os_architecture_portal.zip`
-  (+ extracted `design/stitch/`, 13 screens + DESIGN.md)
-
-## Current state
-
-- Workspace authored: kernel (lib + interactive/selftest bins),
-  kernel-core (host-tested contract), image-builder, qemu-runner, scripts,
-  docs, status metadata.
-- First build in progress (fix applied: bindeps enabled via
-  `.cargo/config.toml`, not manifest `cargo-features`).
+- Kernel: B010→B150 all stages green in QEMU. Selftests **pass=27 fail=0 on
+  BIOS AND UEFI**. Shell driven over TCP serial: 12 commands verified.
+  Intentional-panic negative path verified. 41 host unit tests green.
+  fmt + clippy (-D warnings) clean.
+- Toolchain pinned nightly-2026-08-01 (see rust-toolchain.toml comment for
+  the upstream-regression rationale).
+- Website: built + independently verified (`npm run verify` exit 0; 20
+  routes; CSP-strict; zero client JS). Not yet deployed.
+- Cloudflare: wrangler OAuth session verified (`workers (write)` scope,
+  account a0365f6aaae5fe32b3fdb8fa08fd000c). Deploy config committed at
+  `website/wrangler.jsonc` (os-itisyou-app-{staging,production}).
 
 ## Next actions (exact order)
 
-1. Finish `cargo build -p image-builder -p qemu-runner`; run host tests.
-2. `cargo run -p image-builder -- target/images` → 4 images + manifest.
-3. `cargo run -p qemu-runner -- --image target/images/itisyou-kernel-selftest-bios.img --expect B010 --expect B020 --expect B030 --expect-selftest --label selftest-bios` (then UEFI with `--uefi`).
-4. Commit checkpoint, create private GitHub repo `leelaravind/itisyou-os`, secret-scan, push.
-5. Phase 2 kernel subsystems in dependency order (plan §20).
+1. Confirm re-run of scripts/test.ps1 is fully green (in progress).
+2. Commit Phase 2 kernel + docs; commit website; secret-scan; push.
+3. `cd website; npx wrangler deploy --env staging` → browser-verify staging
+   (routes, console, mobile, headers).
+4. `npx wrangler deploy --env production` → verify https://os.itisyou.app
+   (DNS/TLS/routes/headers/404) with browser automation.
+5. Verify GitHub Actions CI green on the pushed commits; fix if red.
+6. Stamp `status/current.json` commit field + site rebuild/redeploy.
+7. Full `scripts/verify.ps1` end-to-end; reconcile docs/REQUIREMENTS.md;
+   final report + this checkpoint updated.
 
 ## Blockers
 
-None hard. Cloudflare deployment auth is an open discovery item (CF-001) —
-not blocking kernel/website build work.
+None. (Usage-limit wake-up timer armed for 06:52 local; work continues.)

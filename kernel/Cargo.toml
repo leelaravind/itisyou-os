@@ -12,6 +12,10 @@ forced-target = "x86_64-unknown-none"
 [dependencies]
 bootloader_api = "0.11"
 kernel-core = { path = "../crates/kernel-core" }
+# Heap: proven simple allocator, correctness over sophistication (plan §10.5)
+linked_list_allocator = "0.10"
+# Legacy PIC remap — the documented V0.1 interrupt-controller choice
+pic8259 = "0.11"
 raw-cpuid = "11"
 spin = "0.9"
 uart_16550 = "0.3"
@@ -36,5 +40,11 @@ bench = false
 [[bin]]
 name = "itisyou-kernel-selftest"
 path = "src/bin/itisyou-kernel-selftest.rs"
+test = false
+bench = false
+
+[[bin]]
+name = "itisyou-kernel-panictest"
+path = "src/bin/itisyou-kernel-panictest.rs"
 test = false
 bench = false
