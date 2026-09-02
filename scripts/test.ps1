@@ -42,6 +42,8 @@ Write-Output '=== QEMU selftest (BIOS) ==='
     '--require', 'RING3-PARENT-IPC-OK', '--require', 'RING3-CHILD-EXIT',
     '--require', 'NVMe controller', '--require', 'nvme_ready blocks=',
     '--require', 'SPIN-FINITE-OK',
+    '--require', 'gfx width=', '--require', 'RING3-GUI-OK',
+    '--expect', 'B170', '--expect', 'B180',
     '--timeout-secs', '300', '--label', 'selftest-bios')
 
 Write-Output '=== QEMU selftest (UEFI) ==='
@@ -68,7 +70,7 @@ Write-Output '=== QEMU shell interaction (BIOS) ==='
     '--send', 'echo shell-echo-check', '--send', 'definitely-not-a-command',
     '--send', 'run /bin/init', '--send', 'run /bin/broken',
     '--send', 'panic-test', '--send', 'shutdown',
-    '--require', 'itisyou-os 0.4.0-dev',
+    '--require', 'itisyou-os 0.5.0-dev',
     '--require', 'task 0: kmain',
     '--require', 'RING3-DONE',
     '--require', 'run: /bin/init: Exit(0)',
@@ -81,6 +83,32 @@ Write-Output '=== QEMU shell interaction (BIOS) ==='
     '--require', "panic-test: pass 'confirm'",
     '--require', 'shutting down (QEMU exit)',
     '--timeout-secs', '90', '--label', 'shell-test-bios')
+
+Write-Output '=== QEMU desktop graphics + PS/2 input (BIOS) ==='
+# Boot to the shell, enter the graphical desktop, then inject real keyboard and
+# mouse events through the QEMU HMP monitor (into the emulated PS/2 devices).
+# The kernel's IRQ1/IRQ12 handlers must observe them (INPUT markers) and the
+# compositor captures a framebuffer screendump - the OS renders the desktop,
+# no host UI. DESKTOP-INPUT-VERIFIED proves the full graphics+input path.
+$deskShot = Join-Path (Resolve-Path 'artifacts/qemu') 'desktop.ppm'
+Remove-Item $deskShot -ErrorAction SilentlyContinue
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B170', '--expect', 'B180',
+    '--send', 'desktop',
+    '--inject-after', 'DESKTOP-READY',
+    '--monitor-cmd', 'sendkey h', '--monitor-cmd', 'sendkey e', '--monitor-cmd', 'sendkey l',
+    '--monitor-cmd', 'sendkey l', '--monitor-cmd', 'sendkey o',
+    '--monitor-cmd', 'mouse_move 40 25', '--monitor-cmd', 'mouse_move -20 15',
+    '--monitor-cmd', 'mouse_button 1', '--monitor-cmd', 'mouse_button 0',
+    '--monitor-cmd', "screendump $deskShot",
+    '--monitor-cmd', 'sendkey esc',
+    '--require', '[ITISYOU:MODE] desktop',
+    '--require', 'DESKTOP-READY',
+    '--require', '[ITISYOU:INPUT] key=h',
+    '--require', '[ITISYOU:INPUT] key=o',
+    '--require', '[ITISYOU:INPUT] mouse dx=',
+    '--require', 'DESKTOP-INPUT-VERIFIED',
+    '--timeout-secs', '150', '--label', 'desktop-input-bios')
 
 Write-Output '=== QEMU intentional panic (BIOS) ==='
 & $runner @('--image', 'target/images/itisyou-kernel-panictest-bios.img',

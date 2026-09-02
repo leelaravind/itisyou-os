@@ -77,6 +77,8 @@ jobs:
             --require "RING3-HELLO" --require "RING3-DONE" \
             --require "RING3-PARENT-DONE" --require "RING3-PARENT-IPC-OK" \
             --require "nvme_ready blocks=" --require "SPIN-FINITE-OK" \
+            --require "gfx width=" --require "RING3-GUI-OK" \
+            --expect B170 --expect B180 \
             --timeout-secs 420 --label selftest-uefi
 
       - name: QEMU selftest (BIOS)
@@ -91,6 +93,8 @@ jobs:
             --require "RING3-PARENT-IPC-OK" --require "RING3-CHILD-EXIT" \
             --require "NVMe controller" --require "nvme_ready blocks=" \
             --require "SPIN-FINITE-OK" \
+            --require "gfx width=" --require "RING3-GUI-OK" \
+            --expect B170 --expect B180 \
             --timeout-secs 420 --label selftest-bios
 
       - name: QEMU shell interaction (BIOS)
@@ -104,12 +108,41 @@ jobs:
             --send help --send version --send memory --send tasks \
             --send "ls /" --send "cat /etc/version" \
             --send "run /bin/init" --send shutdown \
-            --require "itisyou-os 0.4.0-dev" \
+            --require "itisyou-os 0.5.0-dev" \
             --require "task 0: kmain" \
             --require "RING3-DONE" \
             --require "run: /bin/init: Exit(0)" \
             --require "shutting down (QEMU exit)" \
             --timeout-secs 180 --label shell-test-bios
+
+      - name: QEMU desktop graphics + PS/2 input (BIOS)
+        run: |
+          # Boot to the shell, enter the graphical desktop, then inject real
+          # keyboard + mouse events through the QEMU monitor into the emulated
+          # PS/2 devices. The kernel's IRQ1/IRQ12 handlers observe them (INPUT
+          # markers) and the compositor renders + screendumps the desktop -
+          # the OS produces the UI, no host rendering. DESKTOP-INPUT-VERIFIED
+          # proves the full graphics+input path.
+          mkdir -p artifacts/qemu
+          cargo run -q -p qemu-runner -- \
+            --image target/images/itisyou-kernel-bios.img \
+            --expect B170 --expect B180 \
+            --send desktop \
+            --inject-after DESKTOP-READY \
+            --monitor-cmd "sendkey h" --monitor-cmd "sendkey e" \
+            --monitor-cmd "sendkey l" --monitor-cmd "sendkey l" \
+            --monitor-cmd "sendkey o" \
+            --monitor-cmd "mouse_move 40 25" --monitor-cmd "mouse_move -20 15" \
+            --monitor-cmd "mouse_button 1" --monitor-cmd "mouse_button 0" \
+            --monitor-cmd "screendump artifacts/qemu/desktop.ppm" \
+            --monitor-cmd "sendkey esc" \
+            --require "[ITISYOU:MODE] desktop" \
+            --require "DESKTOP-READY" \
+            --require "[ITISYOU:INPUT] key=h" \
+            --require "[ITISYOU:INPUT] key=o" \
+            --require "[ITISYOU:INPUT] mouse dx=" \
+            --require "DESKTOP-INPUT-VERIFIED" \
+            --timeout-secs 180 --label desktop-input-bios
 
       - name: QEMU intentional panic (BIOS)
         run: |

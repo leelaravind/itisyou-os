@@ -29,8 +29,28 @@
    superblock recovery), and a **two-boot reboot-persistence** test (UEFI)
    proving a written file survives a full QEMU reboot on the same disposable
    disk.
-7. **Negative cases** (grown alongside subsystems): intentional panic,
+7. **Graphics/compositor/GUI suite** (V0.5, inside the selftest kernel):
+   framebuffer availability + sane geometry, fill/glyph pixel read-backs, a
+   deterministic CRC region hash, a composited window verified on screen, a
+   **Ring 3 process's window colour read back off the composited screen**
+   (proving userspace rendered), and adversarial rejections — cross-owner
+   draw, out-of-bounds rectangle, bad window size — plus the keyboard/mouse
+   decoders (including malformed mouse packets).
+8. **Desktop + PS/2 input suite** (V0.5, `desktop-input-bios`): boots the
+   interactive kernel, enters the graphical desktop, then injects **real**
+   keyboard (`sendkey`) and mouse (`mouse_move`/`mouse_button`) events through
+   the **QEMU HMP monitor** into the emulated PS/2 devices. The kernel's
+   IRQ1/IRQ12 handlers must observe them (`[ITISYOU:INPUT]` markers), the
+   compositor re-renders and captures a framebuffer `screendump` (the OS draws
+   the desktop — no host UI), and `DESKTOP-INPUT-VERIFIED` gates success. This
+   proves the full graphics + input path inside QEMU.
+9. **Negative cases** (grown alongside subsystems): intentional panic,
    allocator exhaustion, malformed inputs, timeout classification.
+
+The harness supports two guest channels: a **serial** line (stage/test markers,
+shell stdin) and an optional **HMP monitor** (`--monitor`, `--inject-after`,
+`--monitor-cmd`) used to inject PS/2 input and capture screendumps once a gate
+marker appears.
 
 ## Failure classification (tools/qemu-runner)
 

@@ -1,11 +1,11 @@
 {
-  "version": "0.4.0-dev",
+  "version": "0.5.0-dev",
   "maturity": "pre-alpha",
   "architecture": "x86_64",
   "environment": "QEMU",
-  "milestone": "V0.4 — Preemptive Multitasking + Persistent Storage",
-  "commit": "b1af235",
-  "lastVerifiedAt": "2026-09-02T10:30:00Z",
+  "milestone": "V0.5 — Graphics + Input + Basic Desktop/Compositor",
+  "commit": "PENDING",
+  "lastVerifiedAt": "2026-09-02T12:00:00Z",
   "verification": "locally-verified",
   "modules": [
     { "id": "boot", "name": "Boot path (BIOS + UEFI via bootloader crate)", "status": "verified" },
@@ -21,7 +21,7 @@
     { "id": "shell", "name": "Interactive serial shell", "status": "verified" },
     { "id": "elf-loader", "name": "ELF64 loader (strict validation, W^X)", "status": "verified" },
     { "id": "ring3", "name": "Ring 3 execution & privilege isolation", "status": "verified" },
-    { "id": "syscalls", "name": "Syscall ABI (write/exit/yield/getpid/spawn/wait/msg)", "status": "verified" },
+    { "id": "syscalls", "name": "Syscall ABI (write/exit/yield/getpid/spawn/wait/msg/gui)", "status": "verified" },
     { "id": "process", "name": "Process lifecycle & crash containment", "status": "verified" },
     { "id": "process-isolation", "name": "Per-process page tables & concurrency", "status": "verified" },
     { "id": "ipc", "name": "IPC message channels", "status": "verified" },
@@ -29,8 +29,13 @@
     { "id": "block", "name": "Block-device abstraction (read + write)", "status": "verified" },
     { "id": "nvme", "name": "NVMe driver (read + write + flush)", "status": "verified" },
     { "id": "filesystem", "name": "ITFS persistent filesystem", "status": "verified" },
+    { "id": "graphics", "name": "Framebuffer graphics (back buffer, font, primitives)", "status": "verified" },
+    { "id": "compositor", "name": "Window compositor (per-window buffers, ownership isolation)", "status": "verified" },
+    { "id": "gui-syscalls", "name": "GUI syscalls (validated Ring 3 window rendering)", "status": "verified" },
+    { "id": "input-keyboard", "name": "PS/2 keyboard input (IRQ1)", "status": "verified" },
+    { "id": "input-mouse", "name": "PS/2 mouse input (IRQ12)", "status": "verified" },
+    { "id": "desktop", "name": "Interactive desktop (live keyboard + mouse)", "status": "verified" },
     { "id": "storage-second-driver", "name": "Second block-device backend (AHCI/virtio)", "status": "planned" },
-    { "id": "input-keyboard", "name": "PS/2 keyboard input", "status": "planned" },
-    { "id": "test-harness", "name": "QEMU boot/regression harness", "status": "verified" }
+    { "id": "test-harness", "name": "QEMU boot/regression harness (serial + monitor injection)", "status": "verified" }
   ]
 }

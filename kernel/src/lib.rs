@@ -12,6 +12,7 @@ extern crate alloc;
 
 pub mod bootstage;
 pub mod cpu;
+pub mod desktop;
 pub mod device;
 pub mod fs;
 pub mod fs_disk;

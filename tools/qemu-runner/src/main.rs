@@ -76,6 +76,18 @@ struct Options {
     send: Vec<String>,
     /// Substrings that must appear somewhere in the serial log.
     require: Vec<String>,
+    /// Attach a QEMU HMP monitor over TCP (the runner listens; QEMU connects)
+    /// so keyboard/mouse input can be injected into the guest's PS/2 devices.
+    monitor: bool,
+    /// Once this serial substring appears, send the `--monitor-cmd` sequence
+    /// through the monitor (drives real input for the graphics/input test).
+    inject_after: Option<String>,
+    /// HMP commands sent in order after the injection gate is reached
+    /// (e.g. `sendkey h`, `mouse_move 40 25`, `screendump <path>`).
+    monitor_cmds: Vec<String>,
+    /// Milliseconds to wait between injected monitor commands so each PS/2 IRQ
+    /// is processed before the next event arrives.
+    inject_delay_ms: u64,
     /// Attach an emulated NVMe controller backed by a generated raw disk
     /// whose first sector carries a known magic (for storage read tests).
     nvme: bool,
@@ -104,6 +116,10 @@ fn parse_args() -> Result<Options, String> {
     let mut expect_panic = false;
     let mut send = Vec::new();
     let mut require = Vec::new();
+    let mut monitor = false;
+    let mut inject_after = None;
+    let mut monitor_cmds = Vec::new();
+    let mut inject_delay_ms = 250u64;
     let mut nvme = false;
     let mut nvme_persist = None;
     let mut timeout = Duration::from_secs(60);
@@ -131,6 +147,20 @@ fn parse_args() -> Result<Options, String> {
             "--expect-panic" => expect_panic = true,
             "--send" => send.push(value("--send")?),
             "--require" => require.push(value("--require")?),
+            "--monitor" => monitor = true,
+            "--inject-after" => {
+                inject_after = Some(value("--inject-after")?);
+                monitor = true;
+            }
+            "--monitor-cmd" => {
+                monitor_cmds.push(value("--monitor-cmd")?);
+                monitor = true;
+            }
+            "--inject-delay-ms" => {
+                inject_delay_ms = value("--inject-delay-ms")?
+                    .parse()
+                    .map_err(|e| format!("bad inject-delay-ms: {e}"))?;
+            }
             "--nvme" => nvme = true,
             "--nvme-persist" => nvme_persist = Some(PathBuf::from(value("--nvme-persist")?)),
             "--timeout-secs" => {
@@ -156,6 +186,10 @@ fn parse_args() -> Result<Options, String> {
         expect_panic,
         send,
         require,
+        monitor,
+        inject_after,
+        monitor_cmds,
+        inject_delay_ms,
         nvme,
         nvme_persist,
         timeout,
@@ -233,7 +267,7 @@ fn main() {
 /// a client. `-serial stdio` is NOT used because QEMU's Windows stdio chardev
 /// stops feeding redirected stdin after the guest UART's 16-byte RX FIFO
 /// fills once, which stalls interactive shell tests (observed 2026-09-02).
-fn build_command(opts: &Options, serial_port: u16) -> Command {
+fn build_command(opts: &Options, serial_port: u16, monitor_port: Option<u16>) -> Command {
     let mut cmd = Command::new(&opts.qemu);
     cmd.arg("-drive")
         .arg(format!("format=raw,file={}", opts.image.display()))
@@ -241,6 +275,13 @@ fn build_command(opts: &Options, serial_port: u16) -> Command {
         .arg(format!("tcp:127.0.0.1:{serial_port},nodelay"))
         .args(["-display", "none", "-no-reboot", "-m", "256M"])
         .args(["-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"]);
+    if let Some(mport) = monitor_port {
+        // QEMU connects to the runner's monitor listener as a client (same
+        // transport as the serial line), giving an HMP channel for injecting
+        // PS/2 keyboard/mouse input and capturing framebuffer screendumps.
+        cmd.arg("-monitor")
+            .arg(format!("tcp:127.0.0.1:{mport},nodelay"));
+    }
     if opts.nvme {
         match make_nvme_disk(&opts.artifacts) {
             Ok(disk) => {
@@ -301,7 +342,20 @@ fn run(opts: &Options) -> RunResult {
         .set_nonblocking(true)
         .expect("nonblocking listener");
 
-    let mut cmd = build_command(opts, serial_port);
+    // Optional monitor listener (same no-race ownership as the serial port).
+    let monitor_listener = if opts.monitor {
+        let l = TcpListener::bind("127.0.0.1:0").expect("binding monitor TCP listener");
+        l.set_nonblocking(true)
+            .expect("nonblocking monitor listener");
+        Some(l)
+    } else {
+        None
+    };
+    let monitor_port = monitor_listener
+        .as_ref()
+        .map(|l| l.local_addr().unwrap().port());
+
+    let mut cmd = build_command(opts, serial_port, monitor_port);
     let command_line: Vec<String> = std::iter::once(opts.qemu.clone())
         .chain(cmd.get_args().map(|a| a.to_string_lossy().into_owned()))
         .collect();
@@ -389,6 +443,24 @@ fn run(opts: &Options) -> RunResult {
     };
     let mut serial_writer = serial_stream.try_clone().expect("cloning serial stream");
 
+    // Accept QEMU's monitor connection and spawn the injection thread. It
+    // blocks on a one-shot gate the main loop trips when `inject_after`
+    // appears in the serial stream, then plays the `monitor_cmds` sequence.
+    let (gate_tx, gate_rx) = mpsc::channel::<()>();
+    let mut inject_handle = None;
+    if let Some(ml) = &monitor_listener {
+        if let Some(monitor_stream) = accept_with_deadline(ml, &mut child, deadline) {
+            monitor_stream.set_nodelay(true).ok();
+            let cmds = opts.monitor_cmds.clone();
+            let delay = Duration::from_millis(opts.inject_delay_ms);
+            inject_handle = Some(std::thread::spawn(move || {
+                run_injection(monitor_stream, gate_rx, cmds, delay);
+            }));
+        } else {
+            eprintln!("qemu-runner: QEMU never connected to the monitor TCP port");
+        }
+    }
+
     // Stream serial lines through a channel so the main loop owns the timeout.
     let (tx, rx) = mpsc::channel::<String>();
     let reader_handle = std::thread::spawn(move || {
@@ -423,6 +495,7 @@ fn run(opts: &Options) -> RunResult {
     let mut timed_out = false;
     let mut completed_by_markers = false;
     let mut sent_commands = false;
+    let mut tripped_gate = false;
 
     loop {
         let now = Instant::now();
@@ -460,6 +533,15 @@ fn run(opts: &Options) -> RunResult {
                             pass,
                         }),
                         Marker::Info(_) | Marker::Mode(_) => {}
+                    }
+                }
+                // Trip the injection gate the first time its substring shows.
+                if !tripped_gate {
+                    if let Some(needle) = &opts.inject_after {
+                        if line.contains(needle.as_str()) {
+                            tripped_gate = true;
+                            let _ = gate_tx.send(());
+                        }
                     }
                 }
                 serial_lines.push(line);
@@ -500,6 +582,12 @@ fn run(opts: &Options) -> RunResult {
         std::thread::sleep(Duration::from_millis(20));
     }
     let _ = reader_handle.join();
+    // Drop the gate sender so a never-tripped injection thread unblocks, then
+    // join it (best-effort — it exits once its sequence or the channel ends).
+    drop(gate_tx);
+    if let Some(h) = inject_handle {
+        let _ = h.join();
+    }
     let exit_status = child.wait().ok();
     let qemu_exit_code = exit_status.and_then(|s| s.code());
     let stderr_text = stderr_handle.join().unwrap_or_default();
@@ -568,6 +656,65 @@ fn run(opts: &Options) -> RunResult {
         panic_message,
         serial_log: serial_log_path.display().to_string(),
         command_line,
+    }
+}
+
+/// Accept one connection from a nonblocking listener, bounded by `deadline`
+/// and aborting if QEMU exits first. Returns the blocking-mode stream.
+fn accept_with_deadline(
+    listener: &TcpListener,
+    child: &mut Child,
+    deadline: Instant,
+) -> Option<TcpStream> {
+    loop {
+        match listener.accept() {
+            Ok((stream, _)) => {
+                stream
+                    .set_nonblocking(false)
+                    .expect("restoring blocking mode on accepted stream");
+                return Some(stream);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                if Instant::now() >= deadline || child.try_wait().ok().flatten().is_some() {
+                    return None;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            Err(_) => return None,
+        }
+    }
+}
+
+/// Injection worker: wait for the gate, then play the HMP command sequence
+/// into QEMU's monitor. Commands drive the guest's PS/2 keyboard/mouse (so the
+/// OS emits `[ITISYOU:INPUT]` markers) and can capture a framebuffer
+/// screendump. A `screendump` command is given extra settle time so the PPM is
+/// fully flushed before a following command may exit the guest.
+fn run_injection(
+    mut stream: TcpStream,
+    gate: mpsc::Receiver<()>,
+    cmds: Vec<String>,
+    delay: Duration,
+) {
+    // Block until the main loop trips the gate (or the channel closes because
+    // the gate substring never appeared — then just return without injecting).
+    if gate.recv().is_err() {
+        return;
+    }
+    // Let the HMP banner/prompt arrive; we do not parse it (fire-and-forget).
+    std::thread::sleep(Duration::from_millis(200));
+    for cmd in &cmds {
+        if writeln!(stream, "{cmd}").is_err() {
+            return;
+        }
+        let _ = stream.flush();
+        if cmd.trim_start().starts_with("screendump") {
+            // A screendump writes a PPM synchronously in the monitor thread;
+            // give the filesystem time to flush before the next command runs.
+            std::thread::sleep(Duration::from_millis(800));
+        } else {
+            std::thread::sleep(delay);
+        }
     }
 }
 
