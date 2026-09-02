@@ -144,6 +144,24 @@ jobs:
             --require "DESKTOP-INPUT-VERIFIED" \
             --timeout-secs 180 --label desktop-input-bios
 
+      - name: QEMU device model + AC97 audio (BIOS)
+        run: |
+          # AC97 output -> WAV (QEMU `wav` backend). The OS binds the ac97
+          # driver (B190 device model), `beep` synthesizes a tone and DMAs it
+          # through the PCM-Out bus master, and the runner asserts the init +
+          # full-consumption markers AND that the captured WAV is non-silent -
+          # proof the samples traversed driver -> controller -> output.
+          mkdir -p artifacts/qemu
+          cargo run -q -p qemu-runner -- \
+            --image target/images/itisyou-kernel-bios.img \
+            --expect B190 \
+            --audio --audio-out artifacts/qemu/audio.wav \
+            --send lsdev --send beep --send shutdown \
+            --require "devmodel devices=" \
+            --require "driver_bound name=" --require "ac97 init" \
+            --require "ac97 play" --require "halted=true" \
+            --timeout-secs 180 --label audio-bios
+
       - name: QEMU intentional panic (BIOS)
         run: |
           cargo run -q -p qemu-runner -- \
