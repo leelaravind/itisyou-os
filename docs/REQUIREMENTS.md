@@ -142,8 +142,8 @@ labels, commit SHAs, CI run links, or file paths.
 | USR-DEV | Userspace device access without hardware authority | IMPLEMENTED+VERIFIED | `SYS_DEVINFO` copies a record into a validated user buffer; all port I/O/config stays in-kernel; userspace lsdev uses no direct hardware |
 | IRQ-MOD | IRQ modernization (APIC/MSI) | NOT APPLICABLE (deferred) | all drivers polled → verified PIC timer/PS-2 path untouched; MSI/MSI-X capabilities detected + reported; APIC deferred to V0.8 to avoid regressing a verified interrupt path (ADR-0011) |
 | REG-V06 | V0.1–V0.5 regressions remain green under V0.6 | IMPLEMENTED+VERIFIED | full selftest **pass=84 fail=0** (BIOS) incl. all boot/userspace/preemption/storage/graphics/device tests; full local matrix Success |
-| CI-V06 | CI green with V0.6 QEMU coverage | PENDING | to be stamped from the ubuntu-24.04 run (adds device/audio/USB legs) |
-| WEB-V06 | os.itisyou.app reflects V0.6 truthfully | PENDING | to be stamped after staging+production deploy + browser/HTTP verification |
+| CI-V06 | CI green with V0.6 QEMU coverage | IMPLEMENTED+VERIFIED | run 33635955858 success on ubuntu-24.04 (fmt, split clippy, host tests, images, boot BIOS/UEFI, selftest BIOS+UEFI, shell 0.6.0-dev, desktop-input, **AC97 audio + WAV**, **USB UHCI + HID**, panic, fs-persist, website, gitleaks); tag v0.6.0 on commit cccf5a7 |
+| WEB-V06 | os.itisyou.app reflects V0.6 truthfully | IMPLEMENTED+VERIFIED | live at v0.6.0-dev commit 14f3971, milestone "V0.6 — Hardware Expansion", verified modules (device-model/pci-caps/usb-uhci/usb-hid/input-unified/audio-ac97/devinfo-syscall), "Detected hardware" evidence section on /build (7-device enumeration + USB/audio proof), roadmap corrected (V0.6 current), browser+HTTP verified, zero console errors |
 
 ## Testing & verification
 
