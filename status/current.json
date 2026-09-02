@@ -1,11 +1,11 @@
 {
-  "version": "0.5.0-dev",
+  "version": "0.6.0-dev",
   "maturity": "pre-alpha",
   "architecture": "x86_64",
   "environment": "QEMU",
-  "milestone": "V0.5 — Graphics + Input + Basic Desktop/Compositor",
-  "commit": "71dbc5a",
-  "lastVerifiedAt": "2026-09-02T12:45:00Z",
+  "milestone": "V0.6 — Hardware Expansion",
+  "commit": "PENDING",
+  "lastVerifiedAt": "2026-09-02T13:30:00Z",
   "verification": "locally-verified",
   "modules": [
     { "id": "boot", "name": "Boot path (BIOS + UEFI via bootloader crate)", "status": "verified" },
@@ -35,7 +35,16 @@
     { "id": "input-keyboard", "name": "PS/2 keyboard input (IRQ1)", "status": "verified" },
     { "id": "input-mouse", "name": "PS/2 mouse input (IRQ12)", "status": "verified" },
     { "id": "desktop", "name": "Interactive desktop (live keyboard + mouse)", "status": "verified" },
+    { "id": "device-model", "name": "Device/driver model (probe/bind, device table)", "status": "verified" },
+    { "id": "pci-caps", "name": "PCI BAR sizing + capability walking (MSI/MSI-X/PCIe/PM)", "status": "verified" },
+    { "id": "usb-uhci", "name": "USB UHCI host controller (control transfers, enumeration)", "status": "verified" },
+    { "id": "usb-hid", "name": "USB HID keyboard input (interrupt endpoint)", "status": "verified" },
+    { "id": "input-unified", "name": "Unified input events (PS/2 + USB HID)", "status": "verified" },
+    { "id": "audio-ac97", "name": "AC97 audio output (PCM DMA, samples verified)", "status": "verified" },
+    { "id": "devinfo-syscall", "name": "Userspace device access syscall (least authority)", "status": "verified" },
+    { "id": "usb-xhci", "name": "USB xHCI host controller", "status": "planned" },
+    { "id": "irq-apic", "name": "APIC/IOAPIC/MSI interrupt routing", "status": "planned" },
     { "id": "storage-second-driver", "name": "Second block-device backend (AHCI/virtio)", "status": "planned" },
-    { "id": "test-harness", "name": "QEMU boot/regression harness (serial + monitor injection)", "status": "verified" }
+    { "id": "test-harness", "name": "QEMU boot/regression harness (serial + monitor + audio/USB)", "status": "verified" }
   ]
 }

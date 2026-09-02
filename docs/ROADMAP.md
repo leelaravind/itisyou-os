@@ -30,7 +30,7 @@ registers + address spaces preserved across preemption); NVMe write + flush;
 ITFS, a minimal persistent filesystem with double-buffered CRC-committed
 superblocks and verified reboot persistence.
 
-## V0.5 — Graphics + Input + Basic Desktop/Compositor *(current)*
+## V0.5 — Graphics + Input + Basic Desktop/Compositor *(complete — tag v0.5.0)*
 
 Achieved: a real graphical environment produced by the OS inside QEMU — a
 bootloader-provided linear framebuffer wrapped with a `u32` back buffer and an
@@ -45,28 +45,44 @@ desktop. Remaining for a richer desktop (V0.6+): mode-setting, window
 focus/drag/z-order, compositing a persistent Ring 3 window on the live desktop,
 a broader GUI toolkit, and accessibility architecture.
 
-## V0.6 — Networking
+## V0.6 — Hardware Expansion *(current)*
+
+Achieved: a generic device/driver model (probe/bind, queryable device table)
+over an enriched PCI foundation (BAR sizing, capability-list walking with
+MSI/MSI-X/PCIe/PM detection, adversarial malformed handling); a **USB UHCI**
+host controller with full device enumeration over control transfers and
+**verified HID keyboard input** off the interrupt endpoint; an **AC97** audio
+driver whose generated PCM samples are proven to traverse the driver → codec →
+output path (captured to a WAV); a **unified input subsystem** (PS/2 + USB HID
+behind one event stream, delivered to the GUI); hardware discovery via `lsdev`
+(kernel + a Ring 3 tool); and a `devinfo` syscall giving userspace device
+access without hardware authority. Drivers are polled, keeping the verified PIC
+timer/PS-2 interrupt path intact. Remaining for a fuller platform: **USB xHCI**,
+multi-device USB enumeration, bulk/isochronous transfers, audio capture,
+APIC/IOAPIC/MSI interrupt routing, and ACPI/power foundations.
+
+## V0.7 — Networking
 
 NIC driver (VM target first), Ethernet, ARP/NDP, IPv4/IPv6 foundations,
 UDP/TCP, DNS, strict network permission model.
 
-## V0.7 — Hardware Expansion
+## V0.8 — Advanced Hardware + Interrupt Modernization
 
-USB, audio, device manager, ACPI/power foundations, laptop hardware
-research, targeted driver strategy.
+USB xHCI, APIC/IOAPIC/MSI, ACPI/power foundations, additional device classes,
+laptop hardware research, targeted driver strategy.
 
-## V0.8 — System Platform
+## V0.9 — System Platform
 
 Service manager, package/runtime model, signed/atomic updates, sandboxing,
 capability/permission engine, recovery and rollback.
 
-## V0.9 — AI-Native System Layer
+## V0.10 — AI-Native System Layer
 
 Local inference service **outside** the kernel, system knowledge over
 approved local state, diagnostic agent, policy-controlled system actions
 with preview/approval, provenance/audit, post-action verification.
 
-## V0.10 — Daily-Driver Research
+## V0.11 — Daily-Driver Research
 
 Wi-Fi, Bluetooth, accelerated graphics strategy, power management,
 suspend/resume, application ecosystem — real hardware only on explicitly

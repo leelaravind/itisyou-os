@@ -120,13 +120,38 @@ labels, commit SHAs, CI run links, or file paths.
 | CI-V05 | CI green with V0.5 QEMU coverage | IMPLEMENTED+VERIFIED | run 33628363046 success on ubuntu-24.04 (fmt, split clippy, host tests, images, boot BIOS/UEFI, selftest BIOS+UEFI with graphics asserts + B170/B180, shell 0.5.0-dev, desktop-input monitor-injection leg, panic, two-boot fs-persist, website, gitleaks); tag v0.5.0 on commit 5be3c0c |
 | WEB-V05 | os.itisyou.app reflects V0.5 truthfully | IMPLEMENTED+VERIFIED | live at v0.5.0-dev commit 71dbc5a, milestone "V0.5 — Graphics + Input + Basic Desktop/Compositor", verified modules (graphics/compositor/gui-syscalls/input-keyboard/input-mouse/desktop), OS-rendered desktop screendump published on /build, roadmap corrected (V0.1–V0.4 Verified, V0.5 current), browser+HTTP verified, zero console errors |
 
+## V0.6 — Hardware Expansion
+
+| ID | Requirement | Status | Evidence |
+|---|---|---|---|
+| DEV-001 | Generic device/driver model (probe/bind, device table) | IMPLEMENTED+VERIFIED | ADR-0011; `device::{Device,Driver,enumerate,bind_drivers}`; B190; `devmodel devices=7`; `device_model_enumerated` |
+| DEV-002 | Deterministic device enumeration + class decode | IMPLEMENTED+VERIFIED | fixed DRIVERS registry, ordered PCI scan; `device_class_decoded`; 7 QEMU devices (host/ISA bridge, IDE, VGA, e1000, NVMe) reported |
+| PCI-BAR | BAR sizing (32/64-bit), non-destructive probe | IMPLEMENTED+VERIFIED | `probe_bars` (write-ones/read-mask/restore, decode disabled); host `computes_bar_sizes`; `device_nvme_bar_sized`, `device_bar_probe_nondestructive` |
+| PCI-CAP | Capability-list walking (MSI/MSI-X/PCIe/PM) | IMPLEMENTED+VERIFIED | `walk_capabilities` (bounded, loop-guarded); NVMe reported `caps=[MSI-X,PCIe,PM]`; `device_caps_walked`; host `walks_normal_cap_chain` |
+| PCI-ADV | Adversarial malformed/circular config handling | IMPLEMENTED+VERIFIED | host `cap_walk_terminates_on_circular_list`, `_self_loop`, `_rejects_out_of_range_pointer`; USB `hid_walk_tolerates_truncation` |
+| USB-001 | USB host controller init + root-port reset | IMPLEMENTED+VERIFIED | UHCI driver; `uhci port_reset port=0x10`; `uhci ready` |
+| USB-002 | Device enumeration over control transfers | IMPLEMENTED+VERIFIED | GET_DESCRIPTOR(device) → real QEMU usb-kbd `usb device vendor=0x0627 product=0x0001`; SET_ADDRESS/CONFIG/PROTOCOL; host descriptor-parse tests |
+| USB-003 | Descriptor parsing + HID endpoint discovery | IMPLEMENTED+VERIFIED | `find_hid_interrupt_in` (host-tested) → `usb hid iface=0 proto=1 ep=1 kind=keyboard` |
+| USB-HID | Real USB HID keyboard input (first USB class) | IMPLEMENTED+VERIFIED | interrupt-IN transfer; injected `sendkey g` → `[ITISYOU:INPUT] key=g src=usb`; host HID-decode tests |
+| USB-XHCI | xHCI controller | NOT APPLICABLE (deferred) | UHCI chosen as the smallest QEMU-complete controller for *verified* HID input; xHCI is the documented V0.8 follow-up (ADR-0011) |
+| INP-UNI | Unify PS/2 + USB HID behind one event stream | IMPLEMENTED+VERIFIED | `input::{feed_usb_*,pump_usb}` feed the same `InputEvent` queue; desktop consumes both; `key=g src=usb` → `DESKTOP-INPUT-VERIFIED` |
+| AUD-001 | Audio controller init (codec reset/unmute) | IMPLEMENTED+VERIFIED | AC97 driver; `ac97 init codec_ready=true`; `driver_bound name="ac97"` |
+| AUD-002 | Generated PCM samples traverse the output path | IMPLEMENTED+VERIFIED | `ac97 play bufs=8 civ=7 halted=true` (all buffers DMA-consumed) + captured WAV asserted non-silent by the runner — not init-only |
+| AUD-CAP | Audio input/capture | NOT APPLICABLE (deferred) | output-only PCM path for V0.6; capture deferred (KNOWN_LIMITATIONS) |
+| HWD-001 | Hardware discovery via kernel + userspace tool | IMPLEMENTED+VERIFIED | `lsdev` shell command; Ring 3 `/bin/lsdev` via `devinfo` → `RING3-LSDEV-OK count=7`; `device_userspace_lsdev` |
+| USR-DEV | Userspace device access without hardware authority | IMPLEMENTED+VERIFIED | `SYS_DEVINFO` copies a record into a validated user buffer; all port I/O/config stays in-kernel; userspace lsdev uses no direct hardware |
+| IRQ-MOD | IRQ modernization (APIC/MSI) | NOT APPLICABLE (deferred) | all drivers polled → verified PIC timer/PS-2 path untouched; MSI/MSI-X capabilities detected + reported; APIC deferred to V0.8 to avoid regressing a verified interrupt path (ADR-0011) |
+| REG-V06 | V0.1–V0.5 regressions remain green under V0.6 | IMPLEMENTED+VERIFIED | full selftest **pass=84 fail=0** (BIOS) incl. all boot/userspace/preemption/storage/graphics/device tests; full local matrix Success |
+| CI-V06 | CI green with V0.6 QEMU coverage | PENDING | to be stamped from the ubuntu-24.04 run (adds device/audio/USB legs) |
+| WEB-V06 | os.itisyou.app reflects V0.6 truthfully | PENDING | to be stamped after staging+production deploy + browser/HTTP verification |
+
 ## Testing & verification
 
 | ID | Requirement | Status | Evidence |
 |---|---|---|---|
 | TEST-001 | One-command verification gate exists | IMPLEMENTED+VERIFIED | `scripts/verify.ps1` full run 2026-09-02: doctor OK, fmt OK, clippy OK, 41 host tests, 6/6 QEMU legs Success, website 0 errors, secret scan clean → "VERIFY: OK" |
 | TEST-002 | QEMU timeout/failure classification works | IMPLEMENTED+VERIFIED | classifications observed operating correctly during real debugging: Timeout (interactive halt), Panic (UEFI TooManyRegions), MissingMarkers (FIFO stall), Success; negative leg panic-test-bios green |
-| SEC-001 | Unsafe inventory exists | IMPLEMENTED+VERIFIED | `docs/UNSAFE_INVENTORY.md` — 29 documented unsafe contracts (incl. gfx framebuffer, i8042 input, IRQ1/IRQ12 handlers) |
+| SEC-001 | Unsafe inventory exists | IMPLEMENTED+VERIFIED | `docs/UNSAFE_INVENTORY.md` — 32 documented unsafe contracts (incl. gfx framebuffer, i8042 input, PCI BAR probe, AC97 + UHCI DMA/port I/O) |
 | SEC-002 | No host disk passthrough | IMPLEMENTED+VERIFIED | qemu-runner `build_command` + run-qemu.ps1 attach only `target/images/*.img`; no passthrough flags anywhere |
 | REL-001 | Build manifest/checksums produced | IMPLEMENTED+VERIFIED | `target/images/manifest.txt`: 6 images with sizes + SHA-256 (host test covers SHA-256 vectors) |
 

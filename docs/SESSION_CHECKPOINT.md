@@ -1,12 +1,29 @@
 # Session checkpoint — resumable state
 
-**Timestamp:** 2026-09-02 ~12:40 Europe/London
+**Timestamp:** 2026-09-02 ~13:30 Europe/London
 **Repository:** `E:\Project\itisyou-os` · branch `main`
-**Tags:** `v0.1.0`, `v0.2.0`, `v0.3.0`, `v0.4.0`, `v0.5.0` (on commit 5be3c0c)
+**Tags:** `v0.1.0` … `v0.5.0` (v0.6.0 tagged after CI confirms)
 **Remote:** https://github.com/leelaravind/itisyou-os (private)
-**Milestone:** V0.5 Graphics + Input + Basic Desktop/Compositor — verified +
-tagged (selftest pass=78 fail=0; CI run 33628363046 success; live at
-os.itisyou.app). Next: V0.6 Hardware Expansion (device model, PCI, USB, audio).
+**Milestone:** V0.6 Hardware Expansion — verified (selftest pass=84 fail=0;
+full local matrix Success). Device/driver model, PCI depth (BARs + caps), UHCI
+USB with HID keyboard input, AC97 audio (samples verified via WAV), unified
+input, userspace `devinfo`.
+
+## V0.6 verified additions
+
+- **Device model** (`device/mod.rs`): `Device`/`Driver`/registry, deterministic
+  probe+bind, queryable device table, B190. `lsdev` shell + `/bin/lsdev`.
+- **PCI** (`device/pci.rs`, `kernel-core/pci.rs`): config writes, non-destructive
+  BAR sizing, loop-guarded capability walk (MSI/MSI-X/PCIe/PM), adversarial
+  host tests.
+- **AC97** (`device/ac97.rs`): codec init + PCM-out BDL DMA; `beep`; verified via
+  QEMU `wav` capture (non-silent).
+- **UHCI USB** (`device/uhci.rs`, `kernel-core/usb.rs`): control-transfer
+  enumeration + HID interrupt input; `usbwait`; verified against usb-kbd.
+- **Unified input**: `input::{feed_usb_*,pump_usb}` → one InputEvent stream;
+  desktop consumes PS/2 + USB.
+- **devinfo syscall** (SYS_DEVINFO=12): Ring 3 device access, least authority.
+- Harness: `--audio`/`--audio-out` (AC97+WAV, non-silence check), `--usb`.
 
 ## V0.5 verified additions
 

@@ -54,13 +54,27 @@ input + desktop verified).
   the QEMU CPU model); the user stack has an unmapped hole below it rather
   than a hardened guard region; CR3 switches do a full TLB flush (no
   PCID/ASID tagging).
-- No networking, no USB/audio/Wi-Fi.
+- Devices (V0.6): a generic device/driver model over PCI with two real class
+  drivers (AC97 audio, UHCI USB), plus NVMe. **All drivers are polled** — no
+  device IRQ is wired (the PIC path stays timer/PS-2 only). MSI/MSI-X
+  capabilities are detected + reported but not used; APIC/IOAPIC/MSI routing is
+  deferred. PCI enumeration scans bus 0 only (complete on the QEMU `pc`
+  machine; no bridge recursion).
+- USB (V0.6): **UHCI** (USB 1.1) only — no xHCI/EHCI/OHCI. Enumerates a single
+  device (the first connected root port); no hubs, no multi-device addressing.
+  Control + interrupt-IN transfers only (no bulk/isochronous). HID **boot
+  protocol** keyboard input is verified; mouse decode is host-tested but full
+  mouse-input verification needs multi-device enumeration.
+- Audio (V0.6): **AC97 output only** — no capture/input, one PCM-out stream,
+  fixed 48 kHz, no mixing/resampling in the OS (QEMU resamples to the backend).
+- No networking, no Wi-Fi/Bluetooth.
 - Single CPU only; no SMP. Synchronization assumes one core; spinlocks are
   interrupt-safe by masking, not SMP-safe.
 - Physical memory above 4 GiB is ignored by the frame allocator (counted
   and reported as `ignored_high_frames`); QEMU test configuration is 256 MiB.
-- The PIC/PIT (legacy) interrupt path is the baseline; APIC/HPET are future
-  work. Unmasked IRQs: 0 (timer), 1 (keyboard), 2 (cascade), 12 (mouse).
+- The PIC/PIT (legacy) interrupt path is the baseline; APIC/HPET/MSI are future
+  work. Unmasked IRQs: 0 (timer), 1 (keyboard), 2 (cascade), 12 (mouse). Device
+  drivers (NVMe/AC97/UHCI) are polled, so they need no IRQ line.
 - The kernel heap is a fixed **32 MiB** range (grown from 1 MiB in V0.5 for
   the compositor back buffer + window stores); no growth, no guard pages on
   task stacks or the double-fault IST stack yet.

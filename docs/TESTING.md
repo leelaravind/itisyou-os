@@ -44,8 +44,29 @@
    compositor re-renders and captures a framebuffer `screendump` (the OS draws
    the desktop — no host UI), and `DESKTOP-INPUT-VERIFIED` gates success. This
    proves the full graphics + input path inside QEMU.
-9. **Negative cases** (grown alongside subsystems): intentional panic,
-   allocator exhaustion, malformed inputs, timeout classification.
+9. **Device-model suite** (V0.6, inside the selftest kernel): PCI enumeration
+   into `Device` records, NVMe MMIO BAR sizing, capability-list walking (NVMe
+   MSI-X/PCIe/PM), the non-destructiveness of the BAR probe, and Ring 3 device
+   access via the `devinfo` syscall (`/bin/lsdev`). Adversarial capability-list
+   (circular / self-loop / out-of-range) and malformed-descriptor cases are
+   host-tested in `kernel_core`.
+10. **AC97 audio leg** (V0.6, `audio-bios`): attach an AC97 controller with
+    QEMU's `wav` backend; the OS binds the driver (B190), `beep` DMAs a tone
+    through the PCM-Out bus master, and the runner asserts the init + full-
+    consumption markers **and** that the captured WAV holds non-silent PCM —
+    the samples must reach the output, not just initialize.
+11. **USB (UHCI) + HID leg** (V0.6, `usb-hid-bios`): attach a UHCI controller +
+    USB HID keyboard; the OS enumerates it over control transfers (device +
+    config descriptors, address/config/protocol) and the graphical desktop
+    reads HID input off the interrupt endpoint through the **unified** input
+    queue; an injected keypress arrives tagged `src=usb` — real USB input and
+    input-source unification.
+12. **Negative cases** (grown alongside subsystems): intentional panic,
+    allocator exhaustion, malformed inputs, timeout classification.
+
+The harness gained `--audio`/`--audio-out` (AC97 → WAV capture, with a non-
+silence assertion) and `--usb` (a UHCI controller + USB HID keyboard/mouse)
+alongside the serial + monitor channels.
 
 The harness supports two guest channels: a **serial** line (stage/test markers,
 shell stdin) and an optional **HMP monitor** (`--monitor`, `--inject-after`,
