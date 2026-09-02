@@ -170,7 +170,9 @@ fn run_scheduler(stop: impl Fn(usize) -> bool) -> usize {
                     _ => unreachable!(),
                 };
                 completed += 1;
-                // Free the address space now; keep a zombie slot for wait().
+                // Release any GUI windows the process owned, then free its
+                // address space; keep a zombie slot for wait().
+                crate::gfx::compositor::remove_owned(pid);
                 process.space.teardown();
                 if let Some(s) = table.slots.get_mut(&pid) {
                     s.process = None;

@@ -308,6 +308,7 @@ pub fn run(mut process: Process) -> UserExit {
         }
         UserExit::Yielded | UserExit::Preempted | UserExit::Blocked => unreachable!(),
     }
+    crate::gfx::compositor::remove_owned(process.pid);
     process.space.teardown();
     terminal
 }

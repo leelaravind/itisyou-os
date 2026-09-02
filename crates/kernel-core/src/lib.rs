@@ -7,11 +7,14 @@
 
 pub mod bitmap;
 pub mod elf;
+pub mod font;
 pub mod itfs;
 pub mod marker;
 pub mod memmap;
+pub mod mouse;
 pub mod path;
 pub mod pci;
+pub mod scancode;
 pub mod shellparse;
 pub mod stage;
 pub mod tar;

@@ -8,9 +8,11 @@ use x86_64::VirtAddr;
 use super::paging;
 
 /// Heap placement: a fixed, otherwise-unused kernel virtual range far from
-/// the bootloader's kernel/stack/physical-memory mappings. 1 MiB for V0.1.
+/// the bootloader's kernel/stack/physical-memory mappings. Grown to 32 MiB
+/// in V0.5 to hold the compositor back buffer and window backing stores
+/// (a 1024×768×4 buffer alone is 3 MiB).
 pub const HEAP_START: u64 = 0x_4444_4444_0000;
-pub const HEAP_SIZE: u64 = 1024 * 1024;
+pub const HEAP_SIZE: u64 = 32 * 1024 * 1024;
 
 #[global_allocator]
 static ALLOCATOR: LockedHeap = LockedHeap::empty();

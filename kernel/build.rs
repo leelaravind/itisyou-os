@@ -26,6 +26,7 @@ fn main() {
         "parent",
         "spin-finite",
         "spin-forever",
+        "gui-demo",
     ] {
         println!(
             "cargo::rerun-if-changed={}",
@@ -84,6 +85,8 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
             "user-spin-finite",
             "-p",
             "user-spin-forever",
+            "-p",
+            "user-gui-demo",
         ])
         .arg("--target-dir")
         .arg(&target_dir)
@@ -108,6 +111,7 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
         ("user-parent", "bin/parent"),
         ("user-spin-finite", "bin/spin-finite"),
         ("user-spin-forever", "bin/spin-forever"),
+        ("user-gui-demo", "bin/gui-demo"),
     ];
     entries.push(("bin/".to_string(), Vec::new(), true));
     for (artifact, dest) in programs {

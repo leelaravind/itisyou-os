@@ -1,0 +1,17 @@
+cargo-features = ["per-package-target"]
+
+[package]
+name = "user-gui-demo"
+version.workspace = true
+edition.workspace = true
+description = "A Ring 3 graphical application: creates a window and draws into it via GUI syscalls, proving user processes render through the compositor without direct framebuffer access."
+forced-target = "x86_64-unknown-none"
+
+[dependencies]
+ulib = { path = "../ulib" }
+
+[[bin]]
+name = "user-gui-demo"
+path = "src/main.rs"
+test = false
+bench = false
