@@ -96,6 +96,21 @@ pub fn init() {
     mouse_write(0xF6); // set defaults
     mouse_write(0xF4); // enable data reporting
 
+    // Drain stale bytes (ACKs, BAT results) still sitting in the output buffer
+    // so the first real mouse packet frames on its own always-1 byte instead
+    // of on a leftover byte (which would mis-decode the first movement).
+    {
+        let mut data = Port::<u8>::new(DATA);
+        let mut status = Port::<u8>::new(STATUS_CMD);
+        for _ in 0..32 {
+            // SAFETY: reading the status/data ports is side-effect-free.
+            if unsafe { status.read() } & 0x01 == 0 {
+                break;
+            }
+            let _ = unsafe { data.read() };
+        }
+    }
+
     // Unmask IRQ1 (keyboard), IRQ2 (cascade) and IRQ12 (mouse) at the PICs,
     // keeping IRQ0 (timer) unmasked.
     crate::interrupts::set_input_irqs_enabled();

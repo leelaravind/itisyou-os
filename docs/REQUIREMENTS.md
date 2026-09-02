@@ -98,13 +98,35 @@ labels, commit SHAs, CI run links, or file paths.
 | CI-V03 | CI green with V0.3 QEMU coverage | IMPLEMENTED+VERIFIED | run 33609090873 success (kernel build, split clippy, 55 host tests, images, 6 QEMU legs incl. NVMe+concurrency asserts, website, gitleaks) on ubuntu-24.04 |
 | WEB-V03 | os.itisyou.app reflects V0.3 truthfully | IMPLEMENTED+VERIFIED | live at v0.3.0-dev commit d83942b, milestone "V0.3 — Process Isolation + Storage", verified modules (per-process/ipc/pci/block/nvme), browser+HTTP verified, zero console errors, stale claims removed |
 
+## V0.5 — Graphics + Input + Basic Desktop/Compositor
+
+| ID | Requirement | Status | Evidence |
+|---|---|---|---|
+| GFX-001 | OS boots into a real graphical environment in QEMU | IMPLEMENTED+VERIFIED | ADR-0010; `gfx::init` wraps the bootloader linear framebuffer; `[ITISYOU:INFO] gfx width=1280 height=720 bpp=3 bgr=true`, stages B170/B180 emitted; `gfx_available`, `gfx_info_sane` |
+| GFX-002 | Framebuffer drawing primitives correct | IMPLEMENTED+VERIFIED | `gfx_fill_pixel`, `gfx_draw_glyph` (pixel read-backs), `gfx_clip_out_of_range` (no OOB write), `gfx_hash_deterministic` (CRC region hash stable) |
+| GFX-003 | Back buffer → framebuffer format conversion (BGR/bpp) | IMPLEMENTED+VERIFIED | single `present()`; on-screen pixels read back at the compositor's exact palette values in the desktop screendump |
+| COMP-001 | Compositor renders a desktop produced by the OS | IMPLEMENTED+VERIFIED | `composite()` draws wallpaper + top bar + windows + cursor; `desktop.ppm` screendump shows the OS-rendered desktop (colours match the compositor palette exactly) |
+| COMP-002 | A window is composited to the screen | IMPLEMENTED+VERIFIED | `comp_window_fill`, `comp_window_composited` (fill a window, read the pixel back off the composited framebuffer) |
+| COMP-003 | Cross-process window isolation (ownership) | IMPLEMENTED+VERIFIED | `comp_cross_owner_rejected` — a non-owner draw returns `NotOwner`; windows removed on owner exit (`gui_window_released_on_exit`) |
+| COMP-004 | Out-of-bounds / bad-size draws rejected | IMPLEMENTED+VERIFIED | `comp_fill_out_of_bounds_rejected`, `comp_bad_size_rejected` |
+| GUI-001 | Ring 3 renders a window via validated syscalls (no direct FB) | IMPLEMENTED+VERIFIED | `gui_create/fill/text/present` copy request structs from validated user memory; `user/gui-demo` prints `RING3-GUI-OK`; `gui_ring3_app_exit` |
+| GUI-002 | A Ring 3 process's rendering appears on screen | IMPLEMENTED+VERIFIED | `gui_ring3_app_rendered` — the kernel reads the userspace window's 0xFF8800 pixel back off the composited screen |
+| INP-001 | Real PS/2 keyboard input via IRQ1 | IMPLEMENTED+VERIFIED | `desktop-input-bios`: monitor `sendkey h e l l o` → `[ITISYOU:INPUT] key=h..o`; host-tested scancode decoder (`input_decoders`) |
+| INP-002 | Real PS/2 mouse input via IRQ12 | IMPLEMENTED+VERIFIED | `desktop-input-bios`: monitor `mouse_move`/`mouse_button` → `[ITISYOU:INPUT] mouse dx=-20 dy=-15`, button `l=1`→`l=0`; cursor moves on screen; host-tested mouse decoder (incl. malformed packets) |
+| INP-003 | Input IRQs do not deadlock the compositor/timer | IMPLEMENTED+VERIFIED | `set_input_irqs_enabled` masks interrupts around the PIC write; mouse IRQ accumulates deltas lock-free; full selftest + desktop run green with IRQs live |
+| DESK-001 | Interactive desktop reacts to keyboard + mouse | IMPLEMENTED+VERIFIED | `desktop` command → `[ITISYOU:MODE] desktop`, `DESKTOP-READY`, live window updates, `DESKTOP-INPUT-VERIFIED keys=5 mouse=4` |
+| DESK-002 | Graphics/input proven with automated verification (no faked UI) | IMPLEMENTED+VERIFIED | selftest 15 graphics tests + `desktop-input-bios` monitor-injection test + OS-produced `desktop.ppm` screendump; no host rendering anywhere |
+| REG-V05 | V0.1–V0.4 regressions remain green under V0.5 | IMPLEMENTED+VERIFIED | full selftest **pass=78 fail=0** (BIOS) incl. all boot/userspace/preemption/storage tests; full local matrix Success |
+| CI-V05 | CI green with V0.5 QEMU coverage | PENDING | to be stamped from the ubuntu-24.04 run (adds graphics selftest asserts + desktop-input leg) |
+| WEB-V05 | os.itisyou.app reflects V0.5 truthfully | PENDING | to be stamped after staging+production deploy + browser/HTTP verification |
+
 ## Testing & verification
 
 | ID | Requirement | Status | Evidence |
 |---|---|---|---|
 | TEST-001 | One-command verification gate exists | IMPLEMENTED+VERIFIED | `scripts/verify.ps1` full run 2026-09-02: doctor OK, fmt OK, clippy OK, 41 host tests, 6/6 QEMU legs Success, website 0 errors, secret scan clean → "VERIFY: OK" |
 | TEST-002 | QEMU timeout/failure classification works | IMPLEMENTED+VERIFIED | classifications observed operating correctly during real debugging: Timeout (interactive halt), Panic (UEFI TooManyRegions), MissingMarkers (FIFO stall), Success; negative leg panic-test-bios green |
-| SEC-001 | Unsafe inventory exists | IMPLEMENTED+VERIFIED | `docs/UNSAFE_INVENTORY.md` — 12 documented unsafe contracts |
+| SEC-001 | Unsafe inventory exists | IMPLEMENTED+VERIFIED | `docs/UNSAFE_INVENTORY.md` — 29 documented unsafe contracts (incl. gfx framebuffer, i8042 input, IRQ1/IRQ12 handlers) |
 | SEC-002 | No host disk passthrough | IMPLEMENTED+VERIFIED | qemu-runner `build_command` + run-qemu.ps1 attach only `target/images/*.img`; no passthrough flags anywhere |
 | REL-001 | Build manifest/checksums produced | IMPLEMENTED+VERIFIED | `target/images/manifest.txt`: 6 images with sizes + SHA-256 (host test covers SHA-256 vectors) |
 

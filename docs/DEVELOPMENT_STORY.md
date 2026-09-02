@@ -251,3 +251,48 @@ consistent slot).
   disposable disk — boot 1 formats ITFS + writes `/hello` + flush
   (`FS-PERSIST-WROTE`), boot 2 (fresh guest) mounts + reads it back
   (`FS-PERSIST-VERIFIED`). The hard V0.4 acceptance target is met.
+
+### 11:30 — V0.5 Graphics + Input + Basic Desktop/Compositor
+
+Baseline preserved as tag `v0.4.0`. Goal: a real graphical environment produced
+by the OS inside QEMU — desktop/compositor, keyboard + mouse, a Ring 3 GUI
+window — with no faked/host-rendered UI (ADR-0010).
+
+**Graphics foundation** (committed cd46a19): `gfx` wraps the bootloader linear
+framebuffer (QEMU: 1280×720 BGR) with a `u32` back buffer + 8×8 font +
+fill/glyph/blit + CRC region hash and one format-converting `present()`; the
+heap grew to 32 MiB. `compositor` renders wallpaper + top bar + windows +
+cursor with per-window backing stores and ownership/bounds isolation. GUI
+syscalls let `user/gui-demo` (Ring 3) render a window with no direct
+framebuffer access. Verified in the selftest at **pass=78/0**, including a
+Ring 3 window's 0xFF8800 pixel read back off the composited screen, and
+adversarial rejections (cross-owner, out-of-bounds, bad size).
+
+- Failure (root-caused): after enabling the input IRQs the kernel hung ~300 s.
+  `set_input_irqs_enabled` held the PIC lock while writing masks; a timer IRQ
+  fired and the naked timer ISR spun forever trying to take the same lock for
+  its EOI → deadlock. Fix: mask interrupts around the PIC write
+  (`without_interrupts`), and make the mouse IRQ accumulate deltas lock-free
+  instead of touching the compositor/FB lock a `composite()` may hold.
+
+**Input + desktop**: added PS/2 keyboard (IRQ1) + mouse (IRQ12) decoders and a
+`desktop` command that renders a live window and reacts to input. To prove
+**real** input (not a stub), the QEMU harness gained an HMP **monitor** channel
+(`--monitor`, `--inject-after`, `--monitor-cmd`): once `DESKTOP-READY` appears
+it injects `sendkey h e l l o` and `mouse_move`/`mouse_button` into the emulated
+PS/2 devices. The kernel's IRQ handlers observed them
+(`[ITISYOU:INPUT] key=h..o`, `mouse dx=-20 dy=-15`, `l=1`→`l=0`), the desktop
+updated live, and `DESKTOP-INPUT-VERIFIED keys=5 mouse=4` gated success. A
+framebuffer `screendump` captured the OS-rendered desktop (its pixels match the
+compositor palette exactly) — the UI is produced by ITISYOU OS inside QEMU, not
+the host.
+
+- Environment note: BIOS boot in this session's QEMU/TCG is slow (~40 s to load
+  the bootloader stages via ATA PIO; UEFI ~12 s). Early diagnostics with short
+  read windows looked like a "boot regression"; a longer wait showed the
+  bootloader's 4th stage + framebuffer info arriving normally and the selftest
+  passing 78/0. Timeouts were sized accordingly (no acceleration change, to
+  preserve the exact validated V0.1–V0.4 behavior).
+- The first PS/2 mouse packet after enabling reporting can carry a benign
+  zero-motion sync artifact; the decoder resynchronises and every later packet
+  decodes exactly (documented in KNOWN_LIMITATIONS).

@@ -61,6 +61,25 @@ Bounded kernel-owned message channels (copy-through-kernel send/recv) — the
 smallest primitive for future system-service RPC, shaped to become
 capability handles later.
 
+## Graphics, input & desktop (V0.5, ADR-0010)
+
+`gfx` wraps the bootloader-provided linear framebuffer (firmware mode; QEMU:
+1280×720 BGR) with an in-heap `u32` back buffer and `fill_rect`/`draw_char`/
+`draw_string`/`blit` primitives plus a CRC `hash_region`; one `present()`
+converts the back buffer to the framebuffer's real pixel format. `gfx::
+compositor` owns windows (each with an `owner_pid` and its own RGB backing
+store), a wallpaper, top-bar chrome, and a cursor, and renders the scene
+back-to-front. Every window op enforces ownership + bounds, so a process can no
+more draw outside its window than write outside its address space; a process's
+windows are dropped on exit. Ring 3 reaches the screen **only** through
+validated GUI syscalls (`gui_create/fill/text/present`) — never the framebuffer
+directly. `input` initializes the i8042 controller and decodes PS/2 keyboard
+(IRQ1) and mouse (IRQ12) events via host-tested `kernel-core` decoders; the
+mouse IRQ accumulates deltas lock-free (it must never take the compositor/FB
+lock a `composite()` may hold). The `desktop` shell command enters an
+interactive loop that applies input and re-composites. Pure logic (8×8 font,
+scancode + mouse decoders) lives in `kernel-core` and is host-tested.
+
 ## Crate boundaries
 
 - **`kernel/`** — the only privileged code. Library + two binaries:
@@ -74,16 +93,19 @@ capability handles later.
   BIOS/UEFI disk images (pure Rust) + SHA-256 manifest.
 - **`tools/qemu-runner`** — host test harness; launches QEMU, asserts
   boot-stage markers, classifies panic/timeout/selftest outcomes, writes
-  JSON evidence. Absence of output is never success.
+  JSON evidence. Two guest channels: a serial line (markers, shell stdin) and
+  an optional HMP **monitor** for injecting PS/2 input (`sendkey`/`mouse_move`/
+  `mouse_button`) and capturing framebuffer screendumps. Absence of output is
+  never success.
 
 ## Boot contract
 
 The bootloader hands the kernel a typed `BootInfo` (memory regions, physical
 memory mapping offset, framebuffer, RSDP). Kernel code consumes it through
 `itisyou_kernel::early_init` so subsystems never depend on third-party boot
-structures directly. Boot stages B000–B150 (defined in
-`kernel-core::stage`) each emit one machine-parseable serial marker; the
-harness asserts them in order.
+structures directly. Boot stages B000–B180 (defined in
+`kernel-core::stage`, through B170 graphics + B180 desktop) each emit one
+machine-parseable serial marker; the harness asserts them in order.
 
 ## Observability
 
