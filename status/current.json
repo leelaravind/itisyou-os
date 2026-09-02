@@ -4,7 +4,7 @@
   "architecture": "x86_64",
   "environment": "QEMU",
   "milestone": "V0.6 — Hardware Expansion",
-  "commit": "PENDING",
+  "commit": "14f3971",
   "lastVerifiedAt": "2026-09-02T13:30:00Z",
   "verification": "locally-verified",
   "modules": [
