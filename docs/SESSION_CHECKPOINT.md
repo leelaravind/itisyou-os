@@ -2,7 +2,7 @@
 
 **Timestamp:** 2026-09-02 ~13:30 Europe/London
 **Repository:** `E:\Project\itisyou-os` · branch `main`
-**Tags:** `v0.1.0` … `v0.5.0` (v0.6.0 tagged after CI confirms)
+**Tags:** `v0.1.0` … `v0.6.0` (v0.6.0 on commit cccf5a7; CI 33635955858 green)
 **Remote:** https://github.com/leelaravind/itisyou-os (private)
 **Milestone:** V0.6 Hardware Expansion — verified (selftest pass=84 fail=0;
 full local matrix Success). Device/driver model, PCI depth (BARs + caps), UHCI
