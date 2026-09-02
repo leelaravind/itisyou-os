@@ -16,9 +16,9 @@ bootloader = { version = "0.11.17", default-features = false, features = ["bios"
 default = ["uefi"]
 uefi = ["bootloader/uefi"]
 
-# Artifact dependencies: building this tool builds both kernel binaries for
-# x86_64-unknown-none and exposes their paths at compile time.
-[dependencies.itisyou-kernel]
-path = "../../kernel"
-artifact = "bin"
-target = "x86_64-unknown-none"
+# NOTE: the kernel is deliberately NOT an artifact dependency. Cargo's
+# unstable bindeps feature unifies crate features across the host/bare-metal
+# boundary (observed on Linux CI: bitflags built for x86_64-unknown-none
+# with `std` enabled) and `cargo tree` panics on such graphs. Instead this
+# tool invokes `cargo build -p itisyou-kernel` as a subprocess — separate
+# resolution, identical behavior on every platform.
