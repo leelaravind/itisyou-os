@@ -41,7 +41,8 @@ Write-Output '=== QEMU selftest (BIOS) ==='
     '--require', 'RING3-PARENT-DONE', '--require', 'RING3-PARENT-WAIT-OK',
     '--require', 'RING3-PARENT-IPC-OK', '--require', 'RING3-CHILD-EXIT',
     '--require', 'NVMe controller', '--require', 'nvme_ready blocks=',
-    '--timeout-secs', '180', '--label', 'selftest-bios')
+    '--require', 'SPIN-FINITE-OK',
+    '--timeout-secs', '300', '--label', 'selftest-bios')
 
 Write-Output '=== QEMU selftest (UEFI) ==='
 if (Test-Path 'target/images/itisyou-kernel-selftest-uefi.img') {
@@ -50,8 +51,8 @@ if (Test-Path 'target/images/itisyou-kernel-selftest-uefi.img') {
         '--expect', 'B160', '--expect-selftest',
         '--require', 'RING3-HELLO', '--require', 'RING3-DONE',
         '--require', 'RING3-PARENT-DONE', '--require', 'RING3-PARENT-IPC-OK',
-        '--require', 'nvme_ready blocks=',
-        '--timeout-secs', '180', '--label', 'selftest-uefi')
+        '--require', 'nvme_ready blocks=', '--require', 'SPIN-FINITE-OK',
+        '--timeout-secs', '300', '--label', 'selftest-uefi')
 } else {
     Write-Output 'SKIPPED: UEFI image absent - bootloader UEFI stage blocked upstream (rust-osdev/bootloader#579)'
 }

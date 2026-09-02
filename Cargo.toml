@@ -11,6 +11,8 @@ members = [
     "user/pf-test",
     "user/child",
     "user/parent",
+    "user/spin-finite",
+    "user/spin-forever",
 ]
 # The kernel must NEVER share a cargo invocation with host packages: cargo
 # resolves features once per invocation across all compile targets, so a

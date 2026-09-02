@@ -1,0 +1,17 @@
+cargo-features = ["per-package-target"]
+
+[package]
+name = "user-spin-forever"
+version.workspace = true
+edition.workspace = true
+description = "Adversarial non-yielding process: an infinite CPU loop making no syscalls. Used to prove it cannot monopolize the CPU under preemption."
+forced-target = "x86_64-unknown-none"
+
+[dependencies]
+ulib = { path = "../ulib" }
+
+[[bin]]
+name = "user-spin-forever"
+path = "src/main.rs"
+test = false
+bench = false
