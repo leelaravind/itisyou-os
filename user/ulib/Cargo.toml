@@ -1,0 +1,7 @@
+[package]
+name = "ulib"
+version.workspace = true
+edition.workspace = true
+description = "Minimal userspace runtime for ITISYOU OS programs: syscall stubs + panic handler. Kernel ABI: docs/adr/0004 + kernel/src/syscall.rs."
+
+[dependencies]

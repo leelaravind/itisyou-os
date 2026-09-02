@@ -1,0 +1,17 @@
+cargo-features = ["per-package-target"]
+
+[package]
+name = "user-pf-test"
+version.workspace = true
+edition.workspace = true
+description = "Negative test: reads kernel-half memory from Ring 3; the kernel must contain the #PF and terminate only this process."
+forced-target = "x86_64-unknown-none"
+
+[dependencies]
+ulib = { path = "../ulib" }
+
+[[bin]]
+name = "user-pf-test"
+path = "src/main.rs"
+test = false
+bench = false

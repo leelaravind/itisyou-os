@@ -146,3 +146,28 @@ harness, root causes from serial evidence:
   platforms. Userspace stretch explicitly deferred to V0.2 (see
   REQUIREMENTS USR-001/ABI-001). Remaining V0.1-adjacent work: PS/2
   keyboard, timer preemption, guard pages (KNOWN_LIMITATIONS.md).
+
+### 08:00 — V0.2 Userspace Foundation: Ring 3 is real
+
+Baseline preserved as tag `v0.1.0`. Implemented in one dependency-ordered
+pass (ADR-0004): user GDT segments + TSS RSP0; syscall/sysret MSRs with a
+dedicated masked-IF kernel syscall stack; USER_ACCESSIBLE paging with
+table-path flags + W^X; strict host-tested ELF64 parser; three-phase
+segment loader (map+zero → copy → tighten) with window/overlap policy;
+process lifecycle with full teardown; iretq entry with zeroed GPRs and a
+setjmp-style abort context; CPL=3 fault containment for #PF/#GP/#UD; ulib +
+three Ring 3 programs (init, gp-test, pf-test) built by a nested cargo in
+kernel/build.rs and packed into the initramfs alongside deterministically
+corrupted fixtures (/bin/broken, /bin/wx-test).
+
+- Failure #1 (caught by the new selftests): all user programs failed to
+  load — `x86_64-unknown-none` builds PIE (ET_DYN) by default and the
+  loader only accepts static ET_EXEC. Fix: nested build uses
+  `-C relocation-model=static -C link-arg=--no-pie`. Evidence discipline
+  worked exactly as designed: V0.1's 29 tests stayed green while the 5 new
+  ones failed with a precise cause.
+- After the fix: **pass=34 fail=0**. The serial log carries the whole proof
+  chain: `user_enter … ring=3` → RING3-HELLO…RING3-DONE (write syscalls
+  round-tripping) → `user_exit code=0` → `#GP cs_rpl=3` on a Ring 3 `hlt`
+  (hardware CPL evidence) → `#PF … USER_MODE` on a kernel-half read (MMU
+  isolation evidence) → kernel alive → clean reload after teardown.

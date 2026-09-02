@@ -20,10 +20,22 @@ functionality.
 │  → PIC/PIT timer → scheduler → VFS/initramfs → shell      │
 │    (stages B010 … B150, serial-observable)                │
 └───────────────────────────────────────────────────────────┘
-   userspace (ring 3, syscalls)          … stretch (planned)
+   userspace (ring 3, syscall/sysret ABI)   … V0.2, single process (verified)
    privileged services / capability engine … future (planned)
    AI layer (intelligence, never authority) … future (planned)
 ```
+
+## Userspace (V0.2, ADR-0004)
+
+One user process at a time runs in a dedicated low-half window
+([1 MiB, 512 GiB), USER_ACCESSIBLE + W^X) of the shared address space.
+Entry: `iretq` with zeroed GPRs; syscalls: `syscall`/`sysret` with a masked
+dedicated kernel stack; faults at CPL=3 (#PF/#GP/#UD) terminate only the
+process via a saved abort context. The strict ELF64 loader
+(`kernel-core::elf` + `kernel/src/user.rs`) accepts only static ET_EXEC
+images and validates everything before mapping. `user/ulib` is the Ring 3
+side of the ABI; `/bin/init`, `/bin/gp-test`, `/bin/pf-test` are the
+evidence programs baked into the initramfs.
 
 ## Crate boundaries
 

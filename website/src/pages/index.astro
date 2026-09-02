@@ -33,25 +33,25 @@ const layers = [
   {
     code: 'L3',
     name: 'Userspace',
-    note: 'ring 3, syscalls — V0.1 stretch',
-    tag: 'planned',
-    tagLabel: 'Planned',
-    accent: false,
+    note: 'ring 3, syscall ABI — single process (V0.2)',
+    tag: 'verified',
+    tagLabel: 'Verified',
+    accent: true,
   },
   {
     code: 'L2',
     name: 'Kernel',
     note: 'Rust no_std, x86_64, ring 0',
-    tag: 'in-development',
-    tagLabel: 'In Development',
-    accent: true,
+    tag: 'verified',
+    tagLabel: 'Verified',
+    accent: false,
   },
   {
     code: 'L1',
     name: 'Bootloader',
     note: 'rust-osdev crate, BIOS & UEFI stages',
-    tag: 'in-development',
-    tagLabel: 'In Development',
+    tag: 'verified',
+    tagLabel: 'Verified',
     accent: false,
   },
   {
@@ -92,7 +92,7 @@ const latestJournal = JOURNAL.slice(0, 2);
         </div>
         <div class="font-mono text-mono-data text-meta flex flex-wrap items-center gap-3 pt-2">
           <span aria-hidden="true" class="text-muted select-none">▚</span>
-          <span>Current milestone — V0.1 {status.milestone}</span>
+          <span>Current milestone — {status.milestone}</span>
           <StatusTag status={status.maturity} />
         </div>
       </div>
@@ -146,7 +146,7 @@ const latestJournal = JOURNAL.slice(0, 2);
     <section class="pb-24" aria-labelledby="now-title">
       <div class="border-b border-line-soft pb-4 mb-8 flex flex-wrap items-end justify-between gap-4">
         <h2 id="now-title" class="font-sans text-headline-md text-ink">What we’re building now</h2>
-        <p class="font-mono text-mono-data text-meta">Milestone “V0.1 — {status.milestone}”</p>
+        <p class="font-mono text-mono-data text-meta">Milestone “{status.milestone}”</p>
       </div>
 
       <BuildCard class="mb-gutter" />
@@ -250,7 +250,7 @@ const latestJournal = JOURNAL.slice(0, 2);
           </ol>
         </div>
         <p class="font-mono text-mono-data text-muted mt-4">
-          No AI component exists in the V0.1 runtime. See <a href="/security" class="underline underline-offset-2 hover:text-ink">the security model</a>.
+          No AI component exists in the current runtime. See <a href="/security" class="underline underline-offset-2 hover:text-ink">the security model</a>.
         </p>
       </div>
     </section>

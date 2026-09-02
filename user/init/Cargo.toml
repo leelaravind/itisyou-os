@@ -1,0 +1,17 @@
+cargo-features = ["per-package-target"]
+
+[package]
+name = "user-init"
+version.workspace = true
+edition.workspace = true
+description = "ITISYOU OS init: first Ring 3 process; exercises the whole syscall ABI and prints deterministic evidence lines."
+forced-target = "x86_64-unknown-none"
+
+[dependencies]
+ulib = { path = "../ulib" }
+
+[[bin]]
+name = "user-init"
+path = "src/main.rs"
+test = false
+bench = false

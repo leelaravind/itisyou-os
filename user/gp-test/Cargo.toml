@@ -1,0 +1,17 @@
+cargo-features = ["per-package-target"]
+
+[package]
+name = "user-gp-test"
+version.workspace = true
+edition.workspace = true
+description = "Negative test: executes a privileged instruction in Ring 3; the kernel must contain the #GP and terminate only this process."
+forced-target = "x86_64-unknown-none"
+
+[dependencies]
+ulib = { path = "../ulib" }
+
+[[bin]]
+name = "user-gp-test"
+path = "src/main.rs"
+test = false
+bench = false

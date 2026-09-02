@@ -18,6 +18,13 @@ Host tools using safe std are not tracked.
 | 10 | `task/context.rs::switch_context` | naked fn: callee-saved register save/restore + stack switch | `old_rsp_slot` outlives the switch (boxed Task storage); `new_rsp` seeded by `spawn` or saved by a prior switch of a live task; SysV ABI on `x86_64-unknown-none` |
 | 11 | `task/mod.rs::spawn` | seeding a fresh task stack through raw pointers | writes stay within the freshly allocated stack; layout matches exactly what `switch_context` pops (6 regs + return address) |
 | 12 | `shell.rs::cmd_reboot` | write `0xFE` to port 0x64 | architectural 8042 CPU-reset pulse, invoked only by the explicit `reboot` command |
+| 13 | `syscall.rs::init` | EFER/STAR/LSTAR/SFMASK writes; syscall stack top computed from a static | standard syscall-MSR arming; GDT layout asserted first; stack is a dedicated static, top written once before any Ring 3 code exists |
+| 14 | `syscall.rs::syscall_entry` (naked) | stack switch + register save/restore around the dispatcher | IF masked by SFMASK; single CPU, one process → no nesting; user RSP is preserved verbatim and restored before sysretq; alignment maintained for the SysV call |
+| 15 | `syscall.rs::sys_write` | `from_raw_parts` over a user buffer | every byte's page verified mapped and the range verified inside the user window BEFORE the slice is formed; the owning process is suspended in this syscall so the mapping cannot change |
+| 16 | `user.rs` loader copies (`write_bytes`/`copy_nonoverlapping`) | writes through fresh user mappings | pages just mapped writable+zeroed, exclusively owned by the process being built; bounds checked against the validated ELF segments |
+| 17 | `user.rs::transition::enter_user_raw` (naked) | iretq to CPL=3 with constructed frame | selector constants asserted against the GDT at boot; all GPRs zeroed so no kernel data reaches Ring 3; abort context armed first |
+| 18 | `user.rs::transition::user_abort_raw` (naked) | setjmp-style long-jump back to the saved kernel frame | only reachable while the context is armed (exit syscall or verified-CPL3 fault); abandons the exception/syscall stack by design; IF re-enabled by the wrapper |
+| 19 | `user/ulib::raw_syscall` (Ring 3 side) | `syscall` instruction | userspace code; declares every hardware/kernel-clobbered register to the compiler |
 
 Notes:
 - `entry_point!` macros generate the `_start` symbols; their contract is

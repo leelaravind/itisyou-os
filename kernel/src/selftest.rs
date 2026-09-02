@@ -47,6 +47,76 @@ pub fn run_all(suite: &mut Suite) {
     timer_tests(suite);
     scheduler_tests(suite);
     vfs_tests(suite);
+    userspace_tests(suite);
+}
+
+/// V0.2: Ring 3 execution, syscalls, isolation, and rejection paths.
+fn userspace_tests(suite: &mut Suite) {
+    use crate::user::{self, LoadError, UserExit};
+    use kernel_core::elf::ElfError;
+
+    // Malformed ELF (corrupted magic) is rejected structurally.
+    suite.check(
+        "usr_elf_reject_malformed",
+        matches!(
+            user::load("/bin/broken"),
+            Err(LoadError::Elf(ElfError::BadMagic))
+        ),
+    );
+
+    // Writable+executable segment is rejected by W^X policy.
+    suite.check(
+        "usr_elf_reject_wx",
+        matches!(user::load("/bin/wx-test"), Err(LoadError::WxSegment { .. })),
+    );
+
+    // init: full syscall ABI round-trip in Ring 3 ending in exit(0).
+    // (Its RING3-* output lines are asserted by the harness.)
+    suite.check(
+        "usr_init_clean_exit",
+        matches!(user::run_path("/bin/init"), Ok(UserExit::Exit(0))),
+    );
+
+    // Privileged instruction at CPL=3 → #GP contained, process terminated.
+    suite.check(
+        "usr_gp_contained",
+        matches!(
+            user::run_path("/bin/gp-test"),
+            Ok(UserExit::Fault { vector: 13, .. })
+        ),
+    );
+
+    // Kernel-half read at CPL=3 → #PF contained, process terminated.
+    suite.check(
+        "usr_pf_contained",
+        matches!(
+            user::run_path("/bin/pf-test"),
+            Ok(UserExit::Fault {
+                vector: 14,
+                addr: Some(0xFFFF_8000_DEAD_0000)
+            })
+        ),
+    );
+
+    // The kernel survived two user crashes: allocator + timer still work.
+    let alive_alloc = alloc::vec![0xEEu8; 4096];
+    let t0 = crate::interrupts::ticks();
+    let mut spins = 0u64;
+    while crate::interrupts::ticks() < t0 + 2 && spins < 2_000_000_000 {
+        x86_64::instructions::hlt();
+        spins += 1;
+    }
+    suite.check(
+        "usr_kernel_alive_after_faults",
+        alive_alloc[0] == 0xEE && crate::interrupts::ticks() >= t0 + 2,
+    );
+
+    // A second process gets a fresh load at the same addresses (teardown
+    // really unmapped the previous instance).
+    suite.check(
+        "usr_reload_after_teardown",
+        matches!(user::run_path("/bin/init"), Ok(UserExit::Exit(0))),
+    );
 }
 
 fn pmm_tests(suite: &mut Suite) {

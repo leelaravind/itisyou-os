@@ -17,13 +17,13 @@ const boundaries = [
     n: 2,
     name: 'Kernel trusted boundary',
     now: true,
-    text: 'All Rust no_std code in kernel/ — the trusted computing base for V0.1.',
+    text: 'All Rust no_std code in kernel/ — the trusted computing base.',
   },
   {
     n: 3,
     name: 'Userspace boundary',
-    now: false,
-    text: 'Stretch/planned: ring 3 with validated syscalls; user pointers checked before any kernel dereference; no user mapping of kernel pages.',
+    now: true,
+    text: 'V0.2, verified for a single process: ring 3 execution with MMU-enforced separation (U/S bit), syscall arguments validated before any kernel dereference, no user mapping of kernel pages, faults contained to the process. Per-process page tables (isolation between user processes) are future work.',
   },
   { n: 4, name: 'Privileged system-service boundary', now: false, text: 'Future.' },
   { n: 5, name: 'Untrusted application boundary', now: false, text: 'Future.' },
@@ -118,7 +118,7 @@ const threats = [
             <li class="bg-surface p-6 flex flex-col gap-3">
               <div class="flex items-center justify-between gap-3">
                 <span class="font-mono text-mono-label text-muted tracking-widest">BOUNDARY_{String(b.n).padStart(2, '0')}</span>
-                <StatusTag status={b.now ? 'in-development' : b.n === 3 ? 'planned' : 'concept'} label={b.now ? 'V0.1' : b.n === 3 ? 'Planned' : 'Future'} />
+                <StatusTag status={b.now ? 'in-development' : 'concept'} label={b.now ? 'Current' : 'Future'} />
               </div>
               <h3 class="font-sans text-body-base font-medium text-ink">{b.name}</h3>
               <p class="text-sm text-meta-bright">{b.text}</p>
@@ -133,7 +133,8 @@ const threats = [
       <div class="md:col-span-4">
         <h2 id="s3-title" class="font-mono text-mono-label text-ink tracking-widest mb-4">03 // V0.1 IN PRACTICE</h2>
         <p class="text-body-base text-meta-bright">
-          The V0.1 security posture is honest about its stage: everything runs ring 0 inside QEMU, and isolation
+          The current security posture is honest about its stage: the kernel runs ring 0 inside QEMU with one
+          Ring 3 process at a time under MMU-enforced separation, and isolation
           research starts at the boundary definitions, not premature claims. These are the concrete requirements in
           force now.
         </p>

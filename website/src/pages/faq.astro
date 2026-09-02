@@ -40,7 +40,7 @@ const sections: FaqSection[] = [
         q: 'What actually works today?',
         tag: 'STATUS',
         a: [
-          `The project is ${status.maturity} at v${status.version}, milestone “V0.1 — ${status.milestone}”. The boot path, serial console/boot stages, CPU identification and QEMU test harness are in development; memory management, interrupts, scheduler, filesystem and shell are planned. The build page shows the live module table; nothing is marked Verified yet.`,
+          `The project is ${status.maturity} at v${status.version}, milestone “${status.milestone}”. The V0.1 kernel foundation (boot, memory, interrupts, scheduler, filesystem, shell) is verified in QEMU, and V0.2 has verified Ring 3 userspace with a syscall ABI for a single process. The build page shows the live evidence-backed module table.`,
         ],
       },
     ],
@@ -53,7 +53,7 @@ const sections: FaqSection[] = [
         q: 'Can I install it on my laptop?',
         tag: 'HARDWARE',
         a: [
-          'No — please don’t. V0.1 runs exclusively inside QEMU (BIOS and UEFI via OVMF) with project-generated disposable disk images. Physical-hardware boot is intentionally out of scope and untested, and the project’s own safety rules forbid pointing it at a real disk. Real hardware appears on the roadmap only for explicitly approved sacrificial devices, much later.',
+          'No — please don’t. The OS runs exclusively inside QEMU (BIOS and UEFI via OVMF) with project-generated disposable disk images. Physical-hardware boot is intentionally out of scope and untested, and the project’s own safety rules forbid pointing it at a real disk. Real hardware appears on the roadmap only for explicitly approved sacrificial devices, much later.',
         ],
       },
       {
@@ -100,14 +100,14 @@ const sections: FaqSection[] = [
         q: 'What does “AI has intelligence, not authority” mean?',
         tag: 'PRINCIPLE',
         a: [
-          'Any future AI layer may reason about the system and propose actions, but it never executes privileged kernel operations directly. Proposals flow through a deterministic pipeline — policy engine, risk/permission evaluation, user approval where required, a narrow privileged service — followed by verification, audit and rollback. No AI component exists in the V0.1 runtime; the principle exists now because it constrains kernel interface design.',
+          'Any future AI layer may reason about the system and propose actions, but it never executes privileged kernel operations directly. Proposals flow through a deterministic pipeline — policy engine, risk/permission evaluation, user approval where required, a narrow privileged service — followed by verification, audit and rollback. No AI component exists in the current runtime; the principle exists now because it constrains kernel interface design.',
         ],
       },
       {
         q: 'Is it secure?',
         tag: 'HONESTY',
         a: [
-          'Not yet, and it does not claim to be. Everything currently runs in ring 0 inside a VM; there is no userspace isolation. The V0.1 security posture is about honest boundaries: documented trust boundaries, minimized and documented unsafe code, panic on violated invariants, and strict VM containment so the host machine is never at risk.',
+          'Not yet, and it does not claim to be. As of V0.2 the kernel runs one userspace process at a time in Ring 3 with MMU-enforced kernel/user separation, validated syscalls, and crash containment — verified by automated QEMU tests. Isolation between multiple user processes (per-process page tables) is still future work. The security posture remains honest boundaries: documented trust boundaries, minimized and documented unsafe code, panic on violated kernel invariants, and strict VM containment so the host machine is never at risk.',
         ],
       },
     ],
