@@ -95,6 +95,9 @@ struct Options {
     audio: bool,
     /// WAV output path for `--audio` (default `<artifacts>/<label>.wav`).
     audio_out: Option<PathBuf>,
+    /// Attach a UHCI USB controller with a USB HID keyboard + mouse, so the OS
+    /// can enumerate real USB devices and read HID input.
+    usb: bool,
     /// Attach an emulated NVMe controller backed by a generated raw disk
     /// whose first sector carries a known magic (for storage read tests).
     nvme: bool,
@@ -129,6 +132,7 @@ fn parse_args() -> Result<Options, String> {
     let mut inject_delay_ms = 250u64;
     let mut audio = false;
     let mut audio_out = None;
+    let mut usb = false;
     let mut nvme = false;
     let mut nvme_persist = None;
     let mut timeout = Duration::from_secs(60);
@@ -175,6 +179,7 @@ fn parse_args() -> Result<Options, String> {
                 audio_out = Some(PathBuf::from(value("--audio-out")?));
                 audio = true;
             }
+            "--usb" => usb = true,
             "--nvme" => nvme = true,
             "--nvme-persist" => nvme_persist = Some(PathBuf::from(value("--nvme-persist")?)),
             "--timeout-secs" => {
@@ -206,6 +211,7 @@ fn parse_args() -> Result<Options, String> {
         inject_delay_ms,
         audio,
         audio_out,
+        usb,
         nvme,
         nvme_persist,
         timeout,
@@ -312,6 +318,17 @@ fn build_command(opts: &Options, serial_port: u16, monitor_port: Option<u16>) ->
         cmd.arg("-audiodev")
             .arg(format!("wav,id=snd0,path={}", wav.display()))
             .args(["-device", "AC97,audiodev=snd0"]);
+    }
+    if opts.usb {
+        // A UHCI controller with a USB HID keyboard + mouse on its root ports.
+        cmd.args([
+            "-device",
+            "piix3-usb-uhci,id=uhci",
+            "-device",
+            "usb-kbd,bus=uhci.0,port=1",
+            "-device",
+            "usb-mouse,bus=uhci.0,port=2",
+        ]);
     }
     if opts.nvme {
         match make_nvme_disk(&opts.artifacts) {

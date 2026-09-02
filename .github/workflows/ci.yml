@@ -162,6 +162,24 @@ jobs:
             --require "ac97 play" --require "halted=true" \
             --timeout-secs 180 --label audio-bios
 
+      - name: QEMU USB (UHCI) enumeration + HID keyboard input (BIOS)
+        run: |
+          # UHCI controller + USB HID keyboard. The OS binds the uhci driver
+          # (B190), resets the root port, enumerates over control transfers
+          # (device + config descriptors, SET_ADDRESS/CONFIG/PROTOCOL), and
+          # polls the interrupt-IN endpoint. The harness injects a keypress via
+          # the monitor; the OS reads + decodes the HID report - real USB input.
+          cargo run -q -p qemu-runner -- \
+            --image target/images/itisyou-kernel-bios.img \
+            --expect B190 --usb \
+            --send usbwait --send shutdown \
+            --inject-after USB-HID-READY \
+            --monitor-cmd "sendkey a" \
+            --require "uhci ready" --require "usb device vendor=" \
+            --require "usb hid iface=" --require "usb key=a" \
+            --require "USB-HID-VERIFIED" \
+            --timeout-secs 180 --label usb-hid-bios
+
       - name: QEMU intentional panic (BIOS)
         run: |
           cargo run -q -p qemu-runner -- \
