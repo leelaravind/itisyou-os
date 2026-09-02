@@ -1,0 +1,17 @@
+cargo-features = ["per-package-target"]
+
+[package]
+name = "user-sandbox-probe"
+version.workspace = true
+edition.workspace = true
+description = "V0.7 platform security test program."
+forced-target = "x86_64-unknown-none"
+
+[dependencies]
+ulib = { path = "../ulib" }
+
+[[bin]]
+name = "user-sandbox-probe"
+path = "src/main.rs"
+test = false
+bench = false

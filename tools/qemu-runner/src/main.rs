@@ -221,12 +221,13 @@ fn parse_args() -> Result<Options, String> {
     })
 }
 
-/// Create (or overwrite) the NVMe backing disk: 1 MiB raw, LBA 0 begins with
+/// Create (or overwrite) the NVMe backing disk: 16 MiB raw (room for the
+/// V0.7 package store's multi-version lifecycle), LBA 0 begins with
 /// NVME_DISK_MAGIC then a deterministic pattern. Returns its path.
 fn make_nvme_disk(artifacts: &std::path::Path) -> std::io::Result<PathBuf> {
     std::fs::create_dir_all(artifacts).ok();
     let path = artifacts.join("nvme-disk.img");
-    let mut buf = vec![0u8; 1024 * 1024];
+    let mut buf = vec![0u8; 16 * 1024 * 1024];
     buf[..16].copy_from_slice(NVME_DISK_MAGIC);
     // Fill the rest of sector 0 with a known pattern (byte i => i xor 0x5A).
     for (i, b) in buf[16..512].iter_mut().enumerate() {
@@ -350,7 +351,7 @@ fn build_command(opts: &Options, serial_port: u16, monitor_port: Option<u16>) ->
             if let Some(parent) = disk.parent() {
                 std::fs::create_dir_all(parent).ok();
             }
-            if let Err(e) = std::fs::write(disk, vec![0u8; 1024 * 1024]) {
+            if let Err(e) = std::fs::write(disk, vec![0u8; 16 * 1024 * 1024]) {
                 eprintln!("qemu-runner: could not create persistent NVMe disk: {e}");
             }
         }

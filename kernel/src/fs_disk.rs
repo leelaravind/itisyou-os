@@ -118,6 +118,21 @@ impl<'a> FileSystem<'a> {
         Ok(())
     }
 
+    /// Remove a file (V0.7): clear its directory entry and commit the new
+    /// superblock to the alternate slot — one crash-atomic metadata
+    /// transition (used for uninstall, rollback, and update recovery). Data
+    /// blocks are not reclaimed (documented ITFS limitation).
+    pub fn remove(&mut self, name: &str) -> Result<(), Error> {
+        let mut next = self.sb;
+        next.remove(name)?;
+        let commit_slot = 1 - self.committed_slot;
+        self.dev.write_block(commit_slot as u64, &next.encode())?;
+        self.dev.flush()?;
+        self.sb = next;
+        self.committed_slot = commit_slot;
+        Ok(())
+    }
+
     /// Read a file's full contents.
     pub fn read(&self, name: &str) -> Result<Vec<u8>, Error> {
         let entry = *self.sb.find(name).ok_or(FsError::NotFound)?;

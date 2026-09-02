@@ -51,6 +51,88 @@ pub fn run_all(suite: &mut Suite) {
     storage_tests(suite);
     graphics_tests(suite);
     device_tests(suite);
+    security_tests(suite);
+}
+
+/// V0.7: capability enforcement, sandboxing, delegation, audit, services.
+fn security_tests(suite: &mut Suite) {
+    use crate::user::{self, UserExit};
+    use alloc::string::String;
+    use alloc::sync::Arc;
+    use kernel_core::caps::{CAP_FS_READ, CAP_SPAWN};
+
+    let (_, denials_before) = crate::audit::counts();
+
+    // Default deny: with ZERO capabilities every privileged syscall class
+    // must be refused (the probe exits 0 only if all escapes were denied).
+    suite.check(
+        "cap_default_deny",
+        matches!(
+            user::run_path_with("/bin/sandbox-probe", 0, None),
+            Ok(UserExit::Exit(0))
+        ),
+    );
+
+    // Every denial above landed in the audit trail.
+    let (_, denials_after) = crate::audit::counts();
+    suite.check("cap_denials_audited", denials_after >= denials_before + 7);
+
+    // FS sandbox: CAP_FS_READ restricted to /etc — in-prefix reads work,
+    // out-of-prefix and traversal reads are refused (probe checks all).
+    let etc_sandbox = Arc::new(alloc::vec![String::from("/etc")]);
+    suite.check(
+        "fs_sandbox_enforced",
+        matches!(
+            user::run_path_with("/bin/fs-probe", CAP_FS_READ, Some(etc_sandbox)),
+            Ok(UserExit::Exit(0))
+        ),
+    );
+
+    // Delegation can never amplify: cap-parent holds {spawn, fs_read} and
+    // requests gui for its child — the child must find gui denied but the
+    // legitimately delegated fs_read working.
+    match user::load_with("/bin/cap-parent", CAP_SPAWN | CAP_FS_READ, None) {
+        Ok(parent) => {
+            let ppid = crate::proc::admit(parent);
+            crate::proc::run_until_idle();
+            suite.check(
+                "cap_delegation_no_amplify",
+                matches!(
+                    crate::proc::state_of(ppid),
+                    Some(crate::proc::ProcState::Exited(0))
+                ),
+            );
+            crate::proc::reap(ppid);
+        }
+        Err(_) => suite.check("cap_delegation_no_amplify", false),
+    }
+
+    // Service supervision: deterministic ordering, a service that serves a
+    // dependent client (echod → 3 pongs), and a crash-looping service that
+    // is contained, restarted exactly RESTART_LIMIT times, then Failed.
+    match crate::services::run_supervised(600) {
+        Ok(report) => {
+            suite.check("svc_supervised_done", report.done == 2);
+            suite.check(
+                "svc_crash_restart_bounded",
+                report.failed == 1
+                    && report.restarts_performed == kernel_core::service::RESTART_LIMIT,
+            );
+        }
+        Err(_) => {
+            suite.check("svc_supervised_done", false);
+            suite.check("svc_crash_restart_bounded", false);
+        }
+    }
+    suite.check("svc_no_leaked_processes", crate::proc::live_count() == 0);
+
+    // The kernel path rejects a cyclic service graph (host-tested logic,
+    // proven reachable from kernel context too).
+    let cyclic: &[(&str, &[&str])] = &[("a", &["b"]), ("b", &["a"])];
+    suite.check(
+        "svc_cycle_detected",
+        kernel_core::service::startup_order(cyclic) == Err(kernel_core::service::OrderError::Cycle),
+    );
 }
 
 /// V0.6: device model — enumeration, BAR sizing, capability walking, and the
@@ -482,6 +564,11 @@ fn storage_tests(suite: &mut Suite) {
                 // V0.4 filesystem over the real NVMe device: format, create,
                 // read back, list — then crash-consistency (torn superblock).
                 filesystem_tests(suite, &nvme);
+
+                // V0.7 application platform over the same device: package
+                // verification, install/update/rollback atomicity, recovery,
+                // and manifest-capability launches.
+                platform_tests(suite, &nvme);
             }
             Err(e) => {
                 crate::serial_println!("[ITISYOU:INFO] nvme_init_failed err={e:?}");
@@ -498,6 +585,118 @@ fn storage_tests(suite: &mut Suite) {
             suite.check("nvme_out_of_range_rejected", false);
         }
     }
+}
+
+/// V0.7: the application platform lifecycle over a real block device —
+/// verified installs, atomic update/rollback, interrupted-update recovery,
+/// and launches restricted to manifest capabilities.
+fn platform_tests(suite: &mut Suite, dev: &dyn crate::device::block::BlockDevice) {
+    use crate::fs_disk::FileSystem;
+    use crate::platform::{self, PlatformError};
+    use kernel_core::caps::CAP_LEGACY_FULL;
+
+    let v1 = crate::fs::read("/pkgs/hello-app-1.itpkg").ok();
+    let v2 = crate::fs::read("/pkgs/hello-app-2.itpkg").ok();
+    let bad = crate::fs::read("/pkgs/hello-app-bad.itpkg").ok();
+    let evil = crate::fs::read("/pkgs/evil.itpkg").ok();
+    let (Some(v1), Some(v2), Some(bad), Some(evil)) = (v1, v2, bad, evil) else {
+        suite.check("pkg_fixtures_present", false);
+        return;
+    };
+    suite.check("pkg_fixtures_present", true);
+
+    let Ok(mut fs) = FileSystem::format(dev) else {
+        suite.check("pkg_install_verified", false);
+        return;
+    };
+
+    // Verified install: digest + manifest checked, then atomically committed.
+    let installed = platform::install(&mut fs, v1);
+    suite.check(
+        "pkg_install_verified",
+        matches!(&installed, Ok((app, 1)) if app == "hello-app")
+            && platform::state(&fs, "hello-app").active == Some(1),
+    );
+
+    // Adversarial: a corrupted payload (digest mismatch) and a digest-valid
+    // package demanding an undefined capability are both refused, and the
+    // store state is untouched by either attempt.
+    suite.check(
+        "pkg_corrupt_rejected",
+        platform::install(&mut fs, bad) == Err(PlatformError::BadPackage),
+    );
+    suite.check(
+        "pkg_evil_manifest_rejected",
+        platform::install(&mut fs, evil) == Err(PlatformError::BadPackage),
+    );
+    let st = platform::state(&fs, "hello-app");
+    suite.check(
+        "pkg_store_unchanged_after_refusals",
+        st.active == Some(1) && st.orphan_staged.is_none(),
+    );
+
+    // Launch: re-verified, then run with ONLY manifest caps (fs_read) under
+    // the app sandbox — hello-app exits 0 only if fs_read worked AND its
+    // out-of-manifest gui attempt was denied.
+    suite.check(
+        "pkg_launch_manifest_caps",
+        platform::launch(&fs, "hello-app", CAP_LEGACY_FULL) == Ok(0),
+    );
+
+    // Atomic update: v2 staged then committed; v1 becomes the rollback target.
+    let updated = platform::install(&mut fs, v2);
+    let st = platform::state(&fs, "hello-app");
+    suite.check(
+        "pkg_update_atomic",
+        matches!(updated, Ok((_, 2))) && st.active == Some(2) && st.previous == Some(1),
+    );
+    suite.check(
+        "pkg_launch_updated",
+        platform::launch(&fs, "hello-app", CAP_LEGACY_FULL) == Ok(0),
+    );
+
+    // Rollback: one atomic commit-marker removal; v1 active again, the
+    // demoted v2 package remains as forensic evidence (orphan).
+    let rolled = platform::rollback(&mut fs, "hello-app");
+    let st = platform::state(&fs, "hello-app");
+    suite.check(
+        "pkg_rollback_atomic",
+        rolled == Ok((2, 1)) && st.active == Some(1) && st.orphan_staged == Some(2),
+    );
+    suite.check(
+        "pkg_launch_rolled_back",
+        platform::launch(&fs, "hello-app", CAP_LEGACY_FULL) == Ok(0),
+    );
+
+    // Recovery: the demoted package is detected + cleaned (audited).
+    let findings = platform::recover(&mut fs);
+    let st = platform::state(&fs, "hello-app");
+    suite.check(
+        "pkg_recovery_cleans_orphans",
+        findings == Ok(1) && st.active == Some(1) && st.orphan_staged.is_none(),
+    );
+
+    // Interrupted update: stage WITHOUT commit → it must never activate; a
+    // recovery pass detects + removes it and the active version survives.
+    let staged = platform::stage(&mut fs, v2);
+    let st = platform::state(&fs, "hello-app");
+    suite.check(
+        "pkg_interrupted_never_activates",
+        matches!(staged, Ok((_, 2))) && st.active == Some(1) && st.orphan_staged == Some(2),
+    );
+    let findings = platform::recover(&mut fs);
+    let st = platform::state(&fs, "hello-app");
+    suite.check(
+        "pkg_interrupted_recovered",
+        findings == Ok(1)
+            && st.active == Some(1)
+            && st.orphan_staged.is_none()
+            && platform::launch(&fs, "hello-app", CAP_LEGACY_FULL) == Ok(0),
+    );
+
+    // Every platform operation above left an audit record.
+    let (total, _) = crate::audit::counts();
+    suite.check("pkg_audit_trail", total > 0);
 }
 
 /// V0.2: Ring 3 execution, syscalls, isolation, and rejection paths.

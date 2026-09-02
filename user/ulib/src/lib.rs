@@ -16,6 +16,8 @@ pub const SYS_GUI_FILL: u64 = 9;
 pub const SYS_GUI_TEXT: u64 = 10;
 pub const SYS_GUI_PRESENT: u64 = 11;
 pub const SYS_DEVINFO: u64 = 12;
+pub const SYS_FS_READ: u64 = 13;
+pub const SYS_SPAWN_CAPS: u64 = 14;
 
 pub const ERR_NOSYS: u64 = u64::MAX;
 pub const ERR_FAULT: u64 = u64::MAX - 1;
@@ -24,6 +26,14 @@ pub const ERR_NOENT: u64 = u64::MAX - 3;
 pub const ERR_AGAIN: u64 = u64::MAX - 4;
 pub const ERR_INVAL: u64 = u64::MAX - 5;
 pub const ERR_2BIG: u64 = u64::MAX - 6;
+pub const ERR_PERM: u64 = u64::MAX - 7;
+
+/// Capability bits (mirror kernel_core::caps — keep in lockstep).
+pub const CAP_SPAWN: u64 = 1 << 0;
+pub const CAP_IPC: u64 = 1 << 1;
+pub const CAP_GUI: u64 = 1 << 2;
+pub const CAP_DEV: u64 = 1 << 3;
+pub const CAP_FS_READ: u64 = 1 << 4;
 
 /// Raw syscall: rax=nr, rdi/rsi/rdx=args → rax. rcx/r11 are clobbered by
 /// the hardware; the kernel may clobber any caller-saved register.
@@ -137,6 +147,29 @@ pub fn gui_text(win: u64, x: u32, y: u32, color: u32, text: &str) -> u64 {
 /// Composite and present the scene (the caller must own `win`).
 pub fn gui_present(win: u64) -> u64 {
     raw_syscall(SYS_GUI_PRESENT, win, 0, 0)
+}
+
+/// Read a VFS file into `buf` (requires CAP_FS_READ; subject to the process's
+/// sandbox path prefixes). Returns bytes copied or ERR_*.
+pub fn fs_read(path: &str, buf: &mut [u8]) -> u64 {
+    let req: [u64; 2] = [buf.as_mut_ptr() as u64, buf.len() as u64];
+    raw_syscall(
+        SYS_FS_READ,
+        path.as_ptr() as u64,
+        path.len() as u64,
+        req.as_ptr() as u64,
+    )
+}
+
+/// Spawn a child with delegated capabilities: the child receives
+/// `parent caps ∩ requested` — never more than the parent holds.
+pub fn spawn_caps(path: &str, requested: u64) -> u64 {
+    raw_syscall(
+        SYS_SPAWN_CAPS,
+        path.as_ptr() as u64,
+        path.len() as u64,
+        requested,
+    )
 }
 
 /// Read device record `index` into `buf` (>= 16 bytes) via the kernel device

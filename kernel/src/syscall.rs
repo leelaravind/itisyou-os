@@ -39,6 +39,8 @@ pub const SYS_GUI_FILL: u64 = 9;
 pub const SYS_GUI_TEXT: u64 = 10;
 pub const SYS_GUI_PRESENT: u64 = 11;
 pub const SYS_DEVINFO: u64 = 12;
+pub const SYS_FS_READ: u64 = 13;
+pub const SYS_SPAWN_CAPS: u64 = 14;
 
 pub const ERR_NOSYS: u64 = u64::MAX;
 pub const ERR_FAULT: u64 = u64::MAX - 1;
@@ -72,6 +74,45 @@ static mut SYSCALL_STACK: [u8; KSTACK_SIZE] = [0; KSTACK_SIZE];
 
 /// PID of the currently running user process (0 = none).
 pub static CURRENT_PID: AtomicU64 = AtomicU64::new(0);
+
+/// Capability bits of the currently running user process (V0.7). Published by
+/// `run_quantum` for the quantum's duration; 0 (no authority) when no user
+/// process is running.
+pub static CURRENT_CAPS: AtomicU64 = AtomicU64::new(0);
+
+/// FS sandbox of the currently running process: reads allowed only under
+/// these prefixes. `None` = unrestricted (trusted launch).
+static CURRENT_SANDBOX: spin::Mutex<
+    Option<alloc::sync::Arc<alloc::vec::Vec<alloc::string::String>>>,
+> = spin::Mutex::new(None);
+
+pub fn set_current_sandbox(
+    prefixes: Option<alloc::sync::Arc<alloc::vec::Vec<alloc::string::String>>>,
+) {
+    *CURRENT_SANDBOX.lock() = prefixes;
+}
+
+fn current_sandbox() -> Option<alloc::sync::Arc<alloc::vec::Vec<alloc::string::String>>> {
+    CURRENT_SANDBOX.lock().clone()
+}
+
+/// The current process's sandbox, for inheritance by a spawned child (a child
+/// can never widen its parent's FS view).
+pub fn current_sandbox_for_child(
+) -> Option<alloc::sync::Arc<alloc::vec::Vec<alloc::string::String>>> {
+    current_sandbox()
+}
+
+/// Capability gate: the current process must hold `cap` or the syscall is
+/// refused with ERR_PERM and the denial is audited (V0.7 default deny).
+fn require_cap(cap: u64, action: &'static str) -> Result<(), u64> {
+    if CURRENT_CAPS.load(Ordering::SeqCst) & cap != 0 {
+        Ok(())
+    } else {
+        crate::audit::denied(action, cap);
+        Err(ERR_PERM)
+    }
+}
 
 /// Count of rejected unknown-syscall attempts (diagnostic evidence).
 pub static NOSYS_COUNT: AtomicU64 = AtomicU64::new(0);
@@ -151,6 +192,10 @@ unsafe extern "C" fn syscall_entry() {
 }
 
 extern "C" fn syscall_dispatch(a1: u64, a2: u64, a3: u64, nr: u64) -> u64 {
+    use kernel_core::caps::*;
+    // Capability enforcement (V0.7): the basic runtime (write/exit/yield/
+    // getpid) needs no capability; every other syscall is default-deny and
+    // requires the matching bit. Denials return ERR_PERM and are audited.
     match nr {
         SYS_WRITE => sys_write(a1, a2, a3),
         SYS_EXIT => transition::abort_exit(a1),
@@ -161,19 +206,96 @@ extern "C" fn syscall_dispatch(a1: u64, a2: u64, a3: u64, nr: u64) -> u64 {
             transition::abort_yield();
         }
         SYS_GETPID => CURRENT_PID.load(Ordering::SeqCst),
-        SYS_SPAWN => crate::proc::sys_spawn(a1, a2),
-        SYS_WAIT => crate::proc::sys_wait(a1),
-        SYS_MSG_SEND => crate::ipc::sys_msg_send(a1, a2, a3),
-        SYS_MSG_RECV => crate::ipc::sys_msg_recv(a1, a2, a3),
-        SYS_GUI_CREATE => sys_gui_create(a1, a2),
-        SYS_GUI_FILL => sys_gui_fill(a1, a2, a3),
-        SYS_GUI_TEXT => sys_gui_text(a1, a2, a3),
-        SYS_GUI_PRESENT => sys_gui_present(a1),
-        SYS_DEVINFO => sys_devinfo(a1, a2, a3),
+        SYS_SPAWN => match require_cap(CAP_SPAWN, "spawn") {
+            Ok(()) => crate::proc::sys_spawn(a1, a2),
+            Err(e) => e,
+        },
+        SYS_SPAWN_CAPS => match require_cap(CAP_SPAWN, "spawn_caps") {
+            Ok(()) => crate::proc::sys_spawn_caps(a1, a2, a3),
+            Err(e) => e,
+        },
+        SYS_WAIT => match require_cap(CAP_SPAWN, "wait") {
+            Ok(()) => crate::proc::sys_wait(a1),
+            Err(e) => e,
+        },
+        SYS_MSG_SEND => match require_cap(CAP_IPC, "msg_send") {
+            Ok(()) => crate::ipc::sys_msg_send(a1, a2, a3),
+            Err(e) => e,
+        },
+        SYS_MSG_RECV => match require_cap(CAP_IPC, "msg_recv") {
+            Ok(()) => crate::ipc::sys_msg_recv(a1, a2, a3),
+            Err(e) => e,
+        },
+        SYS_GUI_CREATE => match require_cap(CAP_GUI, "gui_create") {
+            Ok(()) => sys_gui_create(a1, a2),
+            Err(e) => e,
+        },
+        SYS_GUI_FILL => match require_cap(CAP_GUI, "gui_fill") {
+            Ok(()) => sys_gui_fill(a1, a2, a3),
+            Err(e) => e,
+        },
+        SYS_GUI_TEXT => match require_cap(CAP_GUI, "gui_text") {
+            Ok(()) => sys_gui_text(a1, a2, a3),
+            Err(e) => e,
+        },
+        SYS_GUI_PRESENT => match require_cap(CAP_GUI, "gui_present") {
+            Ok(()) => sys_gui_present(a1),
+            Err(e) => e,
+        },
+        SYS_DEVINFO => match require_cap(CAP_DEV, "devinfo") {
+            Ok(()) => sys_devinfo(a1, a2, a3),
+            Err(e) => e,
+        },
+        SYS_FS_READ => match require_cap(CAP_FS_READ, "fs_read") {
+            Ok(()) => sys_fs_read(a1, a2, a3),
+            Err(e) => e,
+        },
         _ => {
             NOSYS_COUNT.fetch_add(1, Ordering::SeqCst);
             ERR_NOSYS
         }
+    }
+}
+
+/// fs_read(path_ptr, path_len, req_ptr): read a VFS file into a user buffer.
+/// `req` = 16 bytes {buf_ptr: u64, buf_cap: u64}. Requires CAP_FS_READ AND —
+/// when the process is sandboxed — a path inside one of its allowed prefixes
+/// (checked on the NORMALIZED path, so `..` traversal cannot escape).
+/// Returns bytes copied, or ERR_PERM / ERR_NOENT / ERR_2BIG.
+fn sys_fs_read(path_ptr: u64, path_len: u64, req_ptr: u64) -> u64 {
+    let path_bytes = match copy_from_user(path_ptr, path_len, 256) {
+        Ok(b) => b,
+        Err(e) => return e,
+    };
+    let Ok(path) = core::str::from_utf8(&path_bytes) else {
+        return ERR_INVAL;
+    };
+    // Sandbox check on the normalized path (component-wise, traversal-proof).
+    if let Some(prefixes) = current_sandbox() {
+        let allowed = prefixes
+            .iter()
+            .any(|p| kernel_core::path::is_within(p, path));
+        if !allowed {
+            crate::audit::denied("fs_read_sandbox", kernel_core::caps::CAP_FS_READ);
+            return ERR_PERM;
+        }
+    }
+    let req = match copy_from_user(req_ptr, 16, 16) {
+        Ok(b) => b,
+        Err(e) => return e,
+    };
+    let buf_ptr = u64::from_le_bytes(req[0..8].try_into().unwrap());
+    let buf_cap = u64::from_le_bytes(req[8..16].try_into().unwrap());
+    let data = match crate::fs::read(path) {
+        Ok(d) => d,
+        Err(_) => return ERR_NOENT,
+    };
+    if (data.len() as u64) > buf_cap {
+        return ERR_2BIG;
+    }
+    match copy_to_user(buf_ptr, data) {
+        Ok(n) => n,
+        Err(e) => e,
     }
 }
 
