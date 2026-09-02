@@ -1,11 +1,21 @@
 # Session checkpoint — resumable state
 
-**Timestamp:** 2026-09-02 ~07:45 Europe/London (session 1, final phase)
-**Repository:** `E:\Project\itisyou-os` · branch `main`
+**Timestamp:** 2026-09-02 ~08:30 Europe/London (session 1 continued)
+**Repository:** `E:\Project\itisyou-os` · branch `main` · tag `v0.1.0` = V0.1 baseline
 **Remote:** https://github.com/leelaravind/itisyou-os (private)
-**Milestone:** V0.1 Kernel Foundation — hard target complete and verified
+**Milestone:** V0.2 Userspace Foundation — Ring 3/syscalls/isolation verified (commit `cc29cda`)
 
-## Final verified state
+## V0.2 verified additions (evidence: selftest pass=34 fail=0, BIOS+UEFI)
+
+Ring 3 execution of real ELF64 programs (iretq entry, zeroed GPRs), strict
+ELF loader (static ET_EXEC only, W^X, user window, overlap policy),
+syscall/sysret ABI (write/exit/yield/getpid + ERR_*), MMU kernel/user
+separation (#PF USER_MODE proof), privileged-instruction containment
+(#GP cs_rpl=3 proof), clean teardown + reload, shell `run` command.
+Remaining for the milestone: per-process page tables → concurrent
+processes, fork/exec-style creation, IPC foundations.
+
+## V0.1 verified state (baseline, tag v0.1.0)
 
 - **Kernel**: boots QEMU via BIOS and UEFI/OVMF to B150 acceptance; all
   subsystems verified (PMM, paging W^X, heap, GDT/TSS/IDT + exceptions,
