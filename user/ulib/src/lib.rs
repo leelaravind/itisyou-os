@@ -15,6 +15,7 @@ pub const SYS_GUI_CREATE: u64 = 8;
 pub const SYS_GUI_FILL: u64 = 9;
 pub const SYS_GUI_TEXT: u64 = 10;
 pub const SYS_GUI_PRESENT: u64 = 11;
+pub const SYS_DEVINFO: u64 = 12;
 
 pub const ERR_NOSYS: u64 = u64::MAX;
 pub const ERR_FAULT: u64 = u64::MAX - 1;
@@ -136,6 +137,29 @@ pub fn gui_text(win: u64, x: u32, y: u32, color: u32, text: &str) -> u64 {
 /// Composite and present the scene (the caller must own `win`).
 pub fn gui_present(win: u64) -> u64 {
     raw_syscall(SYS_GUI_PRESENT, win, 0, 0)
+}
+
+/// Read device record `index` into `buf` (>= 16 bytes) via the kernel device
+/// table. Returns 1 if a device exists at that index, 0 past the end, or an
+/// ERR_*. Userspace never touches hardware — the kernel is the sole authority.
+pub fn devinfo(index: u64, buf: &mut [u8]) -> u64 {
+    raw_syscall(
+        SYS_DEVINFO,
+        index,
+        buf.as_mut_ptr() as u64,
+        buf.len() as u64,
+    )
+}
+
+/// Write a u16 as 4-digit lowercase hex (no allocator in userspace).
+pub fn write_hex16(v: u16) {
+    let digits = b"0123456789abcdef";
+    let mut buf = [0u8; 4];
+    for (i, b) in buf.iter_mut().enumerate() {
+        *b = digits[((v >> (12 - i * 4)) & 0xF) as usize];
+    }
+    // SAFETY: buf is ASCII hex digits.
+    write(unsafe { core::str::from_utf8_unchecked(&buf) });
 }
 
 pub fn exit(code: u64) -> ! {

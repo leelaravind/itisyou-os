@@ -159,6 +159,66 @@ pub fn on_mouse_irq() {
     }
 }
 
+/// Feed a USB HID keyboard boot report into the unified input queue — the same
+/// `InputEvent` stream PS/2 keys use, so the desktop/GUI is source-agnostic.
+pub fn feed_usb_keyboard(report: &[u8]) {
+    if let Some(a) = kernel_core::usb::hid_keyboard_ascii(report) {
+        KEY_COUNT.fetch_add(1, Ordering::Relaxed);
+        if a.is_ascii_graphic() || a == b' ' {
+            crate::serial_println!("[ITISYOU:INPUT] key={} src=usb", a as char);
+        } else {
+            crate::serial_println!("[ITISYOU:INPUT] key=<special> src=usb");
+        }
+        push(InputEvent::Key(KeyEvent {
+            scancode: 0,
+            pressed: true,
+            ascii: Some(a),
+        }));
+    }
+}
+
+/// Feed a USB HID mouse boot report into the unified input queue.
+pub fn feed_usb_mouse(report: &[u8]) {
+    if let Some(m) = kernel_core::usb::hid_mouse(report) {
+        if m.dx == 0 && m.dy == 0 && !m.left && !m.right && !m.middle {
+            return;
+        }
+        MOUSE_COUNT.fetch_add(1, Ordering::Relaxed);
+        ACCUM_DX.fetch_add(m.dx as i32, Ordering::Relaxed);
+        ACCUM_DY.fetch_add(m.dy as i32, Ordering::Relaxed);
+        crate::serial_println!(
+            "[ITISYOU:INPUT] mouse dx={} dy={} l={} src=usb",
+            m.dx,
+            m.dy,
+            m.left as u8
+        );
+        push(InputEvent::Mouse(MouseEvent {
+            dx: m.dx as i32,
+            dy: m.dy as i32,
+            left: m.left,
+            right: m.right,
+            middle: m.middle,
+        }));
+    }
+}
+
+/// Poll any attached USB HID device once and feed decoded events into the
+/// unified queue. Safe to call when no USB device exists (no-op). This is how
+/// the (polled) USB stack joins the same input path as the (IRQ) PS/2 stack.
+pub fn pump_usb() {
+    if !crate::device::uhci::has_hid() {
+        return;
+    }
+    let mut report = [0u8; 8];
+    let n = crate::device::uhci::poll_hid_report(&mut report);
+    if n >= 3 {
+        match crate::device::uhci::device_kind() {
+            Some("mouse") => feed_usb_mouse(&report[..n]),
+            _ => feed_usb_keyboard(&report[..n]),
+        }
+    }
+}
+
 /// Take and reset the accumulated mouse motion (desktop loop, main context).
 pub fn take_mouse_motion() -> (i32, i32) {
     (

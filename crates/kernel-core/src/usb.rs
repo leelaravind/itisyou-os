@@ -152,6 +152,8 @@ pub fn hid_usage_ascii(usage: u8, shift: bool) -> Option<u8> {
         0x1E..=0x26 => Some(b'1' + (usage - 0x1E)), // 1-9
         0x27 => Some(b'0'),
         0x28 => Some(b'\n'), // enter
+        0x29 => Some(0x1B),  // escape
+        0x2A => Some(0x08),  // backspace
         0x2C => Some(b' '),  // space
         0x2D => Some(b'-'),
         0x2E => Some(b'='),

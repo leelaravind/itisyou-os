@@ -89,6 +89,10 @@ pub fn run() -> ! {
     loop {
         let mut dirty = false;
 
+        // Poll USB HID into the unified input queue (no-op without a USB
+        // device); PS/2 arrives via IRQ. The desktop consumes both identically.
+        input::pump_usb();
+
         // Apply mouse motion accumulated by the IRQ handler (the IRQ never
         // touches the compositor lock; the desktop loop owns cursor updates).
         let (dx, dy) = input::take_mouse_motion();
@@ -101,7 +105,9 @@ pub fn run() -> ! {
         while let Some(ev) = input::poll() {
             match ev {
                 InputEvent::Key(k) if k.pressed => {
-                    if k.scancode == ESC_SCANCODE {
+                    // Exit on ESC from either source: PS/2 scancode 0x01 or a
+                    // decoded ESC character (USB HID has no PS/2 scancode).
+                    if k.scancode == ESC_SCANCODE || k.ascii == Some(0x1B) {
                         serial_println!(
                             "[ITISYOU:INFO] DESKTOP-INPUT-VERIFIED keys={} mouse={}",
                             state.keys,

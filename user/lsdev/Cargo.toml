@@ -1,0 +1,17 @@
+cargo-features = ["per-package-target"]
+
+[package]
+name = "user-lsdev"
+version.workspace = true
+edition.workspace = true
+description = "A Ring 3 tool that lists detected hardware devices through the devinfo syscall, proving user processes reach device information without any direct hardware access."
+forced-target = "x86_64-unknown-none"
+
+[dependencies]
+ulib = { path = "../ulib" }
+
+[[bin]]
+name = "user-lsdev"
+path = "src/main.rs"
+test = false
+bench = false

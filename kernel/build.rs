@@ -87,6 +87,8 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
             "user-spin-forever",
             "-p",
             "user-gui-demo",
+            "-p",
+            "user-lsdev",
         ])
         .arg("--target-dir")
         .arg(&target_dir)
@@ -112,6 +114,7 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
         ("user-spin-finite", "bin/spin-finite"),
         ("user-spin-forever", "bin/spin-forever"),
         ("user-gui-demo", "bin/gui-demo"),
+        ("user-lsdev", "bin/lsdev"),
     ];
     entries.push(("bin/".to_string(), Vec::new(), true));
     for (artifact, dest) in programs {
