@@ -16,6 +16,8 @@ pub mod device;
 pub mod fs;
 pub mod fs_disk;
 pub mod gdt;
+pub mod gfx;
+pub mod input;
 pub mod interrupts;
 pub mod ipc;
 pub mod memory;
@@ -42,6 +44,9 @@ pub static BOOTLOADER_CONFIG: BootloaderConfig = {
     let mut config = BootloaderConfig::new_default();
     config.mappings.physical_memory = Some(Mapping::Dynamic);
     config.kernel_stack_size = 128 * 1024;
+    // The bootloader provides a linear framebuffer by default (firmware-
+    // chosen mode); the kernel queries its real dimensions at runtime and
+    // never hardcodes them (V0.5).
     config
 };
 
@@ -166,6 +171,26 @@ pub fn init_subsystems(boot_info: &'static mut BootInfo) {
         );
     }
     bootstage::emit(Stage::B160StorageReady);
+
+    // B170: graphics — wrap the bootloader framebuffer + compositor (V0.5).
+    if let Some(fb) = boot_info.framebuffer.as_mut() {
+        if let Some(gi) = gfx::init(fb) {
+            serial_println!(
+                "[ITISYOU:INFO] gfx width={} height={} bpp={} bgr={}",
+                gi.width,
+                gi.height,
+                gi.bytes_per_pixel,
+                gi.bgr,
+            );
+            gfx::compositor::init();
+            bootstage::emit(Stage::B170GraphicsReady);
+
+            // B180: PS/2 input + initial desktop composite.
+            input::init();
+            gfx::compositor::composite();
+            bootstage::emit(Stage::B180DesktopReady);
+        }
+    }
 }
 
 /// Enumerate PCI, find the NVMe controller, and initialize it. Used by the

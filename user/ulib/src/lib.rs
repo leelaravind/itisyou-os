@@ -11,6 +11,10 @@ pub const SYS_SPAWN: u64 = 4;
 pub const SYS_WAIT: u64 = 5;
 pub const SYS_MSG_SEND: u64 = 6;
 pub const SYS_MSG_RECV: u64 = 7;
+pub const SYS_GUI_CREATE: u64 = 8;
+pub const SYS_GUI_FILL: u64 = 9;
+pub const SYS_GUI_TEXT: u64 = 10;
+pub const SYS_GUI_PRESENT: u64 = 11;
 
 pub const ERR_NOSYS: u64 = u64::MAX;
 pub const ERR_FAULT: u64 = u64::MAX - 1;
@@ -90,6 +94,48 @@ pub fn msg_recv(channel: u64, buf: &mut [u8]) -> u64 {
         buf.as_mut_ptr() as u64,
         buf.len() as u64,
     )
+}
+
+/// Create a GUI window at (x,y) sized w×h with a title. Returns the window
+/// id or an ERR_*.
+pub fn gui_create(w: u32, h: u32, x: u32, y: u32, title: &str) -> u64 {
+    let mut req = [0u8; 64];
+    req[0..4].copy_from_slice(&w.to_le_bytes());
+    req[4..8].copy_from_slice(&h.to_le_bytes());
+    req[8..12].copy_from_slice(&x.to_le_bytes());
+    req[12..16].copy_from_slice(&y.to_le_bytes());
+    let t = title.as_bytes();
+    let n = core::cmp::min(t.len(), req.len() - 16);
+    req[16..16 + n].copy_from_slice(&t[..n]);
+    raw_syscall(SYS_GUI_CREATE, req.as_ptr() as u64, (16 + n) as u64, 0)
+}
+
+/// Fill a rectangle inside a window (window-local coords).
+pub fn gui_fill(win: u64, x: u32, y: u32, w: u32, h: u32, color: u32) -> u64 {
+    let mut req = [0u8; 20];
+    req[0..4].copy_from_slice(&x.to_le_bytes());
+    req[4..8].copy_from_slice(&y.to_le_bytes());
+    req[8..12].copy_from_slice(&w.to_le_bytes());
+    req[12..16].copy_from_slice(&h.to_le_bytes());
+    req[16..20].copy_from_slice(&color.to_le_bytes());
+    raw_syscall(SYS_GUI_FILL, win, req.as_ptr() as u64, req.len() as u64)
+}
+
+/// Draw text inside a window (window-local coords).
+pub fn gui_text(win: u64, x: u32, y: u32, color: u32, text: &str) -> u64 {
+    let mut req = [0u8; 64];
+    req[0..4].copy_from_slice(&x.to_le_bytes());
+    req[4..8].copy_from_slice(&y.to_le_bytes());
+    req[8..12].copy_from_slice(&color.to_le_bytes());
+    let t = text.as_bytes();
+    let n = core::cmp::min(t.len(), req.len() - 12);
+    req[12..12 + n].copy_from_slice(&t[..n]);
+    raw_syscall(SYS_GUI_TEXT, win, req.as_ptr() as u64, (12 + n) as u64)
+}
+
+/// Composite and present the scene (the caller must own `win`).
+pub fn gui_present(win: u64) -> u64 {
+    raw_syscall(SYS_GUI_PRESENT, win, 0, 0)
 }
 
 pub fn exit(code: u64) -> ! {

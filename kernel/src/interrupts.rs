@@ -22,7 +22,8 @@ pub const PIC_1_OFFSET: u8 = 32;
 pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
 
 pub const TIMER_VECTOR: u8 = PIC_1_OFFSET; // IRQ0
-pub const KEYBOARD_VECTOR: u8 = PIC_1_OFFSET + 1; // IRQ1 (future input work)
+pub const KEYBOARD_VECTOR: u8 = PIC_1_OFFSET + 1; // IRQ1
+pub const MOUSE_VECTOR: u8 = PIC_2_OFFSET + 4; // IRQ12
 
 /// Timer frequency: PIT programmed to ~100 Hz (divisor 11932 of 1.193182 MHz).
 pub const TICK_HZ: u64 = 100;
@@ -84,6 +85,8 @@ static IDT: Lazy<InterruptDescriptorTable> = Lazy::new(|| {
     unsafe {
         idt[TIMER_VECTOR].set_handler_addr(x86_64::VirtAddr::new(isr as usize as u64));
     }
+    idt[KEYBOARD_VECTOR].set_handler_fn(keyboard_handler);
+    idt[MOUSE_VECTOR].set_handler_fn(mouse_handler);
     idt
 });
 
@@ -112,6 +115,21 @@ pub fn enable_timer() {
         data.write((PIT_DIVISOR >> 8) as u8);
     }
     x86_64::instructions::interrupts::enable();
+}
+
+/// Unmask IRQ1 (keyboard), IRQ2 (cascade) and IRQ12 (mouse) alongside the
+/// timer (V0.5 input). Primary PIC keeps bits 0/1/2 enabled; secondary
+/// enables bit 4 (IRQ12).
+pub fn set_input_irqs_enabled() {
+    // Mask interrupts while holding the PICS lock: the timer/keyboard/mouse
+    // ISRs also lock PICS (for EOI), so an interrupt here would deadlock.
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        // SAFETY: reprogramming PIC masks; the corresponding IDT vectors are
+        // installed (timer/keyboard/mouse).
+        unsafe {
+            PICS.lock().write_masks(!0b0000_0111, !0b0001_0000);
+        }
+    });
 }
 
 pub fn ticks() -> u64 {
@@ -258,6 +276,22 @@ extern "C" fn timer_handler_inner(frame: &mut TrapFrame) {
     ctx.rflags = frame.rflags;
     // Long-jump back to the scheduler run-loop; does not return.
     crate::user::transition::abort_preempt();
+}
+
+extern "x86-interrupt" fn keyboard_handler(_frame: InterruptStackFrame) {
+    crate::input::on_keyboard_irq();
+    // SAFETY: acknowledging IRQ1.
+    unsafe {
+        PICS.lock().notify_end_of_interrupt(KEYBOARD_VECTOR);
+    }
+}
+
+extern "x86-interrupt" fn mouse_handler(_frame: InterruptStackFrame) {
+    crate::input::on_mouse_irq();
+    // SAFETY: acknowledging IRQ12 (chained: EOI to both PICs).
+    unsafe {
+        PICS.lock().notify_end_of_interrupt(MOUSE_VECTOR);
+    }
 }
 
 extern "x86-interrupt" fn breakpoint_handler(frame: InterruptStackFrame) {

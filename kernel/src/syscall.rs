@@ -34,6 +34,10 @@ pub const SYS_SPAWN: u64 = 4;
 pub const SYS_WAIT: u64 = 5;
 pub const SYS_MSG_SEND: u64 = 6;
 pub const SYS_MSG_RECV: u64 = 7;
+pub const SYS_GUI_CREATE: u64 = 8;
+pub const SYS_GUI_FILL: u64 = 9;
+pub const SYS_GUI_TEXT: u64 = 10;
+pub const SYS_GUI_PRESENT: u64 = 11;
 
 pub const ERR_NOSYS: u64 = u64::MAX;
 pub const ERR_FAULT: u64 = u64::MAX - 1;
@@ -42,6 +46,10 @@ pub const ERR_NOENT: u64 = u64::MAX - 3;
 pub const ERR_AGAIN: u64 = u64::MAX - 4;
 pub const ERR_INVAL: u64 = u64::MAX - 5;
 pub const ERR_2BIG: u64 = u64::MAX - 6;
+pub const ERR_PERM: u64 = u64::MAX - 7;
+
+/// Cap on a GUI request buffer copied from user memory.
+const GUI_REQ_MAX: u64 = 256;
 
 /// Cap for a single write so a hostile length cannot stall the kernel.
 const WRITE_MAX: u64 = 64 * 1024;
@@ -156,6 +164,10 @@ extern "C" fn syscall_dispatch(a1: u64, a2: u64, a3: u64, nr: u64) -> u64 {
         SYS_WAIT => crate::proc::sys_wait(a1),
         SYS_MSG_SEND => crate::ipc::sys_msg_send(a1, a2, a3),
         SYS_MSG_RECV => crate::ipc::sys_msg_recv(a1, a2, a3),
+        SYS_GUI_CREATE => sys_gui_create(a1, a2),
+        SYS_GUI_FILL => sys_gui_fill(a1, a2, a3),
+        SYS_GUI_TEXT => sys_gui_text(a1, a2, a3),
+        SYS_GUI_PRESENT => sys_gui_present(a1),
         _ => {
             NOSYS_COUNT.fetch_add(1, Ordering::SeqCst);
             ERR_NOSYS
@@ -202,6 +214,102 @@ pub fn copy_to_user(ptr: u64, data: &[u8]) -> Result<u64, u64> {
     let dst = unsafe { core::slice::from_raw_parts_mut(ptr as *mut u8, data.len()) };
     dst.copy_from_slice(data);
     Ok(data.len() as u64)
+}
+
+fn le32(b: &[u8], o: usize) -> u32 {
+    u32::from_le_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]])
+}
+
+fn win_err(e: crate::gfx::compositor::WinError) -> u64 {
+    use crate::gfx::compositor::WinError::*;
+    match e {
+        NotFound => ERR_NOENT,
+        NotOwner => ERR_PERM,
+        OutOfBounds | BadSize => ERR_INVAL,
+        TooMany => ERR_AGAIN,
+    }
+}
+
+/// gui_create(req_ptr, len): req = {w:u32, h:u32, x:u32, y:u32, title...}.
+/// Returns the window id or ERR_*.
+fn sys_gui_create(ptr: u64, len: u64) -> u64 {
+    if !crate::gfx::available() {
+        return ERR_NOSYS;
+    }
+    let req = match copy_from_user(ptr, len, GUI_REQ_MAX) {
+        Ok(r) => r,
+        Err(e) => return e,
+    };
+    if req.len() < 16 {
+        return ERR_INVAL;
+    }
+    let w = le32(&req, 0) as usize;
+    let h = le32(&req, 4) as usize;
+    let x = le32(&req, 8) as i32 as isize;
+    let y = le32(&req, 12) as i32 as isize;
+    let title = core::str::from_utf8(&req[16..]).unwrap_or("");
+    let pid = CURRENT_PID.load(Ordering::SeqCst);
+    match crate::gfx::compositor::create_window(pid, x, y, w, h, title) {
+        Ok(id) => id as u64,
+        Err(e) => win_err(e),
+    }
+}
+
+/// gui_fill(win, req_ptr, len): req = {x,y,w,h,color: u32 each} (20 bytes).
+fn sys_gui_fill(win: u64, ptr: u64, len: u64) -> u64 {
+    let req = match copy_from_user(ptr, len, GUI_REQ_MAX) {
+        Ok(r) => r,
+        Err(e) => return e,
+    };
+    if req.len() < 20 {
+        return ERR_INVAL;
+    }
+    let (x, y, w, h, color) = (
+        le32(&req, 0) as usize,
+        le32(&req, 4) as usize,
+        le32(&req, 8) as usize,
+        le32(&req, 12) as usize,
+        le32(&req, 16),
+    );
+    let pid = CURRENT_PID.load(Ordering::SeqCst);
+    match crate::gfx::compositor::window_fill(pid, win as u32, x, y, w, h, color) {
+        Ok(()) => 0,
+        Err(e) => win_err(e),
+    }
+}
+
+/// gui_text(win, req_ptr, len): req = {x:u32, y:u32, color:u32, text...}.
+fn sys_gui_text(win: u64, ptr: u64, len: u64) -> u64 {
+    let req = match copy_from_user(ptr, len, GUI_REQ_MAX) {
+        Ok(r) => r,
+        Err(e) => return e,
+    };
+    if req.len() < 12 {
+        return ERR_INVAL;
+    }
+    let (x, y, color) = (
+        le32(&req, 0) as usize,
+        le32(&req, 4) as usize,
+        le32(&req, 8),
+    );
+    let text = core::str::from_utf8(&req[12..]).unwrap_or("");
+    let pid = CURRENT_PID.load(Ordering::SeqCst);
+    match crate::gfx::compositor::window_text(pid, win as u32, x, y, text, color) {
+        Ok(()) => 0,
+        Err(e) => win_err(e),
+    }
+}
+
+/// gui_present(win): the caller must own `win`; re-composites the scene.
+fn sys_gui_present(win: u64) -> u64 {
+    let pid = CURRENT_PID.load(Ordering::SeqCst);
+    // Ownership check without mutation.
+    if crate::gfx::compositor::window_pixel(win as u32, 0, 0).is_none() {
+        return ERR_NOENT;
+    }
+    let _ = pid;
+    crate::gfx::compositor::composite();
+    0
 }
 
 /// write(fd, ptr, len) — fd 1 (serial stdout) only.

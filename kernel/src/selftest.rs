@@ -49,6 +49,121 @@ pub fn run_all(suite: &mut Suite) {
     vfs_tests(suite);
     userspace_tests(suite);
     storage_tests(suite);
+    graphics_tests(suite);
+}
+
+/// V0.5: framebuffer, compositor, GUI syscalls, input decoding.
+fn graphics_tests(suite: &mut Suite) {
+    use crate::gfx::{self, compositor};
+
+    // Framebuffer is present with sane geometry.
+    suite.check("gfx_available", gfx::available());
+    let info = gfx::info();
+    suite.check(
+        "gfx_info_sane",
+        info.map(|i| i.width >= 640 && i.height >= 480 && i.bytes_per_pixel >= 3)
+            .unwrap_or(false),
+    );
+
+    // Direct back-buffer drawing: fill + pixel read.
+    gfx::fill_rect(10, 10, 20, 20, 0x0012_3456);
+    suite.check(
+        "gfx_fill_pixel",
+        gfx::get_pixel(15, 15) == Some(0x0012_3456),
+    );
+    suite.check(
+        "gfx_clip_out_of_range",
+        gfx::get_pixel(1_000_000, 0).is_none(),
+    );
+
+    // Glyph rendering: 'A' row 0 (0x0C) sets columns 2,3. Draw at (40,40),
+    // scale 1 → those pixels are the fg colour, col 0 is not.
+    gfx::fill_rect(40, 40, 8, 8, 0x0000_0000);
+    gfx::draw_char(40, 40, b'A', 0x00AB_CDEF, 1);
+    suite.check(
+        "gfx_draw_glyph",
+        gfx::get_pixel(42, 40) == Some(0x00AB_CDEF) && gfx::get_pixel(40, 40) == Some(0x0000_0000),
+    );
+
+    // Region hash is deterministic.
+    let h1 = gfx::hash_region(0, 0, 64, 64);
+    let h2 = gfx::hash_region(0, 0, 64, 64);
+    suite.check("gfx_hash_deterministic", h1 == h2 && h1 != 0);
+
+    // Compositor: a kernel-owned window, filled, composited to the screen.
+    match compositor::create_window(0, 300, 300, 100, 60, "k") {
+        Ok(id) => {
+            let filled = compositor::window_fill(0, id, 0, 0, 100, 60, 0x0000_FF00).is_ok();
+            suite.check("comp_window_fill", filled);
+            // Out-of-bounds fill is rejected.
+            suite.check(
+                "comp_fill_out_of_bounds_rejected",
+                compositor::window_fill(0, id, 0, 0, 200, 200, 0).is_err(),
+            );
+            // A different pid cannot draw into this window.
+            suite.check(
+                "comp_cross_owner_rejected",
+                matches!(
+                    compositor::window_fill(999, id, 0, 0, 1, 1, 0),
+                    Err(compositor::WinError::NotOwner)
+                ),
+            );
+            compositor::composite();
+            // The window content colour is visible on screen below its title bar.
+            let cx = 300 + 5;
+            let cy = 300 + compositor::TITLE_BAR_H + 5;
+            suite.check(
+                "comp_window_composited",
+                gfx::get_pixel(cx, cy) == Some(0x0000_FF00),
+            );
+            compositor::remove_owned(0);
+        }
+        Err(_) => {
+            suite.check("comp_window_fill", false);
+            suite.check("comp_fill_out_of_bounds_rejected", false);
+            suite.check("comp_cross_owner_rejected", false);
+            suite.check("comp_window_composited", false);
+        }
+    }
+    // Bad window size rejected.
+    suite.check(
+        "comp_bad_size_rejected",
+        matches!(
+            compositor::create_window(0, 0, 0, 0, 10, "x"),
+            Err(compositor::WinError::BadSize)
+        ),
+    );
+
+    // In-kernel confirmation of the host-tested input decoders.
+    {
+        use kernel_core::mouse::Mouse;
+        use kernel_core::scancode::Keyboard;
+        let mut kb = Keyboard::new();
+        let key_a = kb.feed(0x1E).and_then(|e| e.ascii) == Some(b'a');
+        let mut ms = Mouse::new();
+        ms.feed(0x08); // always-1
+        ms.feed(3);
+        let mouse_ok = ms.feed(2).map(|e| e.dx == 3 && e.dy == 2).unwrap_or(false);
+        suite.check("input_decoders", key_a && mouse_ok);
+    }
+
+    // Ring 3 graphical application: gui-demo creates a window at (100,100),
+    // fills it 0xFF8800, and presents — all via validated GUI syscalls. After
+    // it exits we read the composited back-buffer pixel to prove a userspace
+    // process rendered through the compositor (no direct framebuffer access).
+    let gui_ran = matches!(
+        crate::user::run_path("/bin/gui-demo"),
+        Ok(crate::user::UserExit::Exit(0))
+    );
+    suite.check("gui_ring3_app_exit", gui_ran);
+    // Content pixel = the app's fill colour, composited below its title bar.
+    let px = gfx::get_pixel(100 + 4, 100 + compositor::TITLE_BAR_H + 40);
+    suite.check("gui_ring3_app_rendered", px == Some(0x00FF_8800));
+    // Its window was released on exit.
+    suite.check(
+        "gui_window_released_on_exit",
+        compositor::window_count() == 0,
+    );
 }
 
 /// V0.4: ITFS filesystem over a real block device — format/create/read/list,
