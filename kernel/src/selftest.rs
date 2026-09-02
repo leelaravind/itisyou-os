@@ -51,6 +51,94 @@ pub fn run_all(suite: &mut Suite) {
     storage_tests(suite);
 }
 
+/// V0.4: ITFS filesystem over a real block device — format/create/read/list,
+/// strict metadata validation, and crash consistency (torn superblock).
+fn filesystem_tests(suite: &mut Suite, dev: &dyn crate::device::block::BlockDevice) {
+    use crate::fs_disk::FileSystem;
+    use kernel_core::itfs::FsError;
+
+    // Format + create two files + read them back + list.
+    let ok = (|| -> Result<bool, crate::fs_disk::Error> {
+        let mut fs = FileSystem::format(dev)?;
+        fs.create("greeting.txt", b"hello from ITFS")?;
+        fs.create("numbers.bin", &[1u8, 2, 3, 4, 5, 6, 7, 8, 9, 10])?;
+        let a = fs.read("greeting.txt")?;
+        let b = fs.read("numbers.bin")?;
+        let list = fs.list();
+        Ok(a == b"hello from ITFS"
+            && b == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+            && fs.file_count() == 2
+            && list.len() == 2)
+    })()
+    .unwrap_or(false);
+    suite.check("fs_format_create_read_list", ok);
+
+    // Missing file is rejected.
+    let missing = {
+        let fs = FileSystem::mount(dev).unwrap();
+        matches!(
+            fs.read("nope"),
+            Err(crate::fs_disk::Error::Fs(FsError::NotFound))
+        )
+    };
+    suite.check("fs_missing_file_rejected", missing);
+
+    // Re-mount sees the committed state (persistence within this boot).
+    let remount_ok = {
+        match FileSystem::mount(dev) {
+            Ok(fs) => {
+                fs.file_count() == 2
+                    && fs
+                        .read("greeting.txt")
+                        .map(|d| d == b"hello from ITFS")
+                        .unwrap_or(false)
+            }
+            Err(_) => false,
+        }
+    };
+    suite.check("fs_remount_reads_committed", remount_ok);
+
+    // Crash consistency: corrupt the CURRENT superblock slot, then mount must
+    // fall back to the other (older-but-consistent) slot. We commit a 2nd
+    // file first so the two slots differ; corrupting the newer one drops us
+    // to the state after the 1st file.
+    let recovered = (|| -> Option<bool> {
+        let mut fs = FileSystem::format(dev).ok()?; // gen1 in both slots
+        fs.create("first", b"AAAA").ok()?; // commit -> slot 1 (gen2)
+        fs.create("second", b"BBBB").ok()?; // commit -> slot 0 (gen3)
+                                            // Torn write: corrupt slot 0 (the newest commit) after the fact.
+        let mut garbage = [0xEEu8; crate::device::block::BLOCK_SIZE];
+        garbage[0] = b'I'; // keep it clearly not a valid superblock
+        dev.write_block(0, &garbage).ok()?;
+        dev.flush().ok()?;
+        // Mount must recover slot 1 (gen2): "first" present, "second" gone.
+        let fs = FileSystem::mount(dev).ok()?;
+        Some(
+            fs.read("first").map(|d| d == b"AAAA").unwrap_or(false)
+                && matches!(
+                    fs.read("second"),
+                    Err(crate::fs_disk::Error::Fs(FsError::NotFound))
+                ),
+        )
+    })()
+    .unwrap_or(false);
+    suite.check("fs_crash_consistency_torn_superblock", recovered);
+
+    // Both superblocks corrupt -> mount fails safely (no panic, no bogus fs).
+    let both_bad = {
+        let mut g = [0xEEu8; crate::device::block::BLOCK_SIZE];
+        g[0] = b'X';
+        let _ = dev.write_block(0, &g);
+        let _ = dev.write_block(1, &g);
+        let _ = dev.flush();
+        matches!(
+            FileSystem::mount(dev),
+            Err(crate::fs_disk::Error::Fs(FsError::NoValidSuperblock))
+        )
+    };
+    suite.check("fs_both_superblocks_corrupt_rejected", both_bad);
+}
+
 /// V0.4: timer-driven preemptive scheduling of Ring 3 processes.
 fn preemption_tests(suite: &mut Suite) {
     use crate::proc::{self, ProcState};
@@ -190,6 +278,35 @@ fn storage_tests(suite: &mut Suite) {
                         Err(BlockError::OutOfRange { .. })
                     ),
                 );
+
+                // V0.4 NVMe write → flush → read round-trip on a scratch LBA
+                // (block 100; the disk is regenerated each run so this is
+                // safe and deterministic).
+                let mut wbuf = [0u8; BLOCK_SIZE];
+                for (i, b) in wbuf.iter_mut().enumerate() {
+                    *b = (i as u8).wrapping_mul(3).wrapping_add(0x11);
+                }
+                let scratch: u64 = 100;
+                let w = nvme.write_block(scratch, &wbuf);
+                let f = nvme.flush();
+                let mut rbuf = [0u8; BLOCK_SIZE];
+                let r = nvme.read_block(scratch, &mut rbuf);
+                suite.check(
+                    "nvme_write_flush_read_roundtrip",
+                    w.is_ok() && f.is_ok() && r.is_ok() && rbuf == wbuf,
+                );
+                // Out-of-range WRITE must be rejected before any I/O.
+                suite.check(
+                    "nvme_write_out_of_range_rejected",
+                    matches!(
+                        nvme.write_block(u64::MAX, &wbuf),
+                        Err(BlockError::OutOfRange { .. })
+                    ),
+                );
+
+                // V0.4 filesystem over the real NVMe device: format, create,
+                // read back, list — then crash-consistency (torn superblock).
+                filesystem_tests(suite, &nvme);
             }
             Err(e) => {
                 crate::serial_println!("[ITISYOU:INFO] nvme_init_failed err={e:?}");

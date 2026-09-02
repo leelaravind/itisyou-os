@@ -9,21 +9,30 @@ verified).
   ticks but does not preempt yet. Timer-driven preemption is future work.
 - Input is **polled serial only** — the verified automation path. PS/2
   keyboard support is tracked separately (`input-keyboard: planned`).
-- Userspace (V0.3): **concurrent** Ring 3 processes, each in its own address
-  space (per-process page tables, cross-process isolation MMU-verified).
-  Scheduling is **cooperative** — the PIT ticks at CPL=3 but does not preempt
-  user code, so a process that never yields monopolizes the CPU. Preemptive
-  user scheduling (full trap-frame save/restore in the timer ISR) is V0.4.
+- Userspace (V0.4): **concurrent, preemptively-scheduled** Ring 3 processes,
+  each in its own address space. The timer preempts non-yielding processes
+  (2-tick quantum); registers and address-space isolation are preserved
+  across preemption (machine-verified). Scheduling is round-robin with no
+  priorities; the quantum is fixed; there is no CPU accounting/fairness
+  beyond round-robin.
 - Process model: spawn/wait/exit and a single blocking waiter per child;
   no fork/exec-with-args, no process groups, no signals yet.
 - IPC: bounded kernel message channels (4 channels, ≤256 B, ≤8 queued),
   non-blocking, addressed by integer id (a future capability handle). No
   shared-memory or synchronous-rendezvous IPC yet.
-- Storage: **read-only** block I/O. NVMe driver is polled (no MSI-X), single
-  I/O queue, single namespace, read path only — no writes, no persistent
-  filesystem. AHCI/virtio-blk not implemented. The block layer reads 512 B
-  logical blocks. QEMU attaches only a generated disposable disk; no host
-  disk is ever touched.
+- Storage (V0.4): NVMe **read + write + flush** (still polled, single I/O
+  queue, single namespace, no MSI-X). ITFS is a minimal persistent
+  filesystem: fixed directory (≤12 files), **contiguous append-only** files —
+  no per-file update/delete/rename, no directories/subpaths, no free-block
+  reuse. Crash consistency covers the metadata superblock (double-buffered
+  CRC commit); a torn *data* write of an in-progress file is not journaled
+  (the file is only referenced after its body is flushed). AHCI/virtio-blk
+  not yet implemented (block trait is ready for it). QEMU attaches only
+  generated disposable disks; no host disk is ever touched.
+- The `itisyou-fs-persist` binary's **BIOS** disk image does not boot (a
+  bootloader BIOS-stage quirk specific to that binary; its ELF is valid and
+  its UEFI image boots). The reboot-persistence test therefore runs on UEFI,
+  a fully verified firmware path. Root cause not yet isolated (V0.5 follow-up).
 - Syscalls run with interrupts masked; SMEP/SMAP are not enabled (absent on
   the QEMU CPU model); the user stack has an unmapped hole below it rather
   than a hardened guard region; CR3 switches do a full TLB flush (no

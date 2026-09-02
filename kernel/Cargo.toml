@@ -48,3 +48,9 @@ name = "itisyou-kernel-panictest"
 path = "src/bin/itisyou-kernel-panictest.rs"
 test = false
 bench = false
+
+[[bin]]
+name = "itisyou-fs-persist"
+path = "src/bin/itisyou-fs-persist.rs"
+test = false
+bench = false

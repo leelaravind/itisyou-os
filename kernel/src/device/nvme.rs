@@ -339,6 +339,48 @@ impl BlockDevice for Nvme {
         buf.copy_from_slice(src);
         Ok(())
     }
+
+    fn write_block(&self, lba: u64, buf: &[u8]) -> Result<(), BlockError> {
+        if buf.len() != BLOCK_SIZE {
+            return Err(BlockError::BadBufferLen { len: buf.len() });
+        }
+        if lba >= self.blocks {
+            return Err(BlockError::OutOfRange {
+                lba,
+                blocks: self.blocks,
+            });
+        }
+        // Stage the block into the DMA buffer.
+        // SAFETY: data buffer is an exclusively-owned frame; buf is one block.
+        unsafe {
+            core::ptr::copy_nonoverlapping(buf.as_ptr(), self.data.virt as *mut u8, BLOCK_SIZE);
+        }
+        let mut cmd = [0u32; 16];
+        cmd[0] = 0x01 | (0x11 << 16); // Write | cid
+        cmd[1] = 1; // NSID
+        cmd[6] = self.data.phys as u32;
+        cmd[7] = (self.data.phys >> 32) as u32;
+        cmd[10] = lba as u32;
+        cmd[11] = (lba >> 32) as u32;
+        cmd[12] = 0; // write 1 block (0-based)
+        let status = self.submit(false, &cmd);
+        if status != 0 {
+            return Err(BlockError::DeviceError);
+        }
+        Ok(())
+    }
+
+    fn flush(&self) -> Result<(), BlockError> {
+        // NVMe Flush (opcode 0x00) commits the volatile write cache.
+        let mut cmd = [0u32; 16];
+        cmd[0] = 0x12 << 16; // opcode 0x00 (Flush) | cid 0x12
+        cmd[1] = 1; // NSID
+        let status = self.submit(false, &cmd);
+        if status != 0 {
+            return Err(BlockError::DeviceError);
+        }
+        Ok(())
+    }
 }
 
 impl Drop for Nvme {

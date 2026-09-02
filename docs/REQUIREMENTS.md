@@ -72,7 +72,26 @@ labels, commit SHAs, CI run links, or file paths.
 | PCI-001 | PCI enumeration hardening | IMPLEMENTED+VERIFIED | `device::pci` + host-tested `kernel_core::pci` (4 tests); `pci_enumerated` (7 devices), `pci_found_nvme` |
 | BLK-001 | Block-device abstraction + error handling | IMPLEMENTED+VERIFIED | `BlockDevice` trait + RamDisk; `blk_ramdisk_read`, `blk_out_of_range_rejected`, `blk_bad_buffer_rejected` |
 | NVME-001 | Read-only NVMe driver (real block I/O) | IMPLEMENTED+VERIFIED | ADR-0008; `nvme_init` (2048 blocks identified), `nvme_read_block0`, `nvme_disk_magic` (LBA 0 magic read back), `nvme_out_of_range_rejected` |
-| STORE-001 | No physical-disk risk | IMPLEMENTED+VERIFIED | QEMU attaches only a generated disposable raw disk (runner `--nvme`); no passthrough anywhere |
+| STORE-001 | No physical-disk risk | IMPLEMENTED+VERIFIED | QEMU attaches only generated disposable raw disks (runner `--nvme`/`--nvme-persist`); no passthrough anywhere |
+
+## V0.4 — Preemptive Multitasking + Persistent Storage
+
+| ID | Requirement | Status | Evidence |
+|---|---|---|---|
+| PRE-001 | Timer-driven preemption of Ring 3 | IMPLEMENTED+VERIFIED | ADR-0009; naked timer ISR saves full trap frame; `preempt_actually_occurred` (preemption count > 0) |
+| PRE-002 | Non-yielding process cannot monopolize | IMPLEMENTED+VERIFIED | `preempt_no_monopoly` — an infinite no-syscall spinner is preempted; a co-scheduled finite process still completes; spinner still Runnable, then reaped |
+| PRE-003 | Registers preserved across preemption | IMPLEMENTED+VERIFIED | `preempt_two_cpu_bound_progress` — spin-finite verifies its own sum + stack sentinel; corruption exits nonzero, both exit 0 |
+| PRE-004 | Address spaces isolated across preemption | IMPLEMENTED+VERIFIED | spin-finite's per-process stack sentinel holds across dozens of preemptions (part of PRE-003); distinct CR3 per quantum |
+| PRE-005 | Faults contained + exit/wait work under preemption | IMPLEMENTED+VERIFIED | `preempt_coexists_with_cooperative` (yield/wait/IPC still works); V0.2 fault-containment tests still green under the preemptive timer |
+| PRE-006 | No frame leaks / lost processes across switching | IMPLEMENTED+VERIFIED | `preempt_no_frame_leaks`, `preempt_no_lost_processes` (frame-exact + live-slot accounting) |
+| PRE-007 | Cooperative V0.1–V0.3 scheduling regressions green | IMPLEMENTED+VERIFIED | full selftest pass=63 fail=0 BIOS+UEFI incl. all sched_*/proc_* tests |
+| NVW-001 | NVMe write → flush → read round-trip | IMPLEMENTED+VERIFIED | `nvme_write_flush_read_roundtrip` (write scratch LBA, flush, read back identical) |
+| NVW-002 | Out-of-range write rejected | IMPLEMENTED+VERIFIED | `nvme_write_out_of_range_rejected` (rejected before any I/O) |
+| FS-ITFS-001 | ITFS format/create/read/list | IMPLEMENTED+VERIFIED | `fs_format_create_read_list`, `fs_missing_file_rejected`, `fs_remount_reads_committed` over the real NVMe device |
+| FS-ITFS-002 | Strict on-disk metadata validation | IMPLEMENTED+VERIFIED | 8 host `kernel_core::itfs` tests (bad magic/CRC/inconsistent) + `fs_both_superblocks_corrupt_rejected` |
+| FS-ITFS-003 | Crash consistency (torn superblock) | IMPLEMENTED+VERIFIED | `fs_crash_consistency_torn_superblock` — corrupt the newest superblock slot; mount recovers the older consistent slot |
+| FS-ITFS-004 | Reboot persistence through the block layer | IMPLEMENTED+VERIFIED | two-boot UEFI test on one disposable disk: `FS-PERSIST-WROTE` (boot 1) then `FS-PERSIST-VERIFIED` (boot 2, fresh guest) — the hard V0.4 acceptance target |
+| BLK-002 | Block abstraction works across devices | IMPLEMENTED+VERIFIED | same `BlockDevice` trait + ITFS logic run over NVMe (device) and RamDisk (`blk_*` tests) |
 | CI-V03 | CI green with V0.3 QEMU coverage | IMPLEMENTED+VERIFIED | run 33609090873 success (kernel build, split clippy, 55 host tests, images, 6 QEMU legs incl. NVMe+concurrency asserts, website, gitleaks) on ubuntu-24.04 |
 | WEB-V03 | os.itisyou.app reflects V0.3 truthfully | IMPLEMENTED+VERIFIED | live at v0.3.0-dev commit d83942b, milestone "V0.3 — Process Isolation + Storage", verified modules (per-process/ipc/pci/block/nvme), browser+HTTP verified, zero console errors, stale claims removed |
 
