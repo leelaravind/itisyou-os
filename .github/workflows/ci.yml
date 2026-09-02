@@ -31,8 +31,13 @@ jobs:
       - name: Format check
         run: cargo fmt --all -- --check
 
-      - name: Clippy (deny warnings)
-        run: cargo clippy --workspace --all-targets -- -D warnings
+      # Host and kernel are linted in separate invocations on purpose —
+      # see the default-members note in Cargo.toml.
+      - name: Clippy host packages (deny warnings)
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Clippy kernel (deny warnings)
+        run: cargo clippy -p itisyou-kernel -- -D warnings
 
       - name: Host unit tests
         run: cargo test -p kernel-core -p image-builder -p qemu-runner
