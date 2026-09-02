@@ -296,3 +296,7 @@ the host.
 - The first PS/2 mouse packet after enabling reporting can carry a benign
   zero-motion sync artifact; the decoder resynchronises and every later packet
   decodes exactly (documented in KNOWN_LIMITATIONS).
+- **Closed:** CI run 33628363046 green on ubuntu-24.04 (the desktop-input
+  monitor-injection leg passes identically under Linux QEMU); tagged `v0.5.0`
+  on commit `5be3c0c`; os.itisyou.app redeployed and browser+HTTP verified
+  (v0.5.0-dev, OS-rendered desktop screendump on /build, zero console errors).

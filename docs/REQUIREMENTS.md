@@ -117,8 +117,8 @@ labels, commit SHAs, CI run links, or file paths.
 | DESK-001 | Interactive desktop reacts to keyboard + mouse | IMPLEMENTED+VERIFIED | `desktop` command → `[ITISYOU:MODE] desktop`, `DESKTOP-READY`, live window updates, `DESKTOP-INPUT-VERIFIED keys=5 mouse=4` |
 | DESK-002 | Graphics/input proven with automated verification (no faked UI) | IMPLEMENTED+VERIFIED | selftest 15 graphics tests + `desktop-input-bios` monitor-injection test + OS-produced `desktop.ppm` screendump; no host rendering anywhere |
 | REG-V05 | V0.1–V0.4 regressions remain green under V0.5 | IMPLEMENTED+VERIFIED | full selftest **pass=78 fail=0** (BIOS) incl. all boot/userspace/preemption/storage tests; full local matrix Success |
-| CI-V05 | CI green with V0.5 QEMU coverage | PENDING | to be stamped from the ubuntu-24.04 run (adds graphics selftest asserts + desktop-input leg) |
-| WEB-V05 | os.itisyou.app reflects V0.5 truthfully | PENDING | to be stamped after staging+production deploy + browser/HTTP verification |
+| CI-V05 | CI green with V0.5 QEMU coverage | IMPLEMENTED+VERIFIED | run 33628363046 success on ubuntu-24.04 (fmt, split clippy, host tests, images, boot BIOS/UEFI, selftest BIOS+UEFI with graphics asserts + B170/B180, shell 0.5.0-dev, desktop-input monitor-injection leg, panic, two-boot fs-persist, website, gitleaks); tag v0.5.0 on commit 5be3c0c |
+| WEB-V05 | os.itisyou.app reflects V0.5 truthfully | IMPLEMENTED+VERIFIED | live at v0.5.0-dev commit 71dbc5a, milestone "V0.5 — Graphics + Input + Basic Desktop/Compositor", verified modules (graphics/compositor/gui-syscalls/input-keyboard/input-mouse/desktop), OS-rendered desktop screendump published on /build, roadmap corrected (V0.1–V0.4 Verified, V0.5 current), browser+HTTP verified, zero console errors |
 
 ## Testing & verification
 

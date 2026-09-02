@@ -2,10 +2,11 @@
 
 **Timestamp:** 2026-09-02 ~12:40 Europe/London
 **Repository:** `E:\Project\itisyou-os` · branch `main`
-**Tags:** `v0.1.0`, `v0.2.0`, `v0.3.0`, `v0.4.0` (v0.5.0 tagged after CI confirms)
+**Tags:** `v0.1.0`, `v0.2.0`, `v0.3.0`, `v0.4.0`, `v0.5.0` (on commit 5be3c0c)
 **Remote:** https://github.com/leelaravind/itisyou-os (private)
-**Milestone:** V0.5 Graphics + Input + Basic Desktop/Compositor — verified
-(selftest pass=78 fail=0, full local matrix Success)
+**Milestone:** V0.5 Graphics + Input + Basic Desktop/Compositor — verified +
+tagged (selftest pass=78 fail=0; CI run 33628363046 success; live at
+os.itisyou.app). Next: V0.6 Hardware Expansion (device model, PCI, USB, audio).
 
 ## V0.5 verified additions
 
