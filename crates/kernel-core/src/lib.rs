@@ -8,4 +8,7 @@
 pub mod bitmap;
 pub mod marker;
 pub mod memmap;
+pub mod path;
+pub mod shellparse;
 pub mod stage;
+pub mod tar;

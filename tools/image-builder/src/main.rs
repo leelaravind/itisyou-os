@@ -18,7 +18,7 @@ fn main() -> Result<()> {
     fs::create_dir_all(&out_dir)
         .with_context(|| format!("creating output dir {}", out_dir.display()))?;
 
-    let variants: [(&str, &str); 2] = [
+    let variants: [(&str, &str); 3] = [
         (
             "itisyou-kernel",
             env!("CARGO_BIN_FILE_ITISYOU_KERNEL_itisyou-kernel"),
@@ -26,6 +26,10 @@ fn main() -> Result<()> {
         (
             "itisyou-kernel-selftest",
             env!("CARGO_BIN_FILE_ITISYOU_KERNEL_itisyou-kernel-selftest"),
+        ),
+        (
+            "itisyou-kernel-panictest",
+            env!("CARGO_BIN_FILE_ITISYOU_KERNEL_itisyou-kernel-panictest"),
         ),
     ];
 

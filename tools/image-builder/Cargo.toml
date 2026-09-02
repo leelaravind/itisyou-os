@@ -6,13 +6,14 @@ description = "Builds bootable BIOS/UEFI disk images from the kernel ELF binarie
 
 [dependencies]
 anyhow = "1"
-# UEFI stage disabled by default: bootloader-x86_64-uefi 0.11.17 fails to
-# link on current nightlies (upstream rust-osdev/bootloader#579, undefined
-# symbol wcslen). Re-enable via the `uefi` feature once upstream is fixed.
+# The workspace nightly is pinned to 2026-08-01 specifically so the UEFI
+# stage links (rust-osdev/bootloader#579 broke later nightlies). If the pin
+# ever has to move past the regression, build BIOS-only with
+# `--no-default-features`.
 bootloader = { version = "0.11.17", default-features = false, features = ["bios"] }
 
 [features]
-default = []
+default = ["uefi"]
 uefi = ["bootloader/uefi"]
 
 # Artifact dependencies: building this tool builds both kernel binaries for

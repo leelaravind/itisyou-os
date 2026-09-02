@@ -58,3 +58,44 @@ fixes, and verification evidence. Newest entries at the bottom. No secrets.
 - Also fixed: bootloader's build script wrote its `cargo install` temp dir
   to `C:\Users\...\Temp` — `scripts/env.ps1` now routes `TEMP`/`TMP` to
   `G:\claude-tmp\tmp` for all project commands (storage rules §5).
+
+### 02:55 — First verified boot; UEFI recovered via toolchain pin
+
+- **B010–B030 verified in QEMU (BIOS)**: `selftest-bios` outcome=Success,
+  exit 33, selftest pass=2 fail=0. Harness gap found honestly: the
+  interactive kernel halts by design, so the smoke run timed out — added
+  `--exit-after-markers` (success once all expected stages observed).
+- **UEFI restored**: probing found `bootloader-x86_64-uefi@0.11.17` links
+  cleanly on nightly-2026-08-01 (the wcslen regression landed 2026-08-01 →
+  2026-08-10; older nightlies fail differently — the crate's lockfile needs
+  newer `Step` trait methods). Workspace re-pinned to nightly-2026-08-01,
+  `uefi` back in default features, UEFI legs restored in scripts + CI.
+- Foundation checkpoint pushed: private repo
+  `github.com/leelaravind/itisyou-os`, commit `caae006`.
+
+### 03:10 — Phase 2 subsystems: three root-caused failures
+
+Implemented B040–B150: PMM (bitmap over validated map), paging
+(OffsetPageTable wrapper, W^X policy), heap (linked_list_allocator, 1 MiB),
+GDT/TSS/IDT + exceptions with double-fault IST, PIC+PIT timer @100 Hz,
+cooperative round-robin scheduler with real context switch (naked fn),
+VFS + build-time-packed ustar initramfs, serial shell (13 commands), plus
+30+ in-kernel selftests and a panictest binary. Failures found by the
+harness, root causes from serial evidence:
+
+1. **Triple fault before B040 (both firmwares)**: the 128 KiB
+   `PhysicalMemoryManager` was constructed on the 128 KiB kernel boot stack
+   before being moved into its static → stack overflow → page fault with no
+   IDT yet → triple fault. Fix: const-construct the PMM inside the static
+   (`.bss`) and initialize in place. Regression protection: the comment on
+   the static + selftests boot the full init path every CI run.
+2. **UEFI-only panic `TooManyRegions`**: OVMF hands over 104 memory regions
+   (BIOS: 10); the normalization bound was 64. Fix: bound raised to 256.
+   The panic itself was the designed invariant behavior — evidence, not a
+   silent hang.
+3. **Shell test stalled after ~16 input bytes**: QEMU's Windows stdio
+   chardev stops feeding redirected stdin once the guest UART's 16-byte RX
+   FIFO fills. Fix: harness serial transport moved to TCP (runner listens,
+   QEMU connects with `-serial tcp:...`); works identically on Windows and
+   Linux CI. Also: panic marker made single-line (PanicInfo's Display splits
+   message/location across lines, breaking the one-line marker contract).

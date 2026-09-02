@@ -34,6 +34,25 @@ pub fn write_fmt(args: fmt::Arguments) {
     });
 }
 
+/// Non-blocking read of one byte from COM1's receive buffer.
+///
+/// Polled input is the V0.1 input path (plan §10.10): the QEMU test harness
+/// drives the shell through serial stdin.
+pub fn try_read_byte() -> Option<u8> {
+    use x86_64::instructions::port::Port;
+    // SAFETY: LSR (base+5) and RBR (base) reads on the standard COM1 UART;
+    // reading has no side effects beyond consuming the received byte.
+    unsafe {
+        let mut lsr = Port::<u8>::new(COM1_PORT + 5);
+        if lsr.read() & 1 != 0 {
+            let mut rbr = Port::<u8>::new(COM1_PORT);
+            Some(rbr.read())
+        } else {
+            None
+        }
+    }
+}
+
 #[macro_export]
 macro_rules! serial_print {
     ($($arg:tt)*) => {

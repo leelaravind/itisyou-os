@@ -14,7 +14,8 @@ use kernel_core::marker::{parse_line, Marker};
 use kernel_core::stage::Stage;
 use serde::Serialize;
 use std::collections::BTreeSet;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Write};
+use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
@@ -48,6 +49,7 @@ struct RunResult {
     duration_ms: u128,
     stages_seen: Vec<String>,
     missing_stages: Vec<String>,
+    missing_required: Vec<String>,
     tests: Vec<TestEvent>,
     selftest_pass: Option<u32>,
     selftest_fail: Option<u32>,
@@ -66,6 +68,14 @@ struct Options {
     /// has been observed — for interactive images that (correctly) never
     /// exit on their own.
     exit_after_markers: bool,
+    /// The run is EXPECTED to panic (negative-path test): success iff the
+    /// panic marker appears.
+    expect_panic: bool,
+    /// Lines written to the guest serial (stdin) once B130 (shell running)
+    /// is observed.
+    send: Vec<String>,
+    /// Substrings that must appear somewhere in the serial log.
+    require: Vec<String>,
     timeout: Duration,
     label: String,
     artifacts: PathBuf,
@@ -80,6 +90,9 @@ fn parse_args() -> Result<Options, String> {
     let mut expect = Vec::new();
     let mut expect_selftest = false;
     let mut exit_after_markers = false;
+    let mut expect_panic = false;
+    let mut send = Vec::new();
+    let mut require = Vec::new();
     let mut timeout = Duration::from_secs(60);
     let mut label = "run".to_string();
     let mut artifacts = PathBuf::from("artifacts/qemu");
@@ -102,6 +115,9 @@ fn parse_args() -> Result<Options, String> {
             }
             "--expect-selftest" => expect_selftest = true,
             "--exit-after-markers" => exit_after_markers = true,
+            "--expect-panic" => expect_panic = true,
+            "--send" => send.push(value("--send")?),
+            "--require" => require.push(value("--require")?),
             "--timeout-secs" => {
                 timeout = Duration::from_secs(
                     value("--timeout-secs")?
@@ -122,6 +138,9 @@ fn parse_args() -> Result<Options, String> {
         expect,
         expect_selftest,
         exit_after_markers,
+        expect_panic,
+        send,
+        require,
         timeout,
         label,
         artifacts,
@@ -178,19 +197,17 @@ fn main() {
     }
 }
 
-fn build_command(opts: &Options) -> Command {
+/// Serial transport: TCP, with the runner as listener and QEMU connecting as
+/// a client. `-serial stdio` is NOT used because QEMU's Windows stdio chardev
+/// stops feeding redirected stdin after the guest UART's 16-byte RX FIFO
+/// fills once, which stalls interactive shell tests (observed 2026-09-02).
+fn build_command(opts: &Options, serial_port: u16) -> Command {
     let mut cmd = Command::new(&opts.qemu);
     cmd.arg("-drive")
         .arg(format!("format=raw,file={}", opts.image.display()))
-        .args([
-            "-serial",
-            "stdio",
-            "-display",
-            "none",
-            "-no-reboot",
-            "-m",
-            "256M",
-        ])
+        .arg("-serial")
+        .arg(format!("tcp:127.0.0.1:{serial_port},nodelay"))
+        .args(["-display", "none", "-no-reboot", "-m", "256M"])
         .args(["-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"]);
     if opts.uefi {
         let fw = opts
@@ -203,8 +220,8 @@ fn build_command(opts: &Options) -> Command {
             fw.display()
         ));
     }
-    cmd.stdin(Stdio::piped())
-        .stdout(Stdio::piped())
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::null())
         .stderr(Stdio::piped());
     cmd
 }
@@ -212,7 +229,16 @@ fn build_command(opts: &Options) -> Command {
 fn run(opts: &Options) -> RunResult {
     std::fs::create_dir_all(&opts.artifacts).ok();
     let serial_log_path = opts.artifacts.join(format!("{}.serial.log", opts.label));
-    let mut cmd = build_command(opts);
+
+    // Reserve the serial TCP port before launching QEMU (listener owns it,
+    // so there is no bind race).
+    let listener = TcpListener::bind("127.0.0.1:0").expect("binding serial TCP listener");
+    let serial_port = listener.local_addr().unwrap().port();
+    listener
+        .set_nonblocking(true)
+        .expect("nonblocking listener");
+
+    let mut cmd = build_command(opts, serial_port);
     let command_line: Vec<String> = std::iter::once(opts.qemu.clone())
         .chain(cmd.get_args().map(|a| a.to_string_lossy().into_owned()))
         .collect();
@@ -235,6 +261,7 @@ fn run(opts: &Options) -> RunResult {
                 duration_ms: started.elapsed().as_millis(),
                 stages_seen: vec![],
                 missing_stages: opts.expect.iter().map(|s| s.code().to_string()).collect(),
+                missing_required: opts.require.clone(),
                 tests: vec![],
                 selftest_pass: None,
                 selftest_fail: None,
@@ -245,11 +272,64 @@ fn run(opts: &Options) -> RunResult {
         }
     };
 
-    // Stream stdout lines through a channel so the main loop owns the timeout.
-    let stdout = child.stdout.take().expect("stdout piped");
+    // Accept QEMU's serial connection (it connects during device realize).
+    let deadline = started + opts.timeout;
+    let serial_stream: Option<TcpStream> = loop {
+        match listener.accept() {
+            Ok((stream, _)) => {
+                // Windows: streams accepted from a nonblocking listener
+                // inherit nonblocking mode — force blocking reads back on,
+                // or the reader thread dies instantly on WouldBlock.
+                stream
+                    .set_nonblocking(false)
+                    .expect("restoring blocking mode on serial stream");
+                stream.set_nodelay(true).ok();
+                break Some(stream);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                if Instant::now() >= deadline || child.try_wait().ok().flatten().is_some() {
+                    break None;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            Err(_) => break None,
+        }
+    };
+    let Some(serial_stream) = serial_stream else {
+        let _ = child.kill();
+        let _ = child.wait();
+        let _ = std::fs::write(
+            &serial_log_path,
+            "LAUNCH FAILURE: QEMU never connected to the serial TCP port\n",
+        );
+        return RunResult {
+            outcome: Outcome::LaunchFailure,
+            label: opts.label.clone(),
+            image: opts.image.display().to_string(),
+            firmware_mode: if opts.uefi {
+                "uefi".into()
+            } else {
+                "bios".into()
+            },
+            qemu_exit_code: None,
+            duration_ms: started.elapsed().as_millis(),
+            stages_seen: vec![],
+            missing_stages: opts.expect.iter().map(|s| s.code().to_string()).collect(),
+            missing_required: opts.require.clone(),
+            tests: vec![],
+            selftest_pass: None,
+            selftest_fail: None,
+            panic_message: None,
+            serial_log: serial_log_path.display().to_string(),
+            command_line,
+        };
+    };
+    let mut serial_writer = serial_stream.try_clone().expect("cloning serial stream");
+
+    // Stream serial lines through a channel so the main loop owns the timeout.
     let (tx, rx) = mpsc::channel::<String>();
     let reader_handle = std::thread::spawn(move || {
-        let reader = BufReader::new(stdout);
+        let reader = BufReader::new(serial_stream);
         for line in reader.lines() {
             match line {
                 Ok(l) => {
@@ -272,7 +352,6 @@ fn run(opts: &Options) -> RunResult {
         buf
     });
 
-    let deadline = started + opts.timeout;
     let mut serial_lines: Vec<String> = Vec::new();
     let mut stages_seen: BTreeSet<Stage> = BTreeSet::new();
     let mut tests: Vec<TestEvent> = Vec::new();
@@ -280,6 +359,7 @@ fn run(opts: &Options) -> RunResult {
     let mut panic_message: Option<String> = None;
     let mut timed_out = false;
     let mut completed_by_markers = false;
+    let mut sent_commands = false;
 
     loop {
         let now = Instant::now();
@@ -294,8 +374,23 @@ fn run(opts: &Options) -> RunResult {
                     match marker {
                         Marker::Stage(stage, _) => {
                             stages_seen.insert(stage);
+                            // Drive the shell once it is running. The OS pipe
+                            // buffers the burst; QEMU feeds the guest UART
+                            // with flow control as the shell drains it.
+                            if stage == Stage::B130ShellRunning
+                                && !sent_commands
+                                && !opts.send.is_empty()
+                            {
+                                sent_commands = true;
+                                for cmd in &opts.send {
+                                    let _ = writeln!(serial_writer, "{cmd}");
+                                }
+                                let _ = serial_writer.flush();
+                            }
                         }
-                        Marker::Panic(msg) => panic_message = Some(msg.to_string()),
+                        Marker::Panic(msg) => {
+                            panic_message = Some(msg.to_string());
+                        }
                         Marker::Selftest { pass, fail } => selftest = Some((pass, fail)),
                         Marker::Test { name, pass } => tests.push(TestEvent {
                             name: name.to_string(),
@@ -305,6 +400,12 @@ fn run(opts: &Options) -> RunResult {
                     }
                 }
                 serial_lines.push(line);
+                if opts.expect_panic && panic_message.is_some() {
+                    // Evidence captured; the panicked kernel halts forever,
+                    // so end the run here.
+                    let _ = child.kill();
+                    break;
+                }
                 if opts.exit_after_markers
                     && !opts.expect.is_empty()
                     && panic_message.is_none()
@@ -323,6 +424,17 @@ fn run(opts: &Options) -> RunResult {
             // Reader thread finished: QEMU closed stdout (exited).
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
+    }
+    // The serial stream closing does not imply QEMU already exited: grant a
+    // short grace period for a natural exit (isa-debug-exit still carries
+    // the real status), then kill — child.wait must never be unbounded.
+    let grace_deadline = Instant::now() + Duration::from_secs(3);
+    while child.try_wait().ok().flatten().is_none() {
+        if Instant::now() >= grace_deadline {
+            let _ = child.kill();
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
     }
     let _ = reader_handle.join();
     let exit_status = child.wait().ok();
@@ -343,8 +455,24 @@ fn run(opts: &Options) -> RunResult {
         .filter(|s| !stages_seen.contains(s))
         .map(|s| s.code().to_string())
         .collect();
+    let missing_required: Vec<String> = opts
+        .require
+        .iter()
+        .filter(|needle| !serial_lines.iter().any(|l| l.contains(needle.as_str())))
+        .cloned()
+        .collect();
 
-    let outcome = if completed_by_markers && panic_message.is_none() {
+    let outcome = if opts.expect_panic {
+        // Negative-path run: the panic IS the expected evidence.
+        match (&panic_message, timed_out) {
+            (Some(_), _) if missing.is_empty() && missing_required.is_empty() => Outcome::Success,
+            (Some(_), _) => Outcome::MissingMarkers,
+            (None, true) => Outcome::Timeout,
+            (None, false) => Outcome::MissingMarkers,
+        }
+    } else if !missing_required.is_empty() {
+        Outcome::MissingMarkers
+    } else if completed_by_markers && panic_message.is_none() {
         Outcome::Success
     } else {
         classify(
@@ -370,6 +498,7 @@ fn run(opts: &Options) -> RunResult {
         duration_ms: started.elapsed().as_millis(),
         stages_seen: stages_seen.iter().map(|s| s.code().to_string()).collect(),
         missing_stages: missing,
+        missing_required,
         tests,
         selftest_pass: selftest.map(|(p, _)| p),
         selftest_fail: selftest.map(|(_, f)| f),

@@ -53,8 +53,22 @@ jobs:
             --exit-after-markers \
             --timeout-secs 120 --label boot-smoke-bios
 
-# UEFI legs disabled: bootloader-x86_64-uefi fails to link on current
-# nightlies (upstream rust-osdev/bootloader#579). Restore when fixed.
+      - name: QEMU boot smoke (UEFI)
+        run: |
+          cargo run -q -p qemu-runner -- \
+            --image target/images/itisyou-kernel-uefi.img --uefi \
+            --firmware /usr/share/OVMF/OVMF_CODE_4M.fd \
+            --expect B010 --expect B020 --expect B030 \
+            --exit-after-markers \
+            --timeout-secs 120 --label boot-smoke-uefi
+
+      - name: QEMU selftest (UEFI)
+        run: |
+          cargo run -q -p qemu-runner -- \
+            --image target/images/itisyou-kernel-selftest-uefi.img --uefi \
+            --firmware /usr/share/OVMF/OVMF_CODE_4M.fd \
+            --expect B010 --expect B020 --expect B030 --expect-selftest \
+            --timeout-secs 180 --label selftest-uefi
 
       - name: QEMU selftest (BIOS)
         run: |
@@ -63,6 +77,28 @@ jobs:
             --expect B010 --expect B020 --expect B030 --expect-selftest \
             --timeout-secs 180 --label selftest-bios
 
+      - name: QEMU shell interaction (BIOS)
+        run: |
+          cargo run -q -p qemu-runner -- \
+            --image target/images/itisyou-kernel-bios.img \
+            --expect B040 --expect B050 --expect B060 --expect B070 \
+            --expect B080 --expect B090 --expect B100 --expect B110 \
+            --expect B120 --expect B130 --expect B150 \
+            --send help --send version --send memory --send tasks \
+            --send "ls /" --send "cat /etc/version" --send shutdown \
+            --require "itisyou-os 0.1.0" \
+            --require "task 0: kmain" \
+            --require "shutting down (QEMU exit)" \
+            --timeout-secs 180 --label shell-test-bios
+
+      - name: QEMU intentional panic (BIOS)
+        run: |
+          cargo run -q -p qemu-runner -- \
+            --image target/images/itisyou-kernel-panictest-bios.img \
+            --expect B010 --expect B020 --expect-panic \
+            --require "intentional panic-test" \
+            --timeout-secs 120 --label panic-test-bios
+
       - name: Upload QEMU evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -70,6 +106,23 @@ jobs:
           name: qemu-evidence
           path: artifacts/qemu/
           if-no-files-found: ignore
+
+  website:
+    name: Website check + build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - name: Install dependencies
+        working-directory: website
+        run: npm ci
+      - name: Verify (status sync, astro check, build)
+        working-directory: website
+        run: npm run verify
 
   secret-scan:
     name: Secret scan

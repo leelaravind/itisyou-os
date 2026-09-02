@@ -46,6 +46,32 @@ if (Test-Path 'target/images/itisyou-kernel-selftest-uefi.img') {
     Write-Output 'SKIPPED: UEFI image absent - bootloader UEFI stage blocked upstream (rust-osdev/bootloader#579)'
 }
 
+Write-Output '=== QEMU shell interaction (BIOS) ==='
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B040', '--expect', 'B050', '--expect', 'B060', '--expect', 'B070',
+    '--expect', 'B080', '--expect', 'B090', '--expect', 'B100', '--expect', 'B110',
+    '--expect', 'B120', '--expect', 'B130', '--expect', 'B150',
+    '--send', 'help', '--send', 'version', '--send', 'system', '--send', 'memory',
+    '--send', 'tasks', '--send', 'uptime', '--send', 'ls /', '--send', 'cat /etc/version',
+    '--send', 'echo shell-echo-check', '--send', 'definitely-not-a-command',
+    '--send', 'panic-test', '--send', 'shutdown',
+    '--require', 'itisyou-os 0.1.0',
+    '--require', 'task 0: kmain',
+    '--require', 'physical: usable_frames=',
+    '--require', 'heap: used=',
+    '--require', 'etc/',
+    '--require', 'shell-echo-check',
+    '--require', 'unknown command: definitely-not-a-command',
+    '--require', "panic-test: pass 'confirm'",
+    '--require', 'shutting down (QEMU exit)',
+    '--timeout-secs', '90', '--label', 'shell-test-bios')
+
+Write-Output '=== QEMU intentional panic (BIOS) ==='
+& $runner @('--image', 'target/images/itisyou-kernel-panictest-bios.img',
+    '--expect', 'B010', '--expect', 'B020', '--expect-panic',
+    '--require', 'intentional panic-test',
+    '--timeout-secs', '60', '--label', 'panic-test-bios')
+
 if ($anyFailed) { Write-Output 'TEST: FAILED'; exit 1 }
 Write-Output 'TEST: OK'
 exit 0
