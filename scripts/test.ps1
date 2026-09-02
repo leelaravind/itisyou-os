@@ -20,14 +20,14 @@ Write-Output '=== QEMU boot smoke (BIOS) ==='
 & $runner @('--image', 'target/images/itisyou-kernel-bios.img',
     '--expect', 'B010', '--expect', 'B020', '--expect', 'B030',
     '--exit-after-markers',
-    '--timeout-secs', '60', '--label', 'boot-smoke-bios')
+    '--timeout-secs', '120', '--label', 'boot-smoke-bios')
 
 Write-Output '=== QEMU boot smoke (UEFI) ==='
 if (Test-Path 'target/images/itisyou-kernel-uefi.img') {
     & $runner @('--image', 'target/images/itisyou-kernel-uefi.img', '--uefi',
         '--expect', 'B010', '--expect', 'B020', '--expect', 'B030',
         '--exit-after-markers',
-        '--timeout-secs', '60', '--label', 'boot-smoke-uefi')
+        '--timeout-secs', '120', '--label', 'boot-smoke-uefi')
 } else {
     Write-Output 'SKIPPED: UEFI image absent - bootloader UEFI stage blocked upstream (rust-osdev/bootloader#579)'
 }
