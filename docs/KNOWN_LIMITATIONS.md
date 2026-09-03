@@ -1,7 +1,6 @@
 # Known limitations — honest current state
 
-Updated continuously; last update: 2026-09-02 (session 1, V0.7 system
-platform verified).
+Updated continuously; last update: 2026-09-03 (V0.7 release evidence closeout).
 
 - Platform (V0.7): capabilities are **bits, not handles** — no revocation of
   a running process's authority, no per-resource capabilities yet (the IPC
