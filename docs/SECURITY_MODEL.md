@@ -41,7 +41,7 @@ only through narrow, deterministic, auditable paths).
    IS the pipeline an agent will use; agents get no other entry point.
 7. **External network boundary** *(future — no network stack yet)*.
 
-## V0.1 concrete requirements (plan §11.2)
+## Implemented security controls (V0.7)
 
 - `unsafe` minimized, localized, documented with invariants; inventory
   tracked in `docs/UNSAFE_INVENTORY.md` (SEC-001).
@@ -52,10 +52,18 @@ only through narrow, deterministic, auditable paths).
   launches attach only project-generated disposable images (SEC-002).
 - Dependency and secret scans before pushes; secrets never in source, logs,
   or history.
+- Capabilities are explicit default-deny bits at the kernel syscall boundary;
+  spawn delegation intersects with the parent's authority and cannot amplify.
+- Platform services are ordinary Ring 3 processes with declared capabilities,
+  deterministic dependency ordering, bounded restart, and audited transitions.
+- Applications launch only from validated manifests and packages; filesystem
+  visibility is normalized and prefix-confined.
+- Updates use integrity-verified packages and crash-atomic staging/rollback;
+  interrupted updates are detected and recovered after reboot.
 
-## Future capability model (documented direction, not implemented)
+## Capability model and remaining direction
 
 `subject → capability → object → permitted operation → constraints →
-provenance` — capabilities explicit, inspectable, revocable, and narrower
-than blanket administrator privilege. Recorded here so V0.2+ interfaces
-grow toward it instead of retrofitting.
+provenance` is the V0.7 platform contract. The current implementation uses
+static process bit capabilities and path prefixes. Per-resource handles,
+revocation, signed package authenticity, and network policy remain V0.8 work.

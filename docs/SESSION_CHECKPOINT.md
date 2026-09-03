@@ -2,9 +2,9 @@
 
 **Timestamp:** 2026-09-03 ~18:20 Europe/London
 **Repository:** `E:\Project\itisyou-os` · branch `main`
-**Tags:** `v0.1.0` … `v0.6.0` (v0.7.0 pending until final CI + production verification)
+**Tags:** `v0.1.0` … `v0.6.0` (V0.7 release tag is created after the final evidence stamp)
 **Remote:** https://github.com/leelaravind/itisyou-os (private)
-**Milestone:** V0.7 System Platform — verified in local matrix (selftest pass=106 fail=0; platform-bios + two-boot update-recovery green). CI/WEB stamping pending final remote verification.
+**Milestone:** V0.7 System Platform — locally and remotely verified (selftest pass=106 fail=0; platform-bios + two-boot update-recovery green; CI run 33778032411 green; staging and production website verified).
 
 ## V0.7 verified additions
 
@@ -51,4 +51,6 @@ unchanged.
 
 ## Blockers
 
-None.
+None. Release evidence currently points to commit `26ba2be` and CI run
+`33778032411`; the final release tag is applied only after the closing
+evidence commit and clean-tree check.

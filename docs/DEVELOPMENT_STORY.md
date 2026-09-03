@@ -389,3 +389,19 @@ is denied even though the binary asks.
 Selftest pass=106 fail=0 (all V0.1–V0.6 suites green under the new
 enforcement); kernel-core at 122 host tests; new platform-bios +
 update-interrupt/update-recovery QEMU legs.
+
+### 2026-09-03 · V0.7 evidence closeout
+
+The final local `scripts/verify.ps1` gate remained green: formatting, split
+clippy, 41 host tests, all six QEMU legs, website check/build, and secret scan.
+The corresponding GitHub Actions CI run `33778032411` completed successfully
+on ubuntu-24.04 for commit `26ba2be`. The QEMU artifacts include the platform
+security leg and the persistent-disk interrupted-update/recovery pair.
+
+The website was verified in the required order: staging first at
+`os-itisyou-app-staging.kpleelaaravind.workers.dev`, then production at
+`https://os.itisyou.app`. The production check covered V0.7 platform content,
+status metadata, TLS/security headers, route/404 behavior, responsive CSS,
+browser navigation, and zero console errors. `status/current.json` is now
+stamped to the verified V0.7 state; the release tag follows the final pushed
+evidence commit.

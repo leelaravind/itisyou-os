@@ -1,12 +1,12 @@
 {
-  "version": "0.7.0-dev",
+  "version": "0.7.0",
   "maturity": "pre-alpha",
   "architecture": "x86_64",
   "environment": "QEMU",
   "milestone": "V0.7 — System Platform",
-  "commit": "PENDING",
-  "lastVerifiedAt": "2026-09-02T17:40:00Z",
-  "verification": "locally-verified",
+  "commit": "26ba2beee93962f4c7ec35da0432cdc8be352d9b",
+  "lastVerifiedAt": "2026-09-03T16:30:02Z",
+  "verification": "verified",
   "modules": [
     {
       "id": "boot",

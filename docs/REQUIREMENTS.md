@@ -176,14 +176,14 @@ labels, commit SHAs, CI run links, or file paths.
 | UI-001 | Real platform state exposed to the user | IMPLEMENTED+VERIFIED | `svc` (service states), `pkg list` (versions/active/staged), `audit` (trail), `run … [caps] [prefix]` — all read live kernel/platform data |
 | FSL-001 | Platform filesystem layout | IMPLEMENTED+VERIFIED | initramfs: `/bin` (system), `/pkgs` (install media), `/etc` (config, generated version); persistent ITFS = package store + writable state; app view = `/apps/<name>` + `/etc` |
 | REG-V07 | V0.1–V0.6 regressions green under V0.7 | IMPLEMENTED+VERIFIED | selftest **pass=106 fail=0** (all prior suites incl. graphics/USB/audio/devices); legacy-full caps keep pre-platform launches unchanged |
-| CI-V07 | CI green with V0.7 QEMU coverage | PENDING | to be stamped from the ubuntu-24.04 run (adds platform-bios + two-boot update legs) |
-| WEB-V07 | os.itisyou.app reflects V0.7 truthfully | PENDING | to be stamped after staging+production deploy + verification |
+| CI-V07 | CI green with V0.7 QEMU coverage | IMPLEMENTED+VERIFIED | GitHub Actions run [33778032411](https://github.com/leelaravind/itisyou-os/actions/runs/33778032411) on `26ba2be` completed successfully on ubuntu-24.04; full CI gate passed including V0.7 `platform-bios`, `update-interrupt`, and `update-recovery` legs, host tests, website build, and secret scan |
+| WEB-V07 | os.itisyou.app reflects V0.7 truthfully | IMPLEMENTED+VERIFIED | staging `https://os-itisyou-app-staging.kpleelaaravind.workers.dev` verified first, then production `https://os.itisyou.app` deployed as Worker version `b2ec79bc-b55a-46ee-8a02-805d943b985e`; HTTP/TLS, V0.7 platform content, status metadata, security headers, responsive CSS, 404 handling, and browser journey were verified with zero console errors |
 
 ## Testing & verification
 
 | ID | Requirement | Status | Evidence |
 |---|---|---|---|
-| TEST-001 | One-command verification gate exists | IMPLEMENTED+VERIFIED | `scripts/verify.ps1` full run 2026-09-02: doctor OK, fmt OK, clippy OK, 41 host tests, 6/6 QEMU legs Success, website 0 errors, secret scan clean → "VERIFY: OK" |
+| TEST-001 | One-command verification gate exists | IMPLEMENTED+VERIFIED | `scripts/verify.ps1` full run: doctor OK, fmt OK, clippy OK, 41 host tests, 6/6 QEMU legs Success, website 0 errors, secret scan clean -> `VERIFY: OK - all applicable gates passed`; generated `artifacts/qemu/*.result.json` records the V0.7 platform and two-boot update/recovery evidence |
 | TEST-002 | QEMU timeout/failure classification works | IMPLEMENTED+VERIFIED | classifications observed operating correctly during real debugging: Timeout (interactive halt), Panic (UEFI TooManyRegions), MissingMarkers (FIFO stall), Success; negative leg panic-test-bios green |
 | SEC-001 | Unsafe inventory exists | IMPLEMENTED+VERIFIED | `docs/UNSAFE_INVENTORY.md` — 32 documented unsafe contracts (incl. gfx framebuffer, i8042 input, PCI BAR probe, AC97 + UHCI DMA/port I/O) |
 | SEC-002 | No host disk passthrough | IMPLEMENTED+VERIFIED | qemu-runner `build_command` + run-qemu.ps1 attach only `target/images/*.img`; no passthrough flags anywhere |
