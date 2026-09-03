@@ -97,6 +97,28 @@ the verified PIC timer/PS-2 IRQ path is untouched; MSI/MSI-X is detected but
 APIC/MSI routing is deferred. Userspace reaches devices only through `devinfo`
 — no direct config/MMIO/port access.
 
+## System platform (V0.7, ADR-0012)
+
+Authority is explicit: each process carries **capability bits** (spawn/ipc/
+gui/dev/fs_read), enforced default-deny at the single syscall dispatch
+boundary; delegation only narrows (`spawn` inherits, `spawn_caps` intersects).
+A per-process **FS sandbox** restricts `fs_read` to normalized-path prefixes
+(traversal-proof, host-tested). **Services** are ordinary Ring 3 processes in
+a static registry (binary + deps + exact caps); the supervisor starts them in
+a deterministic cycle-checked order, contains crashes, applies a bounded
+restart policy, and emits `[ITISYOU:SVC]` diagnostics. **Applications** ship
+as ITPKG packages (strict manifest + ELF + SHA-256, verified at install and
+re-verified at launch) into a persistent version-numbered store where every
+install/update/rollback/recovery transition is one crash-atomic ITFS
+superblock commit — an interrupted update can never activate. Every
+privileged action and every denial lands in the **audit trail**
+(`[ITISYOU:AUDIT]`, bounded ring, no payload contents). Pure logic —
+capabilities, manifests, package format, SHA-256, service ordering/restart,
+update-state resolution, sandbox path math — lives host-tested in
+`kernel-core`. A future AI agent is just another requester on this same
+request → capability check → service → action → audit path; no AI exists in
+the kernel.
+
 ## Crate boundaries
 
 - **`kernel/`** — the only privileged code. Library + two binaries:

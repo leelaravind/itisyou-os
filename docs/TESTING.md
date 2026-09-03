@@ -61,7 +61,24 @@
     reads HID input off the interrupt endpoint through the **unified** input
     queue; an injected keypress arrives tagged `src=usb` — real USB input and
     input-source unification.
-12. **Negative cases** (grown alongside subsystems): intentional panic,
+12. **Platform security suite** (V0.7, selftest + `platform-bios` leg): a
+    zero-capability probe attempts all 7 privileged syscall classes and must
+    see every one denied (`SANDBOX-DENIED-OK`); FS-sandbox probe (out-of-
+    prefix, foreign app dir, `..` traversal, root escape all denied; in-
+    sandbox miss stays NOENT); delegation probe (child requesting caps its
+    parent lacks finds them denied, delegated ones work); denial auditing.
+13. **Service supervision suite** (V0.7): deterministic dependency-ordered
+    startup, a service serving a dependent client over IPC (3 ping→pong),
+    crash containment with the bounded restart policy (exactly 3 restarts →
+    Failed), no leaked processes, cycle detection.
+14. **Package/update suite** (V0.7, selftest + two-boot legs): verified
+    install; corrupted-payload and hostile-manifest packages refused with
+    the store untouched; manifest-only-capability launches; atomic update;
+    atomic rollback (previous version reactivates, evidence kept);
+    interrupted update staged on boot 1 survives a REAL reboot as an orphan
+    that never activates, and boot 2's recovery scan removes it
+    (`update-interrupt`/`update-recovery` legs on one persistent disk).
+15. **Negative cases** (grown alongside subsystems): intentional panic,
     allocator exhaustion, malformed inputs, timeout classification.
 
 The harness gained `--audio`/`--audio-out` (AC97 → WAV capture, with a non-
@@ -92,7 +109,7 @@ duration, full command line).
 ## Commands
 
 ```powershell
-scripts\test.ps1     # unit tests + 4-way QEMU matrix
+scripts\test.ps1     # unit tests + full QEMU matrix (BIOS + UEFI smoke/selftest, shell, desktop input, audio, usb, platform, interrupted update + recovery, panic, persistence)
 scripts\verify.ps1   # canonical full gate (adds fmt, clippy, doctor, secret scan, website)
 ```
 

@@ -145,6 +145,40 @@ labels, commit SHAs, CI run links, or file paths.
 | CI-V06 | CI green with V0.6 QEMU coverage | IMPLEMENTED+VERIFIED | run 33635955858 success on ubuntu-24.04 (fmt, split clippy, host tests, images, boot BIOS/UEFI, selftest BIOS+UEFI, shell 0.6.0-dev, desktop-input, **AC97 audio + WAV**, **USB UHCI + HID**, panic, fs-persist, website, gitleaks); tag v0.6.0 on commit cccf5a7 |
 | WEB-V06 | os.itisyou.app reflects V0.6 truthfully | IMPLEMENTED+VERIFIED | live at v0.6.0-dev commit 14f3971, milestone "V0.6 — Hardware Expansion", verified modules (device-model/pci-caps/usb-uhci/usb-hid/input-unified/audio-ac97/devinfo-syscall), "Detected hardware" evidence section on /build (7-device enumeration + USB/audio proof), roadmap corrected (V0.6 current), browser+HTTP verified, zero console errors |
 
+## V0.7 — System Platform
+
+| ID | Requirement | Status | Evidence |
+|---|---|---|---|
+| CAP-001 | Explicit capability model, default deny | IMPLEMENTED+VERIFIED | ADR-0012; syscall dispatch gates spawn/wait/ipc/gui/dev/fs_read; `cap_default_deny` — sandbox-probe with 0 caps has all 7 privileged classes refused with ERR_PERM (`SANDBOX-DENIED-OK`) |
+| CAP-002 | Least privilege / caps enforced at kernel boundary | IMPLEMENTED+VERIFIED | per-process caps published per quantum; checks at the single dispatch boundary; services run with exact declared caps (`caps=0x2` markers) |
+| CAP-003 | Delegation only through controlled paths, never amplifying | IMPLEMENTED+VERIFIED | `spawn` inherits exactly; `spawn_caps` = parent ∩ requested; `cap_delegation_no_amplify` — child requesting gui from a gui-less parent finds gui denied, delegated fs_read works (`CAP-DELEGATION-OK`); host `delegation_never_amplifies` |
+| CAP-004 | Denied access is actually denied (adversarial) | IMPLEMENTED+VERIFIED | sandbox-probe exits 0 ONLY if every escape attempt returned ERR_PERM; `cap_denials_audited` (≥7 audit denial records) |
+| SBX-001 | FS visibility restricted by sandbox prefixes | IMPLEMENTED+VERIFIED | `fs_read` checks normalized path vs prefixes (`is_within`, component-wise); `fs_sandbox_enforced` + `FS-SANDBOX-OK` (out-of-prefix, foreign app dir, traversal `/etc/../bin/init`, root-escape all ERR_PERM; in-sandbox miss stays ERR_NOENT) |
+| SBX-002 | Apps cannot interfere with other apps/services/kernel | IMPLEMENTED+VERIFIED | per-process address spaces + GUI ownership (V0.3/V0.5) + caps + fs sandbox; hostile programs (crashd fault, sandbox-probe escapes) contained with kernel + peers unaffected; `svc_no_leaked_processes` |
+| SVC-001 | Service model with supervisor, states, diagnostics | IMPLEMENTED+VERIFIED | services.rs registry (binary+deps+exact caps); states Stopped/Running/Done/Restarting/Failed; `[ITISYOU:SVC]` marker per transition; `svc` command shows real state |
+| SVC-002 | Deterministic startup ordering + dependency handling | IMPLEMENTED+VERIFIED | Kahn order in host-tested kernel-core (`orders_respecting_dependencies`); `start ... order=0/1/2` markers (echod before its dependents) |
+| SVC-003 | Dependency cycles rejected | IMPLEMENTED+VERIFIED | host `detects_cycles` (direct/self/indirect) + in-kernel `svc_cycle_detected` |
+| SVC-004 | Crash containment + bounded restart policy | IMPLEMENTED+VERIFIED | crashd #PF contained, restarted exactly 3×, then Failed (`svc_crash_restart_bounded`, `state=failed ... restarts=3`); no restart storm |
+| SVC-005 | A service actually serves (not just runs) | IMPLEMENTED+VERIFIED | echod served 3 IPC pings from the dependent client (`ECHOD-SERVED-3`, `SVC-CLIENT-OK`) |
+| APP-001 | App identity/manifest with requested capabilities | IMPLEMENTED+VERIFIED | strict manifest (name/version/caps; unknown keys/caps + duplicates = errors); 8 host tests incl. hostile names/versions |
+| APP-002 | Launch through the platform, manifest-only caps | IMPLEMENTED+VERIFIED | `pkg_launch_manifest_caps` — hello-app's granted fs_read works AND its out-of-manifest gui attempt is denied (`HELLO-APP-OK`) |
+| PKG-001 | Smallest secure package format, integrity-verified | IMPLEMENTED+VERIFIED | ITPKG (header+manifest+ELF+SHA-256); strict parse (exact lengths); FIPS-vector-tested SHA-256; verified at install AND re-verified at launch |
+| PKG-002 | Malformed/corrupt packages refused, store untouched | IMPLEMENTED+VERIFIED | `pkg_corrupt_rejected` (bit-flipped payload → DigestMismatch), `pkg_evil_manifest_rejected` (digest-valid pkg demanding undefined capability), `pkg_store_unchanged_after_refusals`; host adversarial length/truncation/trailing tests |
+| PKG-003 | Deterministic, auditable install/uninstall ops | IMPLEMENTED+VERIFIED | version-numbered store; every op emits `[ITISYOU:PKG]` + audit records; ITFS `remove` (atomic superblock commit) |
+| UPD-001 | Staged/atomic update | IMPLEMENTED+VERIFIED | stage `.pkg` → commit `.ok` = one crash-atomic superblock transition; `pkg_update_atomic` (v2 active, v1 rollback target) |
+| UPD-002 | Rollback restores previous version | IMPLEMENTED+VERIFIED | `pkg_rollback_atomic` (remove newest `.ok`; v1 active again; demoted pkg kept as evidence) + relaunch green |
+| UPD-003 | Interrupted update never activates; recovery detects it | IMPLEMENTED+VERIFIED | `pkg_interrupted_never_activates` + two-boot QEMU legs `update-interrupt`/`update-recovery`: staged v2 survives reboot as orphan, recovery removes it (`[ITISYOU:RECOVERY]` + audit), v1 launches |
+| UPD-004 | Cryptographic signatures/authenticity | NOT APPLICABLE (deferred) | integrity = SHA-256 (verified); signatures need key provisioning + root of trust the platform lacks; architecture documented in ADR-0012 |
+| UPD-005 | Kernel/system-image update | NOT APPLICABLE (deferred) | the OS does not own its boot media in the QEMU harness; app-store staged/commit/rollback is the designed mechanism for it (ADR-0012, V0.8+) |
+| REC-001 | Known-good state + recovery path, forensic evidence kept | IMPLEMENTED+VERIFIED | ITFS double-buffered superblocks (V0.4) + recovery scan (reports + audits BEFORE cleanup); demoted/orphaned packages retained until an explicit recovery pass |
+| AUD-001 | Privileged actions + denials recorded (actor/action/cap/result/seq) | IMPLEMENTED+VERIFIED | audit ring + `[ITISYOU:AUDIT] seq/tick/pid/action/cap/result` markers; `pkg_audit_trail`, `cap_denials_audited`; no payload contents logged |
+| AUD-002 | AI-ready provenance path (intelligence ≠ authority) | IMPLEMENTED+VERIFIED | request → capability check → deterministic service → action → audit is the ONLY privileged path; no AI in kernel; documented in ADR-0012/SECURITY_MODEL |
+| UI-001 | Real platform state exposed to the user | IMPLEMENTED+VERIFIED | `svc` (service states), `pkg list` (versions/active/staged), `audit` (trail), `run … [caps] [prefix]` — all read live kernel/platform data |
+| FSL-001 | Platform filesystem layout | IMPLEMENTED+VERIFIED | initramfs: `/bin` (system), `/pkgs` (install media), `/etc` (config, generated version); persistent ITFS = package store + writable state; app view = `/apps/<name>` + `/etc` |
+| REG-V07 | V0.1–V0.6 regressions green under V0.7 | IMPLEMENTED+VERIFIED | selftest **pass=106 fail=0** (all prior suites incl. graphics/USB/audio/devices); legacy-full caps keep pre-platform launches unchanged |
+| CI-V07 | CI green with V0.7 QEMU coverage | PENDING | to be stamped from the ubuntu-24.04 run (adds platform-bios + two-boot update legs) |
+| WEB-V07 | os.itisyou.app reflects V0.7 truthfully | PENDING | to be stamped after staging+production deploy + verification |
+
 ## Testing & verification
 
 | ID | Requirement | Status | Evidence |

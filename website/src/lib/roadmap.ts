@@ -71,7 +71,6 @@ export const MILESTONES: Milestone[] = [
     id: 'V0.6',
     name: 'Hardware Expansion',
     status: 'verified',
-    current: true,
     summary:
       'A generic device/driver model over an enriched PCI foundation (BAR sizing, capability-list walking with MSI/MSI-X/PCIe/PM detection); a USB UHCI host controller with full device enumeration over control transfers and verified HID keyboard input; an AC97 audio driver whose generated PCM samples are proven to traverse driver -> codec -> output (captured to a WAV); a unified input subsystem (PS/2 + USB HID behind one event stream, delivered to the GUI); and a devinfo syscall giving userspace device access without hardware authority. Drivers are polled, keeping the verified PIC timer/PS-2 interrupt path intact.',
     components: [
@@ -82,6 +81,19 @@ export const MILESTONES: Milestone[] = [
   },
   {
     id: 'V0.7',
+    name: 'System Platform',
+    status: 'verified',
+    current: true,
+    summary:
+      'A coherent platform over the kernel: an explicit capability model enforced default-deny at the syscall boundary (delegation only narrows - a child can never hold what its parent lacked); a traversal-proof filesystem sandbox; a service supervisor over ordinary Ring 3 processes (deterministic cycle-checked startup order, crash containment, bounded restart policy - no hidden privileged daemons); applications as SHA-256-verified ITPKG packages launched with manifest-requested capabilities only; atomic updates with rollback and reboot-proven recovery (an interrupted update can never activate); and an audit trail recording every privileged action and every denial. Future AI agents can only request through this same capability/policy/service path.',
+    components: [
+      'Capabilities: default deny, no amplification (adversarially proven)',
+      'Services, packages, atomic update/rollback/recovery',
+      'Sandboxing + audit/provenance trail',
+    ],
+  },
+  {
+    id: 'V0.8',
     name: 'Networking',
     status: 'planned',
     summary:
@@ -89,20 +101,12 @@ export const MILESTONES: Milestone[] = [
     components: ['NIC driver (VM target first)', 'IPv4/IPv6, UDP/TCP, DNS', 'Strict network permission model'],
   },
   {
-    id: 'V0.8',
+    id: 'V0.9',
     name: 'Advanced Hardware + Interrupt Modernization',
     status: 'planned',
     summary:
       'USB xHCI, APIC/IOAPIC/MSI interrupt routing, ACPI/power foundations, additional device classes, laptop hardware research, targeted driver strategy.',
     components: ['USB xHCI', 'APIC/IOAPIC/MSI', 'ACPI/power foundations'],
-  },
-  {
-    id: 'V0.9',
-    name: 'System Platform',
-    status: 'planned',
-    summary:
-      'Service manager, package/runtime model, signed/atomic updates, sandboxing, capability/permission engine, recovery and rollback.',
-    components: ['Signed/atomic updates', 'Sandboxing + capability/permission engine', 'Recovery and rollback'],
   },
   {
     id: 'V0.10',

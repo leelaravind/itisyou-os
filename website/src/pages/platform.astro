@@ -1,0 +1,233 @@
+---
+import Base from '../layouts/Base.astro';
+import Breadcrumbs from '../components/Breadcrumbs.astro';
+import StatusTag from '../components/StatusTag.astro';
+import { status } from '../lib/status';
+
+const description =
+  'The ITISYOU OS system platform (V0.7): capability-based permissions with default deny, supervised system services, a managed application/package model, atomic updates with rollback and recovery, sandboxing, and an audit/provenance trail — every claim backed by QEMU test evidence.';
+
+/** Capability table — mirrors kernel_core::caps (the enforced source). */
+const caps = [
+  ['spawn', 'create + wait on child processes'],
+  ['ipc', 'message-channel send/receive'],
+  ['gui', 'window create/draw/present'],
+  ['dev', 'device-table queries'],
+  ['fs_read', 'filesystem reads (within the sandbox prefixes)'],
+  ['audio', 'reserved — no userspace audio syscall yet'],
+  ['sys_admin', 'reserved — userspace service/package control'],
+];
+
+const evidence = [
+  [
+    'Default deny',
+    'A probe launched with ZERO capabilities attempts all 7 privileged syscall classes; every one must return ERR_PERM.',
+    'SANDBOX-DENIED-OK (exit 0 only if all attempts were denied)',
+  ],
+  [
+    'No amplification',
+    'A parent holding only {spawn, fs_read} requests gui for its child; the kernel intersects — the child finds gui denied while its delegated fs_read works.',
+    'CAP-DELEGATION-OK',
+  ],
+  [
+    'Sandbox traversal defense',
+    'A process sandboxed to /etc attempts /bin, a foreign app dir, /etc/../bin/init, and a root escape — all denied on the NORMALIZED path; an in-sandbox miss stays NOENT.',
+    'FS-SANDBOX-OK',
+  ],
+  [
+    'Service supervision',
+    'echod serves a dependent client (3 IPC ping→pong); crashd faults, is contained, restarted exactly 3× by the bounded policy, then marked Failed. Startup order is dependency-driven and cycle-checked.',
+    'ECHOD-SERVED-3 · SVC-CLIENT-OK · state=failed restarts=3',
+  ],
+  [
+    'Package integrity',
+    'A bit-flipped package (digest mismatch) and a digest-valid package demanding an undefined capability are both refused — with the store untouched. The digest is re-verified at every launch.',
+    'verify result=refused reason=DigestMismatch',
+  ],
+  [
+    'Manifest-only authority',
+    'hello-app is granted exactly its manifest capability (fs_read works) and nothing more (its gui attempt is denied even though the binary asks).',
+    'HELLO-APP-OK',
+  ],
+  [
+    'Atomic update + rollback',
+    'Updating stages the new version, then commits with ONE crash-atomic filesystem transition. Rollback removes the newest commit marker: the previous version reactivates and the demoted package is kept as evidence.',
+    'rollback name=hello-app from=v2 to=v1 result=ok',
+  ],
+  [
+    'Reboot-proven recovery',
+    'Boot 1 installs v1 and stages v2 WITHOUT committing (a simulated crash mid-update), then powers off. Boot 2 finds v1 still active, detects the orphaned staged update, removes it via the recovery scan, and launches v1.',
+    '[ITISYOU:RECOVERY] orphan_staged=v2 action=remove',
+  ],
+  [
+    'Audit trail',
+    'Every privileged action and every capability denial is recorded: sequence, tick, pid, action, capability, result. No payload contents are logged.',
+    '[ITISYOU:AUDIT] seq=… pid=… action=… result=denied',
+  ],
+];
+---
+
+<Base title="System Platform" description={description}>
+  <div class="max-w-(--container-max) mx-auto px-4 sm:px-margin pt-12 pb-8 flex flex-col gap-16">
+    <header class="border-b border-line-soft pb-12">
+      <Breadcrumbs
+        class="mb-6"
+        crumbs={[{ label: 'SYSTEM', href: '/' }, { label: 'PLATFORM' }]}
+      />
+      <h1 class="font-sans font-light text-[36px] sm:text-display-lg text-ink uppercase mb-6">
+        System Platform
+      </h1>
+      <p class="font-sans text-headline-md text-meta-bright max-w-2xl border-l-2 border-ink pl-4 py-1">
+        Authority is explicit, delegated narrowly, checked in the kernel, and audited — for every process, and for any
+        future AI agent equally.
+      </p>
+      <p class="font-mono text-mono-data text-muted mt-6">
+        v{status.version} · milestone “{status.milestone}” · everything below is machine-verified in QEMU (ADR-0012)
+      </p>
+    </header>
+
+    <!-- ============ capabilities ============ -->
+    <section class="grid grid-cols-1 md:grid-cols-12 gap-gutter" aria-labelledby="p1-title">
+      <div class="md:col-span-4 flex flex-col gap-4">
+        <h2 id="p1-title" class="font-mono text-mono-label text-ink tracking-widest">01 // CAPABILITIES</h2>
+        <p class="text-body-base text-meta-bright">
+          Beyond the basic runtime (write/exit/yield/getpid), <em>every</em> syscall requires an explicit capability
+          bit or it returns <span class="font-mono text-mono-data">ERR_PERM</span> and lands in the audit trail —
+          default deny, enforced at the single kernel dispatch boundary. Delegation only narrows:
+          <span class="font-mono text-mono-data">spawn</span> inherits the parent's set exactly, and
+          <span class="font-mono text-mono-data">spawn_caps</span> grants <em>parent ∩ requested</em>. A child can
+          never hold what its parent lacked.
+        </p>
+      </div>
+      <div class="md:col-span-8">
+        <div class="table-scroll panel">
+          <table class="w-full border-collapse min-w-[480px]">
+            <caption class="sr-only">Defined capabilities</caption>
+            <thead>
+              <tr>
+                <th scope="col" class="text-left font-mono text-[11px] font-medium tracking-widest uppercase text-muted bg-log border-b border-line px-4 py-3">Capability</th>
+                <th scope="col" class="text-left font-mono text-[11px] font-medium tracking-widest uppercase text-muted bg-log border-b border-line px-4 py-3">Grants</th>
+              </tr>
+            </thead>
+            <tbody>
+              {caps.map(([name, grants]) => (
+                <tr class="border-b border-line last:border-b-0">
+                  <td class="font-mono text-mono-data text-meta px-4 py-3 whitespace-nowrap">{name}</td>
+                  <td class="text-body-base text-body px-4 py-3">{grants}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p class="text-body-base text-meta-bright text-sm mt-4">
+          Trusted kernel-shell launches keep a legacy-full set so earlier milestones' behavior is unchanged;
+          <strong>platform launches are default-deny</strong> — an app receives only what its manifest requests and
+          its launcher actually holds.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============ services ============ -->
+    <section class="grid grid-cols-1 md:grid-cols-12 gap-gutter" aria-labelledby="p2-title">
+      <div class="md:col-span-4 flex flex-col gap-4">
+        <h2 id="p2-title" class="font-mono text-mono-label text-ink tracking-widest">02 // SYSTEM SERVICES</h2>
+        <p class="text-body-base text-meta-bright">
+          Services are ordinary Ring 3 processes — no hidden privileged daemons. A static registry declares each
+          service's binary, dependencies, and the <em>exact</em> capabilities it runs with. The supervisor starts them
+          in a deterministic, cycle-checked dependency order, contains crashes, and applies a bounded restart policy
+          (3 restarts, then Failed — no restart storms). The <span class="font-mono text-mono-data">svc</span> command
+          shows the real state table.
+        </p>
+      </div>
+      <div class="md:col-span-8">
+        <div class="log-block" aria-label="Service supervision evidence from a real QEMU run">
+          <p class="text-muted">// real supervised run (QEMU serial evidence)</p>
+          <p>[ITISYOU:SVC] start name=echod pid=30 order=0 caps=0x2</p>
+          <p>[ITISYOU:SVC] start name=client pid=31 order=1 caps=0x2</p>
+          <p>[ITISYOU:SVC] start name=crashd pid=32 order=2 caps=0x0</p>
+          <p>ECHOD-SERVED-3 · SVC-CLIENT-OK</p>
+          <p>[ITISYOU:SVC] name=crashd state=restarting pid=33 restarts=1</p>
+          <p>[ITISYOU:SVC] name=crashd state=restarting pid=34 restarts=2</p>
+          <p>[ITISYOU:SVC] name=crashd state=restarting pid=35 restarts=3</p>
+          <p>[ITISYOU:SVC] name=crashd state=failed pid=35 restarts=3</p>
+          <p>[ITISYOU:SVC] supervisor done started=3 done=2 failed=1 restarts=3</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ apps + packages + updates ============ -->
+    <section class="grid grid-cols-1 md:grid-cols-12 gap-gutter" aria-labelledby="p3-title">
+      <div class="md:col-span-4 flex flex-col gap-4">
+        <h2 id="p3-title" class="font-mono text-mono-label text-ink tracking-widest">03 // APPS, PACKAGES, UPDATES</h2>
+        <p class="text-body-base text-meta-bright">
+          An application ships as one <strong>ITPKG</strong> file: a strict manifest (name, version,
+          <em>requested capabilities</em> — unknown keys or capabilities are errors, never silently tolerated) plus the
+          ELF payload, integrity-protected by SHA-256 and re-verified at every launch. The persistent store keeps
+          version-numbered packages with commit markers; install, update, rollback, and recovery are each
+          <strong>one crash-atomic filesystem transition</strong> — an interrupted update can never activate.
+        </p>
+        <p class="text-body-base text-meta-bright">
+          Honesty note: SHA-256 is <em>integrity</em>, not authenticity. Package <em>signing</em> requires key
+          provisioning and a root of trust the platform does not yet have — deferred and documented in ADR-0012, and
+          listed as Planned on the build page.
+        </p>
+      </div>
+      <div class="md:col-span-8">
+        <div class="log-block" aria-label="Package lifecycle evidence from a real QEMU run">
+          <p class="text-muted">// real lifecycle (QEMU serial evidence)</p>
+          <p>[ITISYOU:PKG] install name=hello-app v=1 result=ok</p>
+          <p>[ITISYOU:PKG] verify result=refused reason=DigestMismatch</p>
+          <p>[ITISYOU:PKG] launch name=hello-app v=1 caps=0x10 · HELLO-APP-OK</p>
+          <p>[ITISYOU:PKG] install name=hello-app v=2 result=ok</p>
+          <p>[ITISYOU:PKG] rollback name=hello-app from=v2 to=v1 result=ok</p>
+          <p class="text-muted">// after a simulated crash mid-update + REAL reboot:</p>
+          <p>[ITISYOU:RECOVERY] app=hello-app orphan_staged=v2 action=remove</p>
+          <p>[ITISYOU:PKG] launch name=hello-app v=1 · HELLO-APP-OK</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ verified security properties ============ -->
+    <section aria-labelledby="p4-title">
+      <h2 id="p4-title" class="font-mono text-mono-label text-ink tracking-widest mb-8">
+        04 // VERIFIED SECURITY PROPERTIES
+      </h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-px bg-line border border-line">
+        {evidence.map(([title, body, marker]) => (
+          <div class="bg-surface p-5 flex flex-col gap-3">
+            <div class="flex items-start justify-between gap-3">
+              <p class="font-sans text-body-lg text-ink">{title}</p>
+              <StatusTag status="verified" class="shrink-0 mt-0.5" />
+            </div>
+            <p class="text-body-base text-meta-bright text-sm">{body}</p>
+            <p class="font-mono text-mono-data text-muted text-xs mt-auto break-words">{marker}</p>
+          </div>
+        ))}
+      </div>
+      <p class="text-body-base text-meta-bright text-sm mt-6 max-w-3xl">
+        Each property above is asserted by the automated QEMU matrix (in-kernel selftests plus dedicated platform and
+        two-boot update/recovery legs) on every CI run — a property is listed here only while its test stays green.
+      </p>
+    </section>
+
+    <!-- ============ AI authority ============ -->
+    <section class="grid grid-cols-1 md:grid-cols-12 gap-gutter" aria-labelledby="p5-title">
+      <div class="md:col-span-4">
+        <h2 id="p5-title" class="font-mono text-mono-label text-ink tracking-widest">05 // AI ≠ AUTHORITY</h2>
+      </div>
+      <div class="md:col-span-8 flex flex-col gap-4">
+        <p class="text-body-base text-meta-bright max-w-3xl">
+          The platform's privileged path — <span class="font-mono text-mono-data">request → identity → capability
+          check → deterministic service → action → audit</span> — is the <em>only</em> privileged path. A future AI
+          agent gets no other entry point: it will request actions exactly like any untrusted application, subject to
+          the same default-deny capabilities, the same sandbox, and the same audit trail. There is no AI component in
+          the kernel, and none is planned there.
+        </p>
+        <p class="font-mono text-mono-data text-muted">
+          Source: <a href="/docs/security-model" class="underline underline-offset-2 hover:text-ink">docs/SECURITY_MODEL.md</a> ·
+          ADR-0012 · evidence in the repository's <span class="font-mono">artifacts/qemu/</span> JSON + serial logs
+        </p>
+      </div>
+    </section>
+  </div>
+</Base>

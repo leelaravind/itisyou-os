@@ -40,7 +40,7 @@ const sections: FaqSection[] = [
         q: 'What actually works today?',
         tag: 'STATUS',
         a: [
-          `The project is ${status.maturity} at v${status.version}, milestone “${status.milestone}”. Verified in QEMU so far: the V0.1 kernel foundation; V0.2 Ring 3 userspace; V0.3 per-process isolation, concurrent processes and a read-only NVMe driver; V0.4 preemptive multitasking plus persistent storage (NVMe writes and a minimal filesystem whose data survives a reboot); V0.5 a real graphical desktop produced by the OS itself — a framebuffer compositor with ownership-isolated windows, GUI syscalls for Ring 3 rendering, and PS/2 keyboard + mouse input; and V0.6 a hardware platform — a device/driver model over PCI (BAR sizing, capability walking), a USB UHCI controller enumerating a real keyboard with verified HID input, AC97 audio whose generated samples are captured to a WAV, unified PS/2 + USB input, and a device-info syscall that gives userspace hardware visibility without hardware authority. The build page shows the live evidence-backed module table.`,
+          `The project is ${status.maturity} at v${status.version}, milestone “${status.milestone}”. Verified in QEMU so far: the V0.1 kernel foundation; V0.2 Ring 3 userspace; V0.3 per-process isolation, concurrent processes and strict process isolation; V0.4 preemptive multitasking plus persistent storage; V0.5 a real graphical desktop (ownership-isolated windows, GUI syscalls, PS/2 keyboard + mouse); V0.6 hardware foundations (device model + UHCI HID + AC97 + unified input); and V0.7 platform controls: capability default deny, sandboxed fs visibility, service supervision, manifest-launch apps, and atomic update+rollback with reboot recovery. The build page shows the live evidence-backed module table.`
         ],
       },
     ],
@@ -60,7 +60,7 @@ const sections: FaqSection[] = [
         q: 'What hardware does it support?',
         tag: 'HARDWARE',
         a: [
-          'A virtual one: the QEMU x86_64 machine model, single CPU, no SMP. There is no USB, audio, Wi-Fi, Bluetooth, storage or GPU driver support. Claims will expand only when the corresponding milestones pass verification.',
+          'A QEMU-only execution target: x86_64 BIOS/UEFI, single CPU, NVMe, PCI devices, PS/2 + UHCI HID input, and AC97 audio as currently verified. It does not claim general desktop/laptop hardware coverage yet, and no network stack is implemented.',
         ],
       },
     ],
@@ -107,7 +107,7 @@ const sections: FaqSection[] = [
         q: 'Is it secure?',
         tag: 'HONESTY',
         a: [
-          'Not yet, and it does not claim to be. As of V0.5 the kernel runs concurrent, preemptively-scheduled Ring 3 processes, each in its own address space, with MMU-enforced kernel/user AND cross-process memory isolation, validated syscalls (including GUI syscalls with ownership-checked, bounds-checked window rendering), per-process crash containment, and a non-yielding process provably unable to monopolize the CPU — all machine-checked by automated QEMU tests. What is still missing for a real security story: a capability model, sandboxing, signed/atomic updates, and much more. The posture remains honest boundaries: documented trust boundaries, minimized and documented unsafe code, panic on violated kernel invariants, and strict VM containment so the host machine is never at risk.',
+          'The platform is not production hardened, but V0.7 moved core trust controls into tested platform enforcement: default-deny capabilities, delegation only through controlled paths, filesystem sandboxing by normalized prefixes, deterministic service mediation, auditable denials, atomic update/rollback/recovery, and crash containment. Remaining gaps: no capability revocation/handles yet, no package signing, no network, and no userspace filesystem write API.',
         ],
       },
     ],

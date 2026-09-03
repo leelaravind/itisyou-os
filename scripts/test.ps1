@@ -70,7 +70,7 @@ Write-Output '=== QEMU shell interaction (BIOS) ==='
     '--send', 'echo shell-echo-check', '--send', 'definitely-not-a-command',
     '--send', 'run /bin/init', '--send', 'run /bin/broken',
     '--send', 'panic-test', '--send', 'shutdown',
-    '--require', 'itisyou-os 0.6.0-dev',
+    '--require', 'itisyou-os 0.7.0-dev',
     '--require', 'task 0: kmain',
     '--require', 'RING3-DONE',
     '--require', 'run: /bin/init: Exit(0)',
@@ -143,6 +143,71 @@ Write-Output '=== QEMU USB (UHCI) enumeration + HID input into the desktop (BIOS
     '--require', 'usb hid iface=', '--require', 'key=g src=usb',
     '--require', 'DESKTOP-INPUT-VERIFIED',
     '--timeout-secs', '150', '--label', 'usb-hid-bios')
+
+Write-Output '=== QEMU system platform: caps, sandbox, services, packages (BIOS) ==='
+# The V0.7 platform driven through the shell over a persistent NVMe store:
+# a zero-capability probe proves default deny; a sandboxed fs-probe proves the
+# path sandbox; the service supervisor runs (echod serves a client, crashd is
+# restarted 3x then Failed); packages install/launch/update/rollback with the
+# hello-app running under manifest-only capabilities; the audit trail shows
+# denials + privileged actions. All values are real kernel/platform state.
+$platDisk = Join-Path $env:ITISYOU_SCRATCH 'itisyou-platform-test.img'
+Remove-Item $platDisk -ErrorAction SilentlyContinue
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $platDisk,
+    '--expect', 'B190',
+    '--send', 'run /bin/sandbox-probe -',
+    '--send', 'run /bin/fs-probe fs_read /etc',
+    '--send', 'svc',
+    '--send', 'pkg install /pkgs/hello-app-1.itpkg',
+    '--send', 'pkg install /pkgs/hello-app-bad.itpkg',
+    '--send', 'pkg launch hello-app',
+    '--send', 'pkg install /pkgs/hello-app-2.itpkg',
+    '--send', 'pkg rollback hello-app',
+    '--send', 'pkg launch hello-app',
+    '--send', 'pkg list',
+    '--send', 'audit',
+    '--send', 'shutdown',
+    '--require', 'SANDBOX-DENIED-OK',
+    '--require', 'FS-SANDBOX-OK',
+    '--require', 'ECHOD-SERVED-3', '--require', 'SVC-CLIENT-OK',
+    '--require', 'name=crashd state=failed pid=', '--require', 'restarts=3',
+    '--require', 'install name=hello-app v=1 result=ok',
+    '--require', 'verify result=refused reason=DigestMismatch',
+    '--require', 'HELLO-APP-OK',
+    '--require', 'rollback name=hello-app from=v2 to=v1 result=ok',
+    '--require', 'result=denied',
+    '--timeout-secs', '240', '--label', 'platform-bios')
+
+Write-Output '=== QEMU interrupted update -> recovery (BIOS, two boots) ==='
+# Boot 1 installs v1 and STAGES v2 without committing (a simulated crash mid-
+# update), then powers off. Boot 2 (fresh guest, same disk) must find v1
+# still active, detect the orphaned staged v2, remove it via the recovery
+# scan, and launch v1 - an interrupted update can never activate, and
+# recovery works across a real reboot.
+$updDisk = Join-Path $env:ITISYOU_SCRATCH 'itisyou-update-test.img'
+Remove-Item $updDisk -ErrorAction SilentlyContinue
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $updDisk,
+    '--expect', 'B190',
+    '--send', 'pkg install /pkgs/hello-app-1.itpkg',
+    '--send', 'pkg stage /pkgs/hello-app-2.itpkg',
+    '--send', 'shutdown',
+    '--require', 'install name=hello-app v=1 result=ok',
+    '--require', 'stage name=hello-app v=2',
+    '--timeout-secs', '180', '--label', 'update-interrupt')
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $updDisk,
+    '--expect', 'B190',
+    '--send', 'pkg recover',
+    '--send', 'pkg launch hello-app',
+    '--send', 'shutdown',
+    '--require', 'orphan_staged=v2 action=remove',
+    '--require', 'launch name=hello-app v=1',
+    '--require', 'HELLO-APP-OK',
+    '--timeout-secs', '180', '--label', 'update-recovery')
+Remove-Item $updDisk -ErrorAction SilentlyContinue
+Remove-Item $platDisk -ErrorAction SilentlyContinue
 
 Write-Output '=== QEMU intentional panic (BIOS) ==='
 & $runner @('--image', 'target/images/itisyou-kernel-panictest-bios.img',

@@ -25,9 +25,24 @@ const boundaries = [
     now: true,
     text: 'V0.5, verified: concurrent, preemptively-scheduled ring 3 processes, each in its own address space (per-process page tables — cross-process memory isolation is MMU-enforced and machine-checked). A non-yielding process cannot monopolize the CPU. Syscall arguments validated against the active address space before any kernel dereference; no user mapping of kernel pages; faults contained to the faulting process. The screen is isolated too: a ring 3 program reaches the framebuffer only through validated GUI syscalls, and the compositor rejects any draw outside a process’s own window (ownership + bounds enforced, machine-checked). Hardware follows the same rule (V0.6): applications get device information only through a device-info syscall — all PCI config, MMIO, and port I/O stay in the kernel, never exposed to Ring 3.',
   },
-  { n: 4, name: 'Privileged system-service boundary', now: false, text: 'Future.' },
-  { n: 5, name: 'Untrusted application boundary', now: false, text: 'Future.' },
-  { n: 6, name: 'AI/agent boundary', now: false, text: 'Future — governed by the authority principle above.' },
+  {
+    n: 4,
+    name: 'Privileged system-service boundary',
+    now: true,
+    text: 'V0.7, verified: system services are ordinary ring 3 processes supervised by the kernel with EXACTLY their declared capabilities — no hidden privileged daemons. Deterministic cycle-checked startup order, crash containment, a bounded restart policy (a crash-looping service is restarted 3 times then marked Failed), and a structured diagnostic marker per state transition.',
+  },
+  {
+    n: 5,
+    name: 'Untrusted application boundary',
+    now: true,
+    text: 'V0.7, verified: applications launch only through the platform, receiving manifest-requested capabilities intersected with the launcher’s (default deny) under a traversal-proof filesystem sandbox. Denied access is machine-verified as actually denied (a zero-capability probe must see all 7 privileged syscall classes refused), and every denial is audited.',
+  },
+  {
+    n: 6,
+    name: 'AI/agent boundary',
+    now: false,
+    text: 'Future — but the V0.7 request → capability check → deterministic service → action → audit path IS the pipeline an agent will use; agents get no other entry point.',
+  },
   { n: 7, name: 'External network boundary', now: false, text: 'Future — no network stack exists in V0.1.' },
 ];
 

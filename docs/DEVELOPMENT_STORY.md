@@ -340,3 +340,52 @@ device table without any hardware authority; a userspace `/bin/lsdev` proved it
   and reported, but wiring APIC/MSI would mean rewriting the verified PIC
   timer/PS-2 interrupt path's tests — a regression risk, not progress. IRQ
   modernization is deferred to V0.8 with that rationale recorded (ADR-0011).
+
+### 17:00 — V0.7 System Platform
+
+Baseline preserved as tag `v0.6.0`. Goal: turn the foundation into a coherent
+platform — capabilities, services, apps/packages, updates, recovery, audit
+(ADR-0012) — with the AI-authority rule built into the bones.
+
+**Capability model** (committed cda6343): explicit per-process bits enforced
+default-deny at the syscall dispatch boundary; `spawn` inherits exactly,
+`spawn_caps` intersects — amplification is impossible by construction and
+proven adversarially (a gui-less parent requesting gui for its child yields a
+child whose gui calls are ERR_PERM while its delegated fs_read works). A new
+`fs_read` syscall carries the FS sandbox: normalized-path prefix checks that
+defeat `..` traversal, `//`, and component-boundary tricks. The
+sandbox-probe program attempts all 7 privileged syscall classes with zero
+capabilities and exits 0 only if every one was denied — SANDBOX-DENIED-OK is
+the machine-readable proof of default deny. Every denial is audited.
+
+**Services**: a static registry of Ring 3 services with declared deps + exact
+capabilities; the supervisor computes a deterministic cycle-checked startup
+order (host-tested Kahn), co-schedules preemptively, contains crashes, and
+applies the bounded restart policy. Verified: echod actually SERVED a
+dependent client (3 IPC ping→pong), crashd faulted, was restarted exactly 3x,
+then marked Failed — no restart storm, no leaked processes.
+
+**Packages/updates**: ITPKG (strict manifest + ELF + SHA-256, packed by
+build.rs with the same kernel-core code the kernel verifies with). The
+persistent store's every transition is ONE crash-atomic ITFS superblock
+commit (ITFS gained atomic `remove`): install = stage + commit-marker;
+rollback = remove the newest marker (previous version reactivates, demoted
+package kept as evidence); recovery detects + audits + removes orphaned
+staged updates. Corrupted (bit-flipped) and hostile-manifest (undefined
+capability) packages are refused with the store untouched. hello-app
+launches with ONLY its manifest capability — its out-of-manifest gui attempt
+is denied even though the binary asks.
+
+- Failure (root-caused fast thanks to a missing marker): the second install
+  in the selftest silently failed — the 774 KB debug ELF nearly filled the
+  1 MiB disposable NVMe disk, so staging v2 hit NoSpace. Fixed by growing
+  the harness test disks to 16 MiB and making storage errors emit a marker
+  (silent failure paths are themselves bugs).
+- **Reboot-proven recovery**: boot 1 installs v1 and stages v2 without
+  committing (simulated crash mid-update), powers off; boot 2 finds v1
+  active, detects the orphan, removes it via the recovery scan, launches v1.
+  An interrupted update can never activate — across a REAL reboot.
+
+Selftest pass=106 fail=0 (all V0.1–V0.6 suites green under the new
+enforcement); kernel-core at 122 host tests; new platform-bios +
+update-interrupt/update-recovery QEMU legs.

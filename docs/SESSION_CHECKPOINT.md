@@ -1,81 +1,53 @@
 # Session checkpoint — resumable state
 
-**Timestamp:** 2026-09-02 ~13:30 Europe/London
+**Timestamp:** 2026-09-03 ~18:20 Europe/London
 **Repository:** `E:\Project\itisyou-os` · branch `main`
-**Tags:** `v0.1.0` … `v0.6.0` (v0.6.0 on commit cccf5a7; CI 33635955858 green)
+**Tags:** `v0.1.0` … `v0.6.0` (v0.7.0 pending until final CI + production verification)
 **Remote:** https://github.com/leelaravind/itisyou-os (private)
-**Milestone:** V0.6 Hardware Expansion — verified (selftest pass=84 fail=0;
-full local matrix Success). Device/driver model, PCI depth (BARs + caps), UHCI
-USB with HID keyboard input, AC97 audio (samples verified via WAV), unified
-input, userspace `devinfo`.
+**Milestone:** V0.7 System Platform — verified in local matrix (selftest pass=106 fail=0; platform-bios + two-boot update-recovery green). CI/WEB stamping pending final remote verification.
 
-## V0.6 verified additions
+## V0.7 verified additions
 
-- **Device model** (`device/mod.rs`): `Device`/`Driver`/registry, deterministic
-  probe+bind, queryable device table, B190. `lsdev` shell + `/bin/lsdev`.
-- **PCI** (`device/pci.rs`, `kernel-core/pci.rs`): config writes, non-destructive
-  BAR sizing, loop-guarded capability walk (MSI/MSI-X/PCIe/PM), adversarial
-  host tests.
-- **AC97** (`device/ac97.rs`): codec init + PCM-out BDL DMA; `beep`; verified via
-  QEMU `wav` capture (non-silent).
-- **UHCI USB** (`device/uhci.rs`, `kernel-core/usb.rs`): control-transfer
-  enumeration + HID interrupt input; `usbwait`; verified against usb-kbd.
-- **Unified input**: `input::{feed_usb_*,pump_usb}` → one InputEvent stream;
-  desktop consumes PS/2 + USB.
-- **devinfo syscall** (SYS_DEVINFO=12): Ring 3 device access, least authority.
-- Harness: `--audio`/`--audio-out` (AC97+WAV, non-silence check), `--usb`.
-
-## V0.5 verified additions
-
-- **Graphics** (`kernel/src/gfx/mod.rs`): bootloader linear framebuffer (QEMU
-  1280×720 BGR) + `u32` back buffer + 8×8 font (`kernel-core::font`) +
-  fill/glyph/blit + CRC `hash_region` + one format-converting `present()`.
-  Heap grown to 32 MiB.
-- **Compositor** (`kernel/src/gfx/compositor.rs`): windows with per-window RGB
-  backing stores, wallpaper + top bar + cursor; ownership + bounds enforced
-  (a process cannot draw into another window or out of bounds); windows removed
-  on owner exit.
-- **GUI syscalls** (`syscall.rs` SYS_GUI_CREATE/FILL/TEXT/PRESENT): Ring 3
-  renders a window from validated user-memory request structs, no direct FB.
-  `user/gui-demo` prints `RING3-GUI-OK`.
-- **Input** (`kernel/src/input/mod.rs`, `kernel-core::{scancode,mouse}`): PS/2
-  keyboard (IRQ1) + mouse (IRQ12) via i8042; host-tested decoders; every event
-  emits an `[ITISYOU:INPUT]` marker. Mouse IRQ accumulates deltas lock-free.
-- **Desktop** (`kernel/src/desktop.rs`, `desktop` shell command): live window
-  reacting to keyboard + mouse; `[ITISYOU:MODE] desktop` → `DESKTOP-READY` →
-  `DESKTOP-INPUT-VERIFIED`.
-- **Harness** (`tools/qemu-runner`): HMP **monitor** channel — `--monitor`,
-  `--inject-after <substr>`, `--monitor-cmd <hmp>` — injects real PS/2 input
-  (`sendkey`/`mouse_move`/`mouse_button`) and captures `screendump`. New
-  `desktop-input-bios` leg proves the graphics + input path; `desktop.ppm` is
-  the OS-rendered desktop.
-- Stages **B170** (graphics) + **B180** (desktop) added.
+- **Capabilities** (kernel-core/caps + syscall gating): default-deny bits,
+  per-quantum publication, spawn inherits / spawn_caps intersects (no
+  amplification). New syscalls: SYS_FS_READ=13 (sandboxed), SYS_SPAWN_CAPS=14.
+- **FS sandbox**: per-process path prefixes checked on the normalized path
+  (kernel-core path::is_within — traversal-proof).
+- **Audit** (kernel/audit.rs): ring + [ITISYOU:AUDIT] markers for every
+  privileged action + denial; `audit` command.
+- **Services** (kernel/services.rs + kernel-core/service): registry with deps
+  + exact caps; deterministic cycle-checked order; bounded restart (3);
+  [ITISYOU:SVC] markers; `svc` command. proc gains reap() +
+  run_until_pid_idle_bounded().
+- **Packages/updates** (kernel/platform.rs + kernel-core/{manifest,pkg,
+  sha256,update}; ITFS atomic remove): ITPKG format; store `<app>.<v>.pkg`
+  + `.ok`; install/rollback/recover each ONE atomic superblock commit;
+  launch re-verifies digest + grants manifest∩launcher caps under the app
+  sandbox (/apps/<name> + /etc); `pkg` command. Fixtures packed by build.rs
+  (incl. corrupted + hostile-manifest) under /pkgs.
+- New user programs: sandbox-probe, cap-parent/child, fs-probe, echo-svc,
+  crashy-svc, svc-client, hello-app.
+- Harness: NVMe test disks 16 MiB (774 KB debug ELFs need the room).
 
 ## Gates / how to resume
 
-- `scripts/test.ps1` runs the full matrix (host tests + boot/selftest/shell/
-  **desktop-input**/panic/fs-persist). `scripts/verify.ps1` = full gate (fmt,
-  clippy, doctor, tests, website, secret scan).
-- Desktop input test needs the runner `--monitor`/`--monitor-cmd` flags;
-  storage FS tests need `--nvme-persist <path>`.
-- Environment note: BIOS boot in this QEMU/TCG is slow (~40 s to load the
-  bootloader via ATA PIO; UEFI ~12 s). Timeouts are sized for it; no
-  acceleration change (keeps validated V0.1–V0.4 behavior).
-- Next milestone **V0.6** candidates: window focus/drag/z-order + a broader GUI
-  toolkit; compositing a persistent Ring 3 window on the live desktop (needs
-  async process spawning); OR networking (NIC/virtio-net). Also pending from
-  earlier: second block driver (virtio-blk/AHCI), richer ITFS ops, stack guard
-  pages, capability-handle IPC, scheduler priorities.
+- `scripts/test.ps1` = full matrix incl. platform-bios + update-interrupt/
+  update-recovery (two boots, one persistent disk). `scripts/verify.ps1` =
+  full gate.
+- Shell: `run <path> [caps|-] [prefix]`, `svc`, `pkg …`, `audit`.
+- Next **V0.8**: networking (e1000 already enumerated at 00:03.0; polled
+  RX/TX + ARP/IPv4/UDP fits the polled-driver + host-tested-parser pattern).
+  Platform follow-ups: capability handles/revocation, signed packages,
+  userspace FS writes, long-running services/userspace init.
 
 ## Environment keys
 
 nightly-2026-08-01 pin; toolchains on E:; QEMU 11.1.0 at E:\tools\qemu;
-TEMP → G:\claude-tmp\tmp; wrangler OAuth on this machine; never mix
-kernel/user + host packages in one cargo invocation; user programs build
-static no-pie; user pointer validation uses the active CR3
-(translate_active); preemption resume is iretq (full GPR restore); input IRQs
-enabled with interrupts masked (PIC-lock deadlock avoidance); mouse IRQ must
-not take the compositor/FB lock.
+TEMP → G:\claude-tmp\tmp; never mix kernel + host packages in one cargo
+invocation; user programs build static no-pie; kernel build.rs has
+kernel-core as a build-dependency (ITPKG packing); CURRENT_CAPS/sandbox
+published per quantum in run_quantum; PIC-lock and compositor-lock ISR rules
+unchanged.
 
 ## Blockers
 

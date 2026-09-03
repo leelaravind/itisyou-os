@@ -1,7 +1,22 @@
 # Known limitations — honest current state
 
-Updated continuously; last update: 2026-09-02 (session 1, V0.5 graphics +
-input + desktop verified).
+Updated continuously; last update: 2026-09-02 (session 1, V0.7 system
+platform verified).
+
+- Platform (V0.7): capabilities are **bits, not handles** — no revocation of
+  a running process's authority, no per-resource capabilities yet (the IPC
+  layer is shaped for handles; ADR-0007/0012). The FS sandbox governs
+  `fs_read` only — userspace has **no filesystem write syscall** at all, so
+  write confinement is moot until one exists. Packages are
+  **integrity-verified (SHA-256), not signed** — authenticity needs key
+  provisioning and a root of trust (deferred, ADR-0012). The audit ring is
+  in-memory (64 records; serial markers are the durable evidence). Services
+  are oneshot/bounded programs supervised to terminal states — there are no
+  long-running background services while the shell polls serial, and no
+  userspace init. Kernel-image updates are out of scope (the OS does not own
+  its boot media in QEMU); the app store's staged/commit/rollback is the
+  designed mechanism. ITFS `remove` does not reclaim data blocks (no
+  free-block reuse — space leaks by design for crash-atomicity simplicity).
 
 - QEMU is the only supported execution environment. Physical hardware boot
   is intentionally out of scope and untested.
