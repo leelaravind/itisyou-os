@@ -16,7 +16,7 @@
 - Required adversarial checks are present for denial enforcement, delegation, hostile manifests,
   malformed packages, service failures, dependency cycles, and interrupted/invalid updates.
 - `status/current.json` is the source of website truth. It is stamped to
-  verified commit `26ba2be` after CI run `33778032411` and staging/production
+  verified commit `1f08bf5` after CI run `33810268090` and staging/production
   website verification.
 
 ### Release evidence in-tree (last run)
@@ -24,7 +24,7 @@
 - Local canonical verification: `scripts/verify.ps1` → all gates green (verify marker at end: `VERIFY: OK - all applicable gates passed`).
 - QEMU artifact suite produced with zero failures for required V0.7 legs:
   `platform-bios`, `update-interrupt`, `update-recovery` in `artifacts/qemu/`.
-- Remote CI run `33778032411` is green and includes the same V0.7 QEMU
+- Remote CI run `33810268090` is green and includes the same V0.7 QEMU
   coverage on ubuntu-24.04.
 - Staging was verified before production. Production is live at
   `https://os.itisyou.app` with the V0.7 status source and security headers.
