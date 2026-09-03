@@ -11,6 +11,7 @@ export interface NavItem {
 /** Primary header navigation (per Stitch header). */
 export const NAV_PRIMARY: NavItem[] = [
   { href: '/architecture', label: 'Architecture' },
+  { href: '/platform', label: 'Platform' },
   { href: '/build', label: 'Build' },
   { href: '/roadmap', label: 'Roadmap' },
   { href: '/security', label: 'Security' },

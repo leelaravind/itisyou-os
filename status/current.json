@@ -1,50 +1,242 @@
 {
-  "version": "0.6.0-dev",
+  "version": "0.7.0-dev",
   "maturity": "pre-alpha",
   "architecture": "x86_64",
   "environment": "QEMU",
-  "milestone": "V0.6 — Hardware Expansion",
-  "commit": "14f3971",
-  "lastVerifiedAt": "2026-09-02T13:30:00Z",
+  "milestone": "V0.7 — System Platform",
+  "commit": "PENDING",
+  "lastVerifiedAt": "2026-09-02T17:40:00Z",
   "verification": "locally-verified",
   "modules": [
-    { "id": "boot", "name": "Boot path (BIOS + UEFI via bootloader crate)", "status": "verified" },
-    { "id": "serial", "name": "Serial console & structured boot stages", "status": "verified" },
-    { "id": "cpu", "name": "CPU identification", "status": "verified" },
-    { "id": "memory-physical", "name": "Physical memory manager", "status": "verified" },
-    { "id": "memory-virtual", "name": "Virtual memory / paging (kernel + user W^X)", "status": "verified" },
-    { "id": "heap", "name": "Kernel heap allocator", "status": "verified" },
-    { "id": "interrupts", "name": "GDT/IDT, exceptions, PIC/PIT timer", "status": "verified" },
-    { "id": "scheduler", "name": "Preemptive process scheduler", "status": "verified" },
-    { "id": "preemption", "name": "Timer-driven Ring 3 preemption", "status": "verified" },
-    { "id": "vfs", "name": "VFS & embedded initramfs", "status": "verified" },
-    { "id": "shell", "name": "Interactive serial shell", "status": "verified" },
-    { "id": "elf-loader", "name": "ELF64 loader (strict validation, W^X)", "status": "verified" },
-    { "id": "ring3", "name": "Ring 3 execution & privilege isolation", "status": "verified" },
-    { "id": "syscalls", "name": "Syscall ABI (write/exit/yield/getpid/spawn/wait/msg/gui)", "status": "verified" },
-    { "id": "process", "name": "Process lifecycle & crash containment", "status": "verified" },
-    { "id": "process-isolation", "name": "Per-process page tables & concurrency", "status": "verified" },
-    { "id": "ipc", "name": "IPC message channels", "status": "verified" },
-    { "id": "pci", "name": "PCI enumeration", "status": "verified" },
-    { "id": "block", "name": "Block-device abstraction (read + write)", "status": "verified" },
-    { "id": "nvme", "name": "NVMe driver (read + write + flush)", "status": "verified" },
-    { "id": "filesystem", "name": "ITFS persistent filesystem", "status": "verified" },
-    { "id": "graphics", "name": "Framebuffer graphics (back buffer, font, primitives)", "status": "verified" },
-    { "id": "compositor", "name": "Window compositor (per-window buffers, ownership isolation)", "status": "verified" },
-    { "id": "gui-syscalls", "name": "GUI syscalls (validated Ring 3 window rendering)", "status": "verified" },
-    { "id": "input-keyboard", "name": "PS/2 keyboard input (IRQ1)", "status": "verified" },
-    { "id": "input-mouse", "name": "PS/2 mouse input (IRQ12)", "status": "verified" },
-    { "id": "desktop", "name": "Interactive desktop (live keyboard + mouse)", "status": "verified" },
-    { "id": "device-model", "name": "Device/driver model (probe/bind, device table)", "status": "verified" },
-    { "id": "pci-caps", "name": "PCI BAR sizing + capability walking (MSI/MSI-X/PCIe/PM)", "status": "verified" },
-    { "id": "usb-uhci", "name": "USB UHCI host controller (control transfers, enumeration)", "status": "verified" },
-    { "id": "usb-hid", "name": "USB HID keyboard input (interrupt endpoint)", "status": "verified" },
-    { "id": "input-unified", "name": "Unified input events (PS/2 + USB HID)", "status": "verified" },
-    { "id": "audio-ac97", "name": "AC97 audio output (PCM DMA, samples verified)", "status": "verified" },
-    { "id": "devinfo-syscall", "name": "Userspace device access syscall (least authority)", "status": "verified" },
-    { "id": "usb-xhci", "name": "USB xHCI host controller", "status": "planned" },
-    { "id": "irq-apic", "name": "APIC/IOAPIC/MSI interrupt routing", "status": "planned" },
-    { "id": "storage-second-driver", "name": "Second block-device backend (AHCI/virtio)", "status": "planned" },
-    { "id": "test-harness", "name": "QEMU boot/regression harness (serial + monitor + audio/USB)", "status": "verified" }
+    {
+      "id": "boot",
+      "name": "Boot path (BIOS + UEFI via bootloader crate)",
+      "status": "verified"
+    },
+    {
+      "id": "serial",
+      "name": "Serial console & structured boot stages",
+      "status": "verified"
+    },
+    {
+      "id": "cpu",
+      "name": "CPU identification",
+      "status": "verified"
+    },
+    {
+      "id": "memory-physical",
+      "name": "Physical memory manager",
+      "status": "verified"
+    },
+    {
+      "id": "memory-virtual",
+      "name": "Virtual memory / paging (kernel + user W^X)",
+      "status": "verified"
+    },
+    {
+      "id": "heap",
+      "name": "Kernel heap allocator",
+      "status": "verified"
+    },
+    {
+      "id": "interrupts",
+      "name": "GDT/IDT, exceptions, PIC/PIT timer",
+      "status": "verified"
+    },
+    {
+      "id": "scheduler",
+      "name": "Preemptive process scheduler",
+      "status": "verified"
+    },
+    {
+      "id": "preemption",
+      "name": "Timer-driven Ring 3 preemption",
+      "status": "verified"
+    },
+    {
+      "id": "vfs",
+      "name": "VFS & embedded initramfs",
+      "status": "verified"
+    },
+    {
+      "id": "shell",
+      "name": "Interactive serial shell",
+      "status": "verified"
+    },
+    {
+      "id": "elf-loader",
+      "name": "ELF64 loader (strict validation, W^X)",
+      "status": "verified"
+    },
+    {
+      "id": "ring3",
+      "name": "Ring 3 execution & privilege isolation",
+      "status": "verified"
+    },
+    {
+      "id": "syscalls",
+      "name": "Syscall ABI (write/exit/yield/getpid/spawn/wait/msg/gui)",
+      "status": "verified"
+    },
+    {
+      "id": "process",
+      "name": "Process lifecycle & crash containment",
+      "status": "verified"
+    },
+    {
+      "id": "process-isolation",
+      "name": "Per-process page tables & concurrency",
+      "status": "verified"
+    },
+    {
+      "id": "ipc",
+      "name": "IPC message channels",
+      "status": "verified"
+    },
+    {
+      "id": "pci",
+      "name": "PCI enumeration",
+      "status": "verified"
+    },
+    {
+      "id": "block",
+      "name": "Block-device abstraction (read + write)",
+      "status": "verified"
+    },
+    {
+      "id": "nvme",
+      "name": "NVMe driver (read + write + flush)",
+      "status": "verified"
+    },
+    {
+      "id": "filesystem",
+      "name": "ITFS persistent filesystem",
+      "status": "verified"
+    },
+    {
+      "id": "graphics",
+      "name": "Framebuffer graphics (back buffer, font, primitives)",
+      "status": "verified"
+    },
+    {
+      "id": "compositor",
+      "name": "Window compositor (per-window buffers, ownership isolation)",
+      "status": "verified"
+    },
+    {
+      "id": "gui-syscalls",
+      "name": "GUI syscalls (validated Ring 3 window rendering)",
+      "status": "verified"
+    },
+    {
+      "id": "input-keyboard",
+      "name": "PS/2 keyboard input (IRQ1)",
+      "status": "verified"
+    },
+    {
+      "id": "input-mouse",
+      "name": "PS/2 mouse input (IRQ12)",
+      "status": "verified"
+    },
+    {
+      "id": "desktop",
+      "name": "Interactive desktop (live keyboard + mouse)",
+      "status": "verified"
+    },
+    {
+      "id": "device-model",
+      "name": "Device/driver model (probe/bind, device table)",
+      "status": "verified"
+    },
+    {
+      "id": "pci-caps",
+      "name": "PCI BAR sizing + capability walking (MSI/MSI-X/PCIe/PM)",
+      "status": "verified"
+    },
+    {
+      "id": "usb-uhci",
+      "name": "USB UHCI host controller (control transfers, enumeration)",
+      "status": "verified"
+    },
+    {
+      "id": "usb-hid",
+      "name": "USB HID keyboard input (interrupt endpoint)",
+      "status": "verified"
+    },
+    {
+      "id": "input-unified",
+      "name": "Unified input events (PS/2 + USB HID)",
+      "status": "verified"
+    },
+    {
+      "id": "audio-ac97",
+      "name": "AC97 audio output (PCM DMA, samples verified)",
+      "status": "verified"
+    },
+    {
+      "id": "devinfo-syscall",
+      "name": "Userspace device access syscall (least authority)",
+      "status": "verified"
+    },
+    {
+      "id": "capabilities",
+      "name": "Capability model (default deny, no amplification)",
+      "status": "verified"
+    },
+    {
+      "id": "fs-sandbox",
+      "name": "Filesystem sandbox (traversal-proof path prefixes)",
+      "status": "verified"
+    },
+    {
+      "id": "services",
+      "name": "Service supervisor (ordering, restart policy, diagnostics)",
+      "status": "verified"
+    },
+    {
+      "id": "app-model",
+      "name": "Application manifests + platform launch (least privilege)",
+      "status": "verified"
+    },
+    {
+      "id": "packages",
+      "name": "ITPKG packages (SHA-256 verified install/launch)",
+      "status": "verified"
+    },
+    {
+      "id": "updates",
+      "name": "Atomic updates + rollback + reboot-proven recovery",
+      "status": "verified"
+    },
+    {
+      "id": "audit",
+      "name": "Audit/provenance trail (actions + denials)",
+      "status": "verified"
+    },
+    {
+      "id": "usb-xhci",
+      "name": "USB xHCI host controller",
+      "status": "planned"
+    },
+    {
+      "id": "irq-apic",
+      "name": "APIC/IOAPIC/MSI interrupt routing",
+      "status": "planned"
+    },
+    {
+      "id": "storage-second-driver",
+      "name": "Second block-device backend (AHCI/virtio)",
+      "status": "planned"
+    },
+    {
+      "id": "test-harness",
+      "name": "QEMU boot/regression harness (serial + monitor + audio/USB)",
+      "status": "verified"
+    },
+    {
+      "id": "pkg-signing",
+      "name": "Package signatures (authenticity)",
+      "status": "planned"
+    }
   ]
 }

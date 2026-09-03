@@ -45,7 +45,7 @@ desktop. Remaining for a richer desktop (V0.6+): mode-setting, window
 focus/drag/z-order, compositing a persistent Ring 3 window on the live desktop,
 a broader GUI toolkit, and accessibility architecture.
 
-## V0.6 — Hardware Expansion *(current)*
+## V0.6 — Hardware Expansion *(complete — tag v0.6.0)*
 
 Achieved: a generic device/driver model (probe/bind, queryable device table)
 over an enriched PCI foundation (BAR sizing, capability-list walking with
@@ -61,20 +61,36 @@ timer/PS-2 interrupt path intact. Remaining for a fuller platform: **USB xHCI**,
 multi-device USB enumeration, bulk/isochronous transfers, audio capture,
 APIC/IOAPIC/MSI interrupt routing, and ACPI/power foundations.
 
-## V0.7 — Networking
+## V0.7 — System Platform *(current)*
+
+Achieved: an explicit **capability model** (default deny at the syscall
+boundary; delegation only narrows — a child can never hold what its parent
+lacked); a **filesystem sandbox** (normalized-path prefix checks that defeat
+traversal); a **service supervisor** over ordinary Ring 3 processes
+(deterministic cycle-checked startup order, states, crash containment,
+bounded restart policy, structured diagnostics — no hidden privileged
+daemons); a managed **application model** (strict manifests requesting
+capabilities; launches granted `manifest ∩ launcher` under an app sandbox);
+the **ITPKG package** format (SHA-256-verified at install AND launch;
+malformed/corrupt/hostile-manifest packages refused); **atomic updates with
+rollback and recovery** on the persistent store (staged → one crash-atomic
+commit; an interrupted update can never activate — proven across a real
+reboot); and an **audit/provenance trail** for every privileged action and
+denial. Future AI agents can only request through this same
+capability/policy/service path (intelligence ≠ authority). Remaining for a
+fuller platform: capability handles + revocation, signed packages (key
+provisioning), userspace FS writes, long-running background services,
+kernel-image updates.
+
+## V0.8 — Networking
 
 NIC driver (VM target first), Ethernet, ARP/NDP, IPv4/IPv6 foundations,
 UDP/TCP, DNS, strict network permission model.
 
-## V0.8 — Advanced Hardware + Interrupt Modernization
+## V0.9 — Advanced Hardware + Interrupt Modernization
 
 USB xHCI, APIC/IOAPIC/MSI, ACPI/power foundations, additional device classes,
 laptop hardware research, targeted driver strategy.
-
-## V0.9 — System Platform
-
-Service manager, package/runtime model, signed/atomic updates, sandboxing,
-capability/permission engine, recovery and rollback.
 
 ## V0.10 — AI-Native System Layer
 

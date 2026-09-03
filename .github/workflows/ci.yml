@@ -108,7 +108,7 @@ jobs:
             --send help --send version --send memory --send tasks \
             --send "ls /" --send "cat /etc/version" \
             --send "run /bin/init" --send shutdown \
-            --require "itisyou-os 0.6.0-dev" \
+            --require "itisyou-os 0.7.0-dev" \
             --require "task 0: kmain" \
             --require "RING3-DONE" \
             --require "run: /bin/init: Exit(0)" \
@@ -181,6 +181,30 @@ jobs:
             --require "usb hid iface=" --require "key=g src=usb" \
             --require "DESKTOP-INPUT-VERIFIED" \
             --timeout-secs 180 --label usb-hid-bios
+
+      - name: QEMU system platform (caps, sandbox, services, packages)
+        run: |
+          # V0.7 driven through the shell over a persistent NVMe store: a
+          # zero-capability probe proves default deny; a sandboxed fs-probe
+          # proves the path sandbox; the supervisor runs services (echod
+          # serves a client, crashd restarts 3x then Failed); packages
+          # install/launch/update/rollback with hello-app under manifest-only
+          # capabilities; the audit trail records denials + privileged ops.
+          rm -f artifacts/platform-test.img
+          cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --nvme-persist artifacts/platform-test.img             --expect B190             --send "run /bin/sandbox-probe -"             --send "run /bin/fs-probe fs_read /etc"             --send "svc"             --send "pkg install /pkgs/hello-app-1.itpkg"             --send "pkg install /pkgs/hello-app-bad.itpkg"             --send "pkg launch hello-app"             --send "pkg install /pkgs/hello-app-2.itpkg"             --send "pkg rollback hello-app"             --send "pkg launch hello-app"             --send "pkg list"             --send "audit"             --send "shutdown"             --require "SANDBOX-DENIED-OK" --require "FS-SANDBOX-OK"             --require "ECHOD-SERVED-3" --require "SVC-CLIENT-OK"             --require "name=crashd state=failed pid=" --require "restarts=3"             --require "install name=hello-app v=1 result=ok"             --require "verify result=refused reason=DigestMismatch"             --require "HELLO-APP-OK"             --require "rollback name=hello-app from=v2 to=v1 result=ok"             --require "result=denied"             --timeout-secs 300 --label platform-bios
+          rm -f artifacts/platform-test.img
+
+      - name: QEMU interrupted update -> recovery (two boots)
+        run: |
+          # Boot 1 installs v1 and stages v2 WITHOUT committing (simulated
+          # crash mid-update). Boot 2 (fresh guest, same disk) finds v1 still
+          # active, detects + removes the orphaned staged v2, and launches v1
+          # - an interrupted update can never activate; recovery survives a
+          # real reboot.
+          rm -f artifacts/update-test.img
+          cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --nvme-persist artifacts/update-test.img             --expect B190             --send "pkg install /pkgs/hello-app-1.itpkg"             --send "pkg stage /pkgs/hello-app-2.itpkg"             --send "shutdown"             --require "install name=hello-app v=1 result=ok"             --require "stage name=hello-app v=2"             --timeout-secs 240 --label update-interrupt
+          cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --nvme-persist artifacts/update-test.img             --expect B190             --send "pkg recover"             --send "pkg launch hello-app"             --send "shutdown"             --require "orphan_staged=v2 action=remove"             --require "launch name=hello-app v=1"             --require "HELLO-APP-OK"             --timeout-secs 240 --label update-recovery
+          rm -f artifacts/update-test.img
 
       - name: QEMU intentional panic (BIOS)
         run: |
