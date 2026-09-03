@@ -1,10 +1,10 @@
 # Session checkpoint — resumable state
 
-**Timestamp:** 2026-09-03 ~18:20 Europe/London
+**Timestamp:** 2026-09-03 ~23:25 Europe/London
 **Repository:** `E:\Project\itisyou-os` · branch `main`
-**Tags:** `v0.1.0` … `v0.6.0` (V0.7 release tag is created after the final evidence stamp)
+**Tags:** `v0.1.0` … `v0.6.0` (V0.7 release tag follows this final evidence commit)
 **Remote:** https://github.com/leelaravind/itisyou-os (private)
-**Milestone:** V0.7 System Platform — locally and remotely verified (selftest pass=106 fail=0; platform-bios + two-boot update-recovery green; CI run 33778032411 green; staging and production website verified).
+**Milestone:** V0.7 System Platform — locally and remotely verified (selftest pass=106 fail=0; platform-bios + two-boot update-recovery green; CI run 33810268090 green; staging and production website verified).
 
 ## V0.7 verified additions
 
@@ -51,6 +51,7 @@ unchanged.
 
 ## Blockers
 
-None. Release evidence currently points to commit `26ba2be` and CI run
-`33778032411`; the final release tag is applied only after the closing
-evidence commit and clean-tree check.
+None. Release evidence points to commit `1f08bf5`, CI run `33810268090`,
+staging Worker `8ab2626a-88e2-4721-9956-632339d146c2`, and production Worker
+`1c065f8f-00be-46d7-ada2-7eb2238a8ebb`; the release tag is applied after the
+closing evidence commit and clean-tree check.
