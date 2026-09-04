@@ -36,6 +36,15 @@
 - package authenticity is integrity-only (SHA-256), signatures deferred to V0.8.
 - one update + recovery trail is retained (`itfs` atomic superblocks + recovery reports).
 
+### V0.8 implementation status
+
+- Implemented and directly host-tested: bounded opaque capability handles with
+  generation checks, owner binding, resource scopes, rights intersection,
+  explicit revocation, expiry, and owner teardown revocation.
+- Kernel/QEMU enforcement, userspace services, filesystem writes, signed
+  packages, networking, interrupt modernization, xHCI, persistent audit and
+  hardening are not yet verified. No website claim has been changed.
+
 ### Next milestone (V0.8)
 
 Networking (NIC + IPv4/UDP + firewall-like constraints), xHCI, APIC/IOAPIC/MSI,

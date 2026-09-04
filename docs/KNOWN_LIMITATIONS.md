@@ -98,3 +98,12 @@ Updated continuously; last update: 2026-09-03 (V0.7 release evidence closeout).
 - Host tooling scripts are Windows-specific (`scripts/*.ps1`); CI provides
   the Linux path.
 - Website deployment state is tracked in `docs/REQUIREMENTS.md` (CF-001).
+
+## V0.8 work in progress
+
+The V0.8 capability-handle contract is currently host-tested only. It is not
+yet wired into the kernel syscall boundary, so V0.7 static capability bits
+remain the active runtime policy. Networking, userspace filesystem writes,
+signed package authentication, long-running userspace services, APIC/MSI,
+xHCI, and persistent audit storage remain unverified until corresponding
+QEMU/CI evidence is produced.

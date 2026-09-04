@@ -40,6 +40,14 @@
   Platform follow-ups: capability handles/revocation, signed packages,
   userspace FS writes, long-running services/userspace init.
 
+## V0.8 work checkpoint
+
+The immutable V0.7 baseline is `v0.7.0` at `00b5eea`. V0.8 currently has one
+host-tested implementation slice: `kernel_core::capability::CapabilityTable`
+with forged/stale-handle rejection, ownership and scope checks, bounded
+delegation, revocation, expiry, and owner-teardown revocation. No V0.8
+runtime or website verification is claimed yet.
+
 ## Environment keys
 
 nightly-2026-08-01 pin; toolchains on E:; QEMU 11.1.0 at E:\tools\qemu;

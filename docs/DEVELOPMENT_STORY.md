@@ -407,3 +407,12 @@ stamped to the verified V0.7 state; the release tag follows the final pushed
 evidence commit. The final deployment versions were staging
 `a816d6cd-0d6b-48a8-a87c-ac3c1fa1c353` and production
 `bf677d19-6f34-4492-a37a-5c33e5a7200d`.
+
+### 2026-09-04 - V0.8 capability-handle foundation
+
+V0.7 was preserved as the immutable `v0.7.0` baseline. V0.8 work began with
+an allocation-free `CapabilityTable` in kernel-core: opaque generation
+checked handles, owner/resource scope and rights checks, bounded delegation,
+revocation, expiry, and automatic owner teardown revocation are covered by
+four direct host tests. Runtime kernel/QEMU integration remains deliberately
+unstamped until it is exercised at the actual boundary.
