@@ -16,6 +16,7 @@ members = [
     "user/gui-demo",
     "user/lsdev",
     "user/sandbox-probe",
+    "user/cap-handle-probe",
     "user/cap-parent",
     "user/cap-child",
     "user/fs-probe",

@@ -570,6 +570,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "user-cap-handle-probe"
+version = "0.7.0-dev"
+dependencies = [
+ "ulib",
+]
+
+[[package]]
 name = "user-cap-parent"
 version = "0.7.0-dev"
 dependencies = [

@@ -188,7 +188,7 @@ capability-handle contract in `crates/kernel-core/src/capability.rs`.
 
 | ID | Requirement | Status | Evidence |
 |---|---|---|---|
-| CAPH-001 | Opaque generation-checked resource-scoped handles | IMPLEMENTED (host-tested; QEMU integration pending) | `kernel_core::capability::CapabilityTable`; full `cargo test -p kernel-core`: 126 passed, 0 failed |
+| CAPH-001 | Opaque generation-checked resource-scoped handles | IMPLEMENTED+VERIFIED | `kernel_core::capability::CapabilityTable`; `cargo test -p kernel-core` 126 passed; QEMU `cap-handle-uefi` Success (29,363 ms) proves Ring 3 receives opaque handles and a forged generation is denied (`CAPH-FORGED-DENIED`) in `artifacts/qemu/cap-handle-uefi.result.json` |
 | CAPH-002 | Owner binding, bounded delegation, revocation, expiry | IMPLEMENTED (kernel-compiled; QEMU enforcement pending) | ownership/scope, delegation, teardown-revocation, expiry tests; `cargo check -p itisyou-kernel` passes |
 | SVC08-001 | Long-running Ring 3 services with handle-only authority | NOT STARTED | V0.7 supervisor remains the known-good baseline |
 | FS08-001 | Capability-scoped userspace filesystem writes | NOT STARTED | V0.7 read-only userspace filesystem boundary preserved |

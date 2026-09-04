@@ -1,0 +1,16 @@
+cargo-features = ["per-package-target"]
+
+[package]
+name = "user-cap-handle-probe"
+version.workspace = true
+edition.workspace = true
+forced-target = "x86_64-unknown-none"
+
+[dependencies]
+ulib = { path = "../ulib" }
+
+[[bin]]
+name = "user-cap-handle-probe"
+path = "src/main.rs"
+test = false
+bench = false
