@@ -18,6 +18,8 @@ pub const SYS_GUI_PRESENT: u64 = 11;
 pub const SYS_DEVINFO: u64 = 12;
 pub const SYS_FS_READ: u64 = 13;
 pub const SYS_SPAWN_CAPS: u64 = 14;
+pub const SYS_CAP_LIST: u64 = 15;
+pub const SYS_CAP_CHECK: u64 = 16;
 
 pub const ERR_NOSYS: u64 = u64::MAX;
 pub const ERR_FAULT: u64 = u64::MAX - 1;
@@ -34,6 +36,12 @@ pub const CAP_IPC: u64 = 1 << 1;
 pub const CAP_GUI: u64 = 1 << 2;
 pub const CAP_DEV: u64 = 1 << 3;
 pub const CAP_FS_READ: u64 = 1 << 4;
+pub const CAP_AUDIO: u64 = 1 << 5;
+pub const CAP_SYS_ADMIN: u64 = 1 << 6;
+pub const CAP_FS_WRITE: u64 = 1 << 7;
+pub const CAP_NETWORK: u64 = 1 << 8;
+pub const CAP_PROC_CONTROL: u64 = 1 << 9;
+pub const CAP_SERVICE: u64 = 1 << 10;
 
 /// Raw syscall: rax=nr, rdi/rsi/rdx=args → rax. rcx/r11 are clobbered by
 /// the hardware; the kernel may clobber any caller-saved register.
@@ -170,6 +178,19 @@ pub fn spawn_caps(path: &str, requested: u64) -> u64 {
         path.len() as u64,
         requested,
     )
+}
+
+/// Copy this process's opaque capability handles into `out`. Handles are
+/// still checked by the kernel against owner, kind, scope, generation and
+/// expiry on every use. Returns the number copied or ERR_*.
+pub fn cap_list(out: &mut [u64]) -> u64 {
+    raw_syscall(SYS_CAP_LIST, out.as_mut_ptr() as u64, out.len() as u64, 0)
+}
+
+/// Validate a handle for a capability kind and a resource range. Kind values
+/// are the stable V0.8 ABI order documented in ADR-0013.
+pub fn cap_check(handle: u64, kind: u64, scope_end: u64) -> u64 {
+    raw_syscall(SYS_CAP_CHECK, handle, kind, scope_end)
 }
 
 /// Read device record `index` into `buf` (>= 16 bytes) via the kernel device
