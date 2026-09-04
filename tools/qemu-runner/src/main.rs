@@ -440,26 +440,15 @@ fn run(opts: &Options) -> RunResult {
 
     // Accept QEMU's serial connection (it connects during device realize).
     let deadline = started + opts.timeout;
-    let serial_stream: Option<TcpStream> = loop {
-        match listener.accept() {
-            Ok((stream, _)) => {
-                // Windows: streams accepted from a nonblocking listener
-                // inherit nonblocking mode — force blocking reads back on,
-                // or the reader thread dies instantly on WouldBlock.
-                stream
-                    .set_nonblocking(false)
-                    .expect("restoring blocking mode on serial stream");
-                stream.set_nodelay(true).ok();
-                break Some(stream);
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                if Instant::now() >= deadline || child.try_wait().ok().flatten().is_some() {
-                    break None;
-                }
-                std::thread::sleep(Duration::from_millis(20));
-            }
-            Err(_) => break None,
+    let serial_stream = match accept_with_deadline(&listener, &mut child, deadline) {
+        Some(stream) => {
+            // Windows: streams accepted from a nonblocking listener
+            // inherit nonblocking mode — force blocking reads back on,
+            // or the reader thread dies instantly on WouldBlock.
+            stream.set_nodelay(true).ok();
+            Some(stream)
         }
+        None => None,
     };
     let Some(serial_stream) = serial_stream else {
         let _ = child.kill();
@@ -545,7 +534,6 @@ fn run(opts: &Options) -> RunResult {
     let mut completed_by_markers = false;
     let mut sent_commands = false;
     let mut tripped_gate = false;
-
     loop {
         let now = Instant::now();
         if now >= deadline {
@@ -630,6 +618,12 @@ fn run(opts: &Options) -> RunResult {
         }
         std::thread::sleep(Duration::from_millis(20));
     }
+    // Reap QEMU before joining the reader: that closes QEMU's TCP half even on
+    // Windows, so `BufRead::lines` cannot retain a runner process after a
+    // timed-out guest. Closing our own write half is also required: otherwise
+    // a cloned socket can keep the peer connection alive across the join.
+    let exit_status = child.wait().ok();
+    drop(serial_writer);
     let _ = reader_handle.join();
     // Drop the gate sender so a never-tripped injection thread unblocks, then
     // join it (best-effort — it exits once its sequence or the channel ends).
@@ -637,7 +631,6 @@ fn run(opts: &Options) -> RunResult {
     if let Some(h) = inject_handle {
         let _ = h.join();
     }
-    let exit_status = child.wait().ok();
     let qemu_exit_code = exit_status.and_then(|s| s.code());
     let stderr_text = stderr_handle.join().unwrap_or_default();
 
