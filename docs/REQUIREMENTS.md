@@ -179,6 +179,31 @@ labels, commit SHAs, CI run links, or file paths.
 | CI-V07 | CI green with V0.7 QEMU coverage | IMPLEMENTED+VERIFIED | GitHub Actions run [33810268090](https://github.com/leelaravind/itisyou-os/actions/runs/33810268090) on `1f08bf5` completed successfully on ubuntu-24.04; full CI gate passed including V0.7 `platform-bios`, `update-interrupt`, and `update-recovery` legs, host tests, website build, and secret scan |
 | WEB-V07 | os.itisyou.app reflects V0.7 truthfully | IMPLEMENTED+VERIFIED | staging `https://os-itisyou-app-staging.kpleelaaravind.workers.dev` verified first (Worker version `a816d6cd-0d6b-48a8-a87c-ac3c1fa1c353`), then production `https://os.itisyou.app` (Worker version `bf677d19-6f34-4492-a37a-5c33e5a7200d`); HTTP/TLS, V0.7 platform content, status metadata, security headers, responsive CSS, 404 handling, and browser journey were verified with zero console errors |
 
+## V0.8 - Secure Platform + Networking Foundation
+
+V0.8 evidence is recorded incrementally. IMPLEMENTED+VERIFIED requires a
+passing host/QEMU test and a machine-readable artifact; design work alone is
+not verification. The first completed slice is the allocation-free
+capability-handle contract in `crates/kernel-core/src/capability.rs`.
+
+| ID | Requirement | Status | Evidence |
+|---|---|---|---|
+| CAPH-001 | Opaque generation-checked resource-scoped handles | IMPLEMENTED (host-tested; QEMU integration pending) | `kernel_core::capability::CapabilityTable`; forged/stale handle test |
+| CAPH-002 | Owner binding, bounded delegation, revocation, expiry | IMPLEMENTED (host-tested; kernel boundary pending) | ownership/scope, delegation, teardown-revocation, expiry tests |
+| SVC08-001 | Long-running Ring 3 services with handle-only authority | NOT STARTED | V0.7 supervisor remains the known-good baseline |
+| FS08-001 | Capability-scoped userspace filesystem writes | NOT STARTED | V0.7 read-only userspace filesystem boundary preserved |
+| PKG08-001 | Signed package manifests and trusted-key verification | NOT STARTED | V0.7 SHA-256 integrity remains |
+| NET08-001 | QEMU NIC, Ethernet/ARP/IPv4/ICMP/UDP data path | NOT STARTED | No network claim until QEMU packet evidence exists |
+| NET08-002 | Network capability/policy enforcement | NOT STARTED | Depends on handle enforcement at the syscall/service boundary |
+| IRQ08-001 | APIC/IOAPIC interrupt routing | NOT STARTED | V0.7 PIC path preserved |
+| IRQ08-002 | MSI/MSI-X interrupt delivery | NOT STARTED | V0.7 capability detection only preserved |
+| USB08-001 | xHCI enumeration and HID path | NOT STARTED | V0.7 UHCI/HID path preserved |
+| AUD08-001 | Persistent tamper-aware audit records | NOT STARTED | V0.7 in-memory audit ring preserved |
+| HARD08-001 | SMEP/SMAP, guard pages, pointer/W^X hardening | NOT STARTED | V0.7 W^X and user-window validation preserved |
+| REG-V08 | V0.1-V0.7 regression matrix remains green | NOT VERIFIED | Must be re-run after V0.8 integration |
+| CI-V08 | Full V0.8 CI/QEMU matrix green | NOT VERIFIED | No V0.8 release CI run yet |
+| WEB-V08 | Production website reflects only verified V0.8 behavior | NOT VERIFIED | Website update waits for runtime evidence |
+
 ## Testing & verification
 
 | ID | Requirement | Status | Evidence |

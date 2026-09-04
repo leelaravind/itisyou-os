@@ -7,6 +7,7 @@
 
 pub mod bitmap;
 pub mod caps;
+pub mod capability;
 pub mod elf;
 pub mod font;
 pub mod itfs;
