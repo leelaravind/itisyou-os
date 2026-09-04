@@ -225,6 +225,12 @@ impl<const N: usize> CapabilityTable<N> {
     }
 }
 
+impl<const N: usize> Default for CapabilityTable<N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

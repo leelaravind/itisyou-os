@@ -6,8 +6,8 @@
 #![cfg_attr(not(test), no_std)]
 
 pub mod bitmap;
-pub mod caps;
 pub mod capability;
+pub mod caps;
 pub mod elf;
 pub mod font;
 pub mod itfs;
