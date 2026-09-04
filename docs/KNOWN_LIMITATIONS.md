@@ -101,9 +101,10 @@ Updated continuously; last update: 2026-09-03 (V0.7 release evidence closeout).
 
 ## V0.8 work in progress
 
-The V0.8 capability-handle contract is currently host-tested only. It is not
-yet wired into the kernel syscall boundary, so V0.7 static capability bits
-remain the active runtime policy. Networking, userspace filesystem writes,
+The V0.8 capability-handle contract is host-tested and wired into a
+kernel-owned process registry plus provisional list/check ABI, but has not yet
+passed the pinned kernel build or QEMU adversarial leg; V0.7 static capability
+bits remain the active policy for existing operations. Networking, userspace filesystem writes,
 signed package authentication, long-running userspace services, APIC/MSI,
 xHCI, and persistent audit storage remain unverified until corresponding
 QEMU/CI evidence is produced.

@@ -15,9 +15,13 @@ pub struct CapabilityHandle(u64);
 impl CapabilityHandle {
     pub const INVALID: Self = Self(0);
 
-    pub const fn raw(self) -> u64 { self.0 }
+    pub const fn raw(self) -> u64 {
+        self.0
+    }
 
-    pub const fn from_raw(raw: u64) -> Self { Self(raw) }
+    pub const fn from_raw(raw: u64) -> Self {
+        Self(raw)
+    }
 
     const fn new(index: usize, generation: u32) -> Self {
         Self(((generation as u64) << 32) | (index as u64 + 1))
@@ -25,7 +29,11 @@ impl CapabilityHandle {
 
     const fn parts(self) -> Option<(usize, u32)> {
         let slot = (self.0 & 0xffff_ffff) as usize;
-        if slot == 0 { None } else { Some((slot - 1, (self.0 >> 32) as u32)) }
+        if slot == 0 {
+            None
+        } else {
+            Some((slot - 1, (self.0 >> 32) as u32))
+        }
     }
 }
 
@@ -52,7 +60,10 @@ pub struct ResourceScope {
 }
 
 impl ResourceScope {
-    pub const ANY: Self = Self { start: 0, end: u64::MAX };
+    pub const ANY: Self = Self {
+        start: 0,
+        end: u64::MAX,
+    };
 
     pub const fn contains(self, other: Self) -> bool {
         other.start >= self.start && other.end <= self.end
@@ -90,7 +101,10 @@ pub struct CapabilityTable<const N: usize> {
 
 impl<const N: usize> CapabilityTable<N> {
     pub const fn new() -> Self {
-        Self { entries: [const { None }; N], generations: [0; N] }
+        Self {
+            entries: [const { None }; N],
+            generations: [0; N],
+        }
     }
 
     pub fn grant(
@@ -102,18 +116,38 @@ impl<const N: usize> CapabilityTable<N> {
         expires_at: Option<u64>,
         delegable: bool,
     ) -> Result<CapabilityHandle, CapabilityError> {
-        let index = self.entries.iter().position(Option::is_none).ok_or(CapabilityError::TableFull)?;
+        let index = self
+            .entries
+            .iter()
+            .position(Option::is_none)
+            .ok_or(CapabilityError::TableFull)?;
         let generation = self.generations[index].wrapping_add(1).max(1);
         self.generations[index] = generation;
-        self.entries[index] = Some(Entry { owner, kind, scope, rights, generation, expires_at, delegable });
+        self.entries[index] = Some(Entry {
+            owner,
+            kind,
+            scope,
+            rights,
+            generation,
+            expires_at,
+            delegable,
+        });
         Ok(CapabilityHandle::new(index, generation))
     }
 
     fn entry(&self, handle: CapabilityHandle, now: u64) -> Result<(usize, Entry), CapabilityError> {
         let (index, generation) = handle.parts().ok_or(CapabilityError::InvalidHandle)?;
-        let entry = self.entries.get(index).and_then(|e| *e).ok_or(CapabilityError::Revoked)?;
-        if entry.generation != generation { return Err(CapabilityError::InvalidHandle); }
-        if entry.expires_at.is_some_and(|deadline| now >= deadline) { return Err(CapabilityError::Expired); }
+        let entry = self
+            .entries
+            .get(index)
+            .and_then(|e| *e)
+            .ok_or(CapabilityError::Revoked)?;
+        if entry.generation != generation {
+            return Err(CapabilityError::InvalidHandle);
+        }
+        if entry.expires_at.is_some_and(|deadline| now >= deadline) {
+            return Err(CapabilityError::Expired);
+        }
         Ok((index, entry))
     }
 
@@ -127,10 +161,18 @@ impl<const N: usize> CapabilityTable<N> {
         now: u64,
     ) -> Result<(), CapabilityError> {
         let (_, entry) = self.entry(handle, now)?;
-        if entry.owner != owner { return Err(CapabilityError::NotOwner); }
-        if entry.kind != kind { return Err(CapabilityError::WrongKind); }
-        if !entry.scope.contains(requested_scope) { return Err(CapabilityError::ScopeDenied); }
-        if requested_rights & !entry.rights != 0 { return Err(CapabilityError::ScopeDenied); }
+        if entry.owner != owner {
+            return Err(CapabilityError::NotOwner);
+        }
+        if entry.kind != kind {
+            return Err(CapabilityError::WrongKind);
+        }
+        if !entry.scope.contains(requested_scope) {
+            return Err(CapabilityError::ScopeDenied);
+        }
+        if requested_rights & !entry.rights != 0 {
+            return Err(CapabilityError::ScopeDenied);
+        }
         Ok(())
     }
 
@@ -144,16 +186,29 @@ impl<const N: usize> CapabilityTable<N> {
         now: u64,
     ) -> Result<CapabilityHandle, CapabilityError> {
         let (_, entry) = self.entry(parent, now)?;
-        if entry.owner != parent_owner { return Err(CapabilityError::NotOwner); }
-        if !entry.delegable { return Err(CapabilityError::NotDelegable); }
-        if !entry.scope.contains(scope) || rights & !entry.rights != 0 { return Err(CapabilityError::ScopeDenied); }
+        if entry.owner != parent_owner {
+            return Err(CapabilityError::NotOwner);
+        }
+        if !entry.delegable {
+            return Err(CapabilityError::NotDelegable);
+        }
+        if !entry.scope.contains(scope) || rights & !entry.rights != 0 {
+            return Err(CapabilityError::ScopeDenied);
+        }
         let expiry = entry.expires_at;
         self.grant(child_owner, entry.kind, scope, rights, expiry, true)
     }
 
-    pub fn revoke(&mut self, handle: CapabilityHandle, owner: u64, now: u64) -> Result<(), CapabilityError> {
+    pub fn revoke(
+        &mut self,
+        handle: CapabilityHandle,
+        owner: u64,
+        now: u64,
+    ) -> Result<(), CapabilityError> {
         let (index, entry) = self.entry(handle, now)?;
-        if entry.owner != owner { return Err(CapabilityError::NotOwner); }
+        if entry.owner != owner {
+            return Err(CapabilityError::NotOwner);
+        }
         self.entries[index] = None;
         Ok(())
     }
@@ -161,7 +216,10 @@ impl<const N: usize> CapabilityTable<N> {
     pub fn revoke_owner(&mut self, owner: u64) -> usize {
         let mut count = 0;
         for entry in &mut self.entries {
-            if entry.is_some_and(|e| e.owner == owner) { *entry = None; count += 1; }
+            if entry.is_some_and(|e| e.owner == owner) {
+                *entry = None;
+                count += 1;
+            }
         }
         count
     }
@@ -175,38 +233,111 @@ mod tests {
     #[test]
     fn forged_and_stale_handles_are_rejected() {
         let mut t = CapabilityTable::<2>::new();
-        let h = t.grant(1, CapabilityKind::Filesystem, FS, 0b11, None, true).unwrap();
-        assert_eq!(t.check(CapabilityHandle::from_raw(h.raw() ^ (1 << 32)), 1, CapabilityKind::Filesystem, FS, 1, 0), Err(CapabilityError::InvalidHandle));
+        let h = t
+            .grant(1, CapabilityKind::Filesystem, FS, 0b11, None, true)
+            .unwrap();
+        assert_eq!(
+            t.check(
+                CapabilityHandle::from_raw(h.raw() ^ (1 << 32)),
+                1,
+                CapabilityKind::Filesystem,
+                FS,
+                1,
+                0
+            ),
+            Err(CapabilityError::InvalidHandle)
+        );
         t.revoke(h, 1, 0).unwrap();
-        let h2 = t.grant(1, CapabilityKind::Filesystem, FS, 1, None, true).unwrap();
+        let h2 = t
+            .grant(1, CapabilityKind::Filesystem, FS, 1, None, true)
+            .unwrap();
         assert_ne!(h, h2);
-        assert_eq!(t.check(h, 1, CapabilityKind::Filesystem, FS, 1, 0), Err(CapabilityError::InvalidHandle));
+        assert_eq!(
+            t.check(h, 1, CapabilityKind::Filesystem, FS, 1, 0),
+            Err(CapabilityError::InvalidHandle)
+        );
     }
 
     #[test]
     fn ownership_scope_and_rights_are_enforced() {
         let mut t = CapabilityTable::<1>::new();
-        let h = t.grant(7, CapabilityKind::Filesystem, FS, 1, None, true).unwrap();
-        assert_eq!(t.check(h, 8, CapabilityKind::Filesystem, FS, 1, 0), Err(CapabilityError::NotOwner));
-        assert_eq!(t.check(h, 7, CapabilityKind::Filesystem, ResourceScope { start: 9, end: 20 }, 1, 0), Err(CapabilityError::ScopeDenied));
-        assert_eq!(t.check(h, 7, CapabilityKind::Filesystem, FS, 2, 0), Err(CapabilityError::ScopeDenied));
+        let h = t
+            .grant(7, CapabilityKind::Filesystem, FS, 1, None, true)
+            .unwrap();
+        assert_eq!(
+            t.check(h, 8, CapabilityKind::Filesystem, FS, 1, 0),
+            Err(CapabilityError::NotOwner)
+        );
+        assert_eq!(
+            t.check(
+                h,
+                7,
+                CapabilityKind::Filesystem,
+                ResourceScope { start: 9, end: 20 },
+                1,
+                0
+            ),
+            Err(CapabilityError::ScopeDenied)
+        );
+        assert_eq!(
+            t.check(h, 7, CapabilityKind::Filesystem, FS, 2, 0),
+            Err(CapabilityError::ScopeDenied)
+        );
     }
 
     #[test]
     fn delegation_cannot_amplify_and_teardown_revokes() {
         let mut t = CapabilityTable::<3>::new();
-        let h = t.grant(1, CapabilityKind::Network, ResourceScope { start: 80, end: 90 }, 1, None, true).unwrap();
-        let child = t.delegate(h, 1, 2, ResourceScope { start: 82, end: 85 }, 1, 0).unwrap();
-        assert_eq!(t.delegate(child, 2, 3, ResourceScope { start: 80, end: 85 }, 1, 0), Err(CapabilityError::ScopeDenied));
+        let h = t
+            .grant(
+                1,
+                CapabilityKind::Network,
+                ResourceScope { start: 80, end: 90 },
+                1,
+                None,
+                true,
+            )
+            .unwrap();
+        let child = t
+            .delegate(h, 1, 2, ResourceScope { start: 82, end: 85 }, 1, 0)
+            .unwrap();
+        assert_eq!(
+            t.delegate(child, 2, 3, ResourceScope { start: 80, end: 85 }, 1, 0),
+            Err(CapabilityError::ScopeDenied)
+        );
         assert_eq!(t.revoke_owner(2), 1);
-        assert_eq!(t.check(child, 2, CapabilityKind::Network, ResourceScope { start: 82, end: 85 }, 1, 0), Err(CapabilityError::Revoked));
+        assert_eq!(
+            t.check(
+                child,
+                2,
+                CapabilityKind::Network,
+                ResourceScope { start: 82, end: 85 },
+                1,
+                0
+            ),
+            Err(CapabilityError::Revoked)
+        );
     }
 
     #[test]
     fn expiry_is_enforced() {
         let mut t = CapabilityTable::<1>::new();
-        let h = t.grant(1, CapabilityKind::Device, ResourceScope::ANY, 1, Some(5), true).unwrap();
-        assert!(t.check(h, 1, CapabilityKind::Device, ResourceScope::ANY, 1, 4).is_ok());
-        assert_eq!(t.check(h, 1, CapabilityKind::Device, ResourceScope::ANY, 1, 5), Err(CapabilityError::Expired));
+        let h = t
+            .grant(
+                1,
+                CapabilityKind::Device,
+                ResourceScope::ANY,
+                1,
+                Some(5),
+                true,
+            )
+            .unwrap();
+        assert!(t
+            .check(h, 1, CapabilityKind::Device, ResourceScope::ANY, 1, 4)
+            .is_ok());
+        assert_eq!(
+            t.check(h, 1, CapabilityKind::Device, ResourceScope::ANY, 1, 5),
+            Err(CapabilityError::Expired)
+        );
     }
 }
