@@ -41,6 +41,10 @@ pub const SYS_GUI_PRESENT: u64 = 11;
 pub const SYS_DEVINFO: u64 = 12;
 pub const SYS_FS_READ: u64 = 13;
 pub const SYS_SPAWN_CAPS: u64 = 14;
+/// Return the caller's opaque V0.8 handle list (ptr, capacity in handles).
+pub const SYS_CAP_LIST: u64 = 15;
+/// Validate one handle for a kind and inclusive resource scope.
+pub const SYS_CAP_CHECK: u64 = 16;
 
 pub const ERR_NOSYS: u64 = u64::MAX;
 pub const ERR_FAULT: u64 = u64::MAX - 1;
@@ -85,6 +89,21 @@ pub static CURRENT_CAPS: AtomicU64 = AtomicU64::new(0);
 static CURRENT_SANDBOX: spin::Mutex<
     Option<alloc::sync::Arc<alloc::vec::Vec<alloc::string::String>>>,
 > = spin::Mutex::new(None);
+static CURRENT_HANDLES: spin::Mutex<[u64; crate::capability::HANDLE_SLOTS]> =
+    spin::Mutex::new([0; crate::capability::HANDLE_SLOTS]);
+
+pub fn set_current_handles(
+    handles: &[kernel_core::capability::CapabilityHandle; crate::capability::HANDLE_SLOTS],
+) {
+    let mut current = CURRENT_HANDLES.lock();
+    for (dst, src) in current.iter_mut().zip(handles) {
+        *dst = src.raw();
+    }
+}
+
+pub fn clear_current_handles() {
+    *CURRENT_HANDLES.lock() = [0; crate::capability::HANDLE_SLOTS];
+}
 
 pub fn set_current_sandbox(
     prefixes: Option<alloc::sync::Arc<alloc::vec::Vec<alloc::string::String>>>,
@@ -250,10 +269,57 @@ extern "C" fn syscall_dispatch(a1: u64, a2: u64, a3: u64, nr: u64) -> u64 {
             Ok(()) => sys_fs_read(a1, a2, a3),
             Err(e) => e,
         },
+        SYS_CAP_LIST => sys_cap_list(a1, a2),
+        SYS_CAP_CHECK => sys_cap_check(a1, a2, a3),
         _ => {
             NOSYS_COUNT.fetch_add(1, Ordering::SeqCst);
             ERR_NOSYS
         }
+    }
+}
+
+fn sys_cap_list(ptr: u64, capacity: u64) -> u64 {
+    let count = core::cmp::min(capacity as usize, crate::capability::HANDLE_SLOTS);
+    let mut bytes = [0u8; crate::capability::HANDLE_SLOTS * 8];
+    for (i, raw) in CURRENT_HANDLES.lock().iter().take(count).enumerate() {
+        bytes[i * 8..i * 8 + 8].copy_from_slice(&raw.to_le_bytes());
+    }
+    match copy_to_user(ptr, &bytes[..count * 8]) {
+        Ok(_) => count as u64,
+        Err(e) => e,
+    }
+}
+
+fn sys_cap_check(raw: u64, kind: u64, scope_end: u64) -> u64 {
+    let Some(kind) = (match kind {
+        0 => Some(kernel_core::capability::CapabilityKind::Filesystem),
+        1 => Some(kernel_core::capability::CapabilityKind::Device),
+        2 => Some(kernel_core::capability::CapabilityKind::Gui),
+        3 => Some(kernel_core::capability::CapabilityKind::Network),
+        4 => Some(kernel_core::capability::CapabilityKind::Audio),
+        5 => Some(kernel_core::capability::CapabilityKind::Process),
+        6 => Some(kernel_core::capability::CapabilityKind::Service),
+        7 => Some(kernel_core::capability::CapabilityKind::SystemAdministration),
+        _ => None,
+    }) else {
+        return ERR_INVAL;
+    };
+    let result = crate::capability::check(
+        kernel_core::capability::CapabilityHandle::from_raw(raw),
+        CURRENT_PID.load(Ordering::SeqCst),
+        kind,
+        kernel_core::capability::ResourceScope {
+            start: 0,
+            end: scope_end,
+        },
+        1,
+        crate::interrupts::ticks(),
+    );
+    if result.is_ok() {
+        0
+    } else {
+        crate::audit::denied("cap_handle_check", 0);
+        ERR_PERM
     }
 }
 

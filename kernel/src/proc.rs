@@ -173,6 +173,7 @@ fn run_scheduler(stop: impl Fn(usize) -> bool) -> usize {
                 // Release any GUI windows the process owned, then free its
                 // address space; keep a zombie slot for wait().
                 crate::gfx::compositor::remove_owned(pid);
+                crate::capability::revoke_owner(pid);
                 process.space.teardown();
                 if let Some(s) = table.slots.get_mut(&pid) {
                     s.process = None;
@@ -200,6 +201,7 @@ pub fn reap(pid: u64) {
     if let Some(table) = guard.as_mut() {
         if let Some(slot) = table.slots.remove(&pid) {
             if let Some(process) = slot.process {
+                crate::capability::revoke_owner(pid);
                 process.space.teardown();
             }
         }
@@ -217,6 +219,7 @@ pub fn drain_all() -> usize {
     for pid in pids {
         if let Some(slot) = table.slots.remove(&pid) {
             if let Some(process) = slot.process {
+                crate::capability::revoke_owner(pid);
                 process.space.teardown();
                 n += 1;
             }

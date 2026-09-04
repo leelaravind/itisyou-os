@@ -137,6 +137,9 @@ pub struct Process {
     /// FS sandbox: fs_read allowed only under these path prefixes. `None` =
     /// unrestricted (trusted kernel-shell launches).
     pub fs_prefixes: Option<alloc::sync::Arc<alloc::vec::Vec<alloc::string::String>>>,
+    /// Kernel-owned, process-bound V0.8 handles. Invalid entries are empty
+    /// slots; their authority is always revalidated in the kernel table.
+    pub handles: [kernel_core::capability::CapabilityHandle; crate::capability::HANDLE_SLOTS],
 }
 
 static NEXT_PID: AtomicU64 = AtomicU64::new(1);
@@ -158,6 +161,7 @@ pub fn load_with(
     let mut process = load_from_bytes(bytes)?;
     process.caps = caps;
     process.fs_prefixes = fs_prefixes;
+    process.handles = crate::capability::handles_for(process.pid, caps);
     Ok(process)
 }
 
@@ -175,6 +179,8 @@ pub fn load_from_bytes(bytes: &[u8]) -> Result<Process, LoadError> {
         ctx: UserContext::new(image.entry, USER_STACK_TOP),
         caps: kernel_core::caps::CAP_LEGACY_FULL,
         fs_prefixes: None,
+        handles: [kernel_core::capability::CapabilityHandle::INVALID;
+            crate::capability::HANDLE_SLOTS],
     };
 
     let result = (|| {
@@ -293,6 +299,7 @@ pub fn run_quantum(process: &mut Process, first: bool) -> UserExit {
     // Publish this quantum's authority: the syscall layer checks these on
     // every privileged request (V0.7 capability enforcement + FS sandbox).
     crate::syscall::CURRENT_CAPS.store(process.caps, Ordering::SeqCst);
+    crate::syscall::set_current_handles(&process.handles);
     crate::syscall::set_current_sandbox(process.fs_prefixes.clone());
     activate_l4(process.space.l4_phys());
     // Arm the preemption quantum for this slice; the timer decrements it
@@ -303,6 +310,7 @@ pub fn run_quantum(process: &mut Process, first: bool) -> UserExit {
     activate_l4(paging::boot_l4_frame());
     crate::syscall::CURRENT_PID.store(0, Ordering::SeqCst);
     crate::syscall::CURRENT_CAPS.store(0, Ordering::SeqCst);
+    crate::syscall::clear_current_handles();
     crate::syscall::set_current_sandbox(None);
     exit
 }
@@ -338,6 +346,7 @@ pub fn run(mut process: Process) -> UserExit {
         UserExit::Yielded | UserExit::Preempted | UserExit::Blocked => unreachable!(),
     }
     crate::gfx::compositor::remove_owned(process.pid);
+    crate::capability::revoke_owner(process.pid);
     process.space.teardown();
     terminal
 }

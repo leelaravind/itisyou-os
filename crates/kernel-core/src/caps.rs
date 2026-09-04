@@ -21,10 +21,27 @@ pub const CAP_FS_READ: u64 = 1 << 4;
 pub const CAP_AUDIO: u64 = 1 << 5;
 /// System administration (reserved — service/package control from userspace).
 pub const CAP_SYS_ADMIN: u64 = 1 << 6;
+/// Capability-scoped userspace filesystem mutation.
+pub const CAP_FS_WRITE: u64 = 1 << 7;
+/// Capability-scoped network socket and packet operations.
+pub const CAP_NETWORK: u64 = 1 << 8;
+/// Process teardown/control beyond spawning and waiting.
+pub const CAP_PROC_CONTROL: u64 = 1 << 9;
+/// Service lifecycle and service-RPC administration.
+pub const CAP_SERVICE: u64 = 1 << 10;
 
 /// Every currently defined capability bit.
-pub const CAP_ALL_KNOWN: u64 =
-    CAP_SPAWN | CAP_IPC | CAP_GUI | CAP_DEV | CAP_FS_READ | CAP_AUDIO | CAP_SYS_ADMIN;
+pub const CAP_ALL_KNOWN: u64 = CAP_SPAWN
+    | CAP_IPC
+    | CAP_GUI
+    | CAP_DEV
+    | CAP_FS_READ
+    | CAP_AUDIO
+    | CAP_SYS_ADMIN
+    | CAP_FS_WRITE
+    | CAP_NETWORK
+    | CAP_PROC_CONTROL
+    | CAP_SERVICE;
 
 /// The full "legacy" set granted to programs started directly by the trusted
 /// kernel shell/selftest (pre-platform paths), so V0.2–V0.6 behavior is
@@ -40,6 +57,10 @@ const NAMES: &[(&str, u64)] = &[
     ("fs_read", CAP_FS_READ),
     ("audio", CAP_AUDIO),
     ("sys_admin", CAP_SYS_ADMIN),
+    ("fs_write", CAP_FS_WRITE),
+    ("network", CAP_NETWORK),
+    ("proc_control", CAP_PROC_CONTROL),
+    ("service", CAP_SERVICE),
 ];
 
 /// Parse error for a capability list.

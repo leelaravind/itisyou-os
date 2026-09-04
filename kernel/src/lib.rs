@@ -12,6 +12,7 @@ extern crate alloc;
 
 pub mod audit;
 pub mod bootstage;
+pub mod capability;
 pub mod cpu;
 pub mod desktop;
 pub mod device;

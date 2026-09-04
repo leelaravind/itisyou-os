@@ -41,7 +41,10 @@
 - Implemented and directly host-tested: bounded opaque capability handles with
   generation checks, owner binding, resource scopes, rights intersection,
   explicit revocation, expiry, and owner teardown revocation.
-- Kernel/QEMU enforcement, userspace services, filesystem writes, signed
+- Capability handles now have a kernel-owned process registry, publication,
+  listing/check ABI, and teardown revocation hooks; kernel compilation/QEMU
+  enforcement evidence is still pending.
+- Userspace services, filesystem writes, signed
   packages, networking, interrupt modernization, xHCI, persistent audit and
   hardening are not yet verified. No website claim has been changed.
 
