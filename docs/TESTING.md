@@ -92,12 +92,46 @@
     on-demand supervisor still reports `started=3 done=2 failed=1 restarts=3`,
     the `svc` table shows background and on-demand state together, and the
     shell still accepts commands afterwards).
-16. **Negative cases** (grown alongside subsystems): intentional panic,
+16. **Networking suite** (V0.8, `net-bios`): the guest's NIC is wired to the
+    runner's own host-side Ethernet peer over a `dgram` netdev — no slirp, no
+    host resolver, nothing outside the machine — and that peer is an
+    INDEPENDENT byte-level implementation, so a bug in the guest's codec cannot
+    cancel itself out against the same code. Client paths (ARP, ICMP echo, a
+    Ring 3 UDP round trip, DNS), responder paths (answering the peer's ARP
+    request and ping), the capability gate (an app with `network` succeeds; one
+    with none is refused every syscall), and refusal: five hostile frames
+    counted as refused and answered by nothing.
+17. **Userspace filesystem writes** (V0.8, `fs-write-bios` + `fs-write-persist`):
+    create, atomic overwrite to a different length, list, delete, and four
+    refusals each for a different reason; the WRITE right proved distinct from
+    READ; the sandbox proved distinct from the capability; and a second boot on
+    the same disk reading back what Ring 3 wrote.
+18. **Interrupt modernization** (V0.8, `irq-bios`): a delivered APIC timer
+    interrupt, a delivered MSI-X raised by a real NVMe block read, an I/O APIC
+    register round-trip left masked, and the PIC's own counters proving it is
+    still the path doing the work.
+19. **xHCI** (V0.8, `xhci-hid-bios`): reset, command/event rings, Enable Slot,
+    Address Device, control transfers, Configure Endpoint,
+    SET_CONFIGURATION/SET_PROTOCOL, and a real injected keypress arriving over
+    an interrupt transfer tagged `src=xhci`.
+20. **Persistent audit** (V0.8, three boots): saved, recovered and verified by a
+    fresh guest with the same chain head, then reported TAMPERED once the
+    stored trail is overwritten.
+21. **Hardening** (V0.8, `harden-bios`): SMEP/SMAP/UMIP on, a W^X segment
+    refused at load, `sgdt` from Ring 3 a contained #GP, the stack guard exactly
+    16 pages down, and a Ring 3 read of a kernel address refused. Two
+    assertions are `--forbid`: a refusal prints no line, so the only way to
+    state it is that the success marker never appeared.
+22. **Negative cases** (grown alongside subsystems): intentional panic,
     allocator exhaustion, malformed inputs, timeout classification.
 
 The harness gained `--audio`/`--audio-out` (AC97 → WAV capture, with a non-
-silence assertion) and `--usb` (a UHCI controller + USB HID keyboard/mouse)
-alongside the serial + monitor channels.
+silence assertion), `--usb` (UHCI + USB HID), `--xhci` (an xHCI controller with
+its own HID keyboard), `--net` (an e1000 wired to the runner's own Ethernet
+peer), and `--forbid` (a substring that must NOT appear) alongside the serial +
+monitor channels. Every leg now runs on a CPU advertising `+smep,+smap,+umip`,
+so the whole matrix passing is itself evidence that supervisor-mode protection
+did not break the kernel's own access to user memory.
 
 The harness supports two guest channels: a **serial** line (stage/test markers,
 shell stdin) and an optional **HMP monitor** (`--monitor`, `--inject-after`,

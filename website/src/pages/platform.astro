@@ -5,7 +5,7 @@ import StatusTag from '../components/StatusTag.astro';
 import { status } from '../lib/status';
 
 const description =
-  'The ITISYOU OS system platform (V0.7): capability-based permissions with default deny, supervised system services, a managed application/package model, atomic updates with rollback and recovery, sandboxing, and an audit/provenance trail — every claim backed by QEMU test evidence.';
+  'The ITISYOU OS system platform (V0.7-V0.8): capability-based permissions with default deny, supervised system services, a managed application model with Ed25519-signed packages, atomic updates with rollback and recovery, capability-scoped userspace filesystem writes, port-scoped network access, and a hash-chained audit trail that survives reboots — every claim backed by QEMU test evidence.';
 
 /** Capability table — mirrors kernel_core::caps (the enforced source). */
 const caps = [
@@ -14,6 +14,8 @@ const caps = [
   ['gui', 'window create/draw/present'],
   ['dev', 'device-table queries'],
   ['fs_read', 'filesystem reads (within the sandbox prefixes)'],
+  ['fs_write', 'filesystem writes to the persistent store (V0.8)'],
+  ['network', 'UDP sockets and DNS — scoped to a port (V0.8)'],
   ['audio', 'reserved — no userspace audio syscall yet'],
   ['sys_admin', 'reserved — userspace service/package control'],
 ];

@@ -43,32 +43,46 @@
 
 ## V0.8 work checkpoint
 
-The immutable V0.7 baseline is `v0.7.0` at `00b5eea`. V0.8 slices landed so
-far, each with QEMU or host evidence:
+The immutable V0.7 baseline is `v0.7.0` at `00b5eea`. V0.8 is complete: every
+requirement in `docs/REQUIREMENTS.md` is in a terminal state, and the two that
+are NOT DONE (TCP; DHCP/IPv6/routing) say so rather than being reworded.
 
-1. **Capability handles** — `kernel_core::capability::CapabilityTable` (forged/
-   stale-handle rejection, ownership and scope checks, bounded delegation,
-   revocation, expiry, owner-teardown revocation), and they are now the actual
-   enforcement path: `cap-handle-probe` drives the real syscalls and forged/
-   expired/revoked handles are each refused with the reason audited
-   (`platform-bios` leg).
-2. **Long-running Ring 3 services** (ADR-0014) — `tickd` (IPC-only) and
-   `flapd` (zero caps) start at boot via `services::start_background()` and are
-   supervised for the life of the system. The shell's idle path calls
-   `services::pump(1)` instead of spinning; `bg <path> [caps]` co-schedules a
-   client with them (bounded at 3000 ticks); `ServiceDef::long_running` makes a
-   daemon's clean exit a fault; `SYS_UPTIME` (19) lets a daemon pace itself in
-   real ticks. `run_supervised` scopes both its status reset and its report to
-   `REGISTRY` so background rows survive and are not miscounted. Evidence:
-   `services-bg-bios` leg.
-3. **Network protocol layer** — `kernel_core::net::{checksum,eth,ipv4}`, 43 of
-   the 174 kernel-core tests. Parsers only; no NIC driver, no data path, and
-   no networking claim anywhere in the docs or the website.
+Delivered and verified:
 
-Gate at this checkpoint: selftest pass=113 fail=0, 181 host tests, 15/15 QEMU
-legs Success, `scripts/verify.ps1` -> `VERIFY: OK`; CI run `33955559882` green
-on ubuntu-24.04 for commit `6be344e`. `status/current.json` is untouched and
-still stamped to V0.7; nothing has been deployed.
+1. **Capability handles are the enforcement path** — forged, expired and
+   revoked handles each refused on the real syscall path with the reason
+   audited (`platform-bios`).
+2. **Long-running Ring 3 services** (ADR-0014) — `services-bg-bios`.
+3. **Networking** (ADR-0015) — e1000 with polled RX/TX rings, ARP, IPv4, ICMP
+   echo client and responder, UDP with port-scoped Ring 3 sockets, DNS.
+   Verified against the runner's own INDEPENDENT host-side Ethernet peer
+   (`tools/qemu-runner/src/wire.rs`) over a `dgram` netdev: `net-bios`.
+4. **Signed packages** (ADR-0016) — Ed25519 in `kernel_core::ed25519`,
+   RFC 8032 vectors pass; ITPKG002; three distinct authenticity refusals.
+5. **Userspace filesystem writes** — `fs-write-bios` + `fs-write-persist`.
+6. **APIC / I/O APIC / MSI-X** (ADR-0017) — `irq-bios`.
+7. **xHCI enumeration + HID** (ADR-0018) — `xhci-hid-bios`.
+8. **Persistent hash-chained audit** — `audit-persist-{write,verify,tamper}`.
+9. **SMEP/SMAP/UMIP + stack guard + W^X** — `harden-bios`, and every leg now
+   runs on a CPU advertising the three protections.
+
+Gate: 24/24 QEMU legs Success, selftest pass=113 fail=0, 278 host tests,
+`scripts/verify.ps1` -> `VERIFY: OK`.
+
+## Things a resuming session will want to know
+
+- `scripts/test.ps1` is the canonical matrix; `scripts/verify.ps1` wraps it
+  with fmt, both clippy gates, the website build and the secret scan. The full
+  gate takes roughly 12 minutes.
+- CI (`.github/workflows/ci.yml`) duplicates the QEMU legs INLINE rather than
+  calling `test.ps1`, so a new leg must be added in BOTH places.
+- A `--require` string containing a double quote does not survive native
+  argument quoting on Windows. Assert the quoted part separately.
+- The runner's `-cpu qemu64,+smep,+smap,+umip` is load-bearing: without it the
+  guest's hardening is enabled into a void.
+- Editing repo files from Python: always `io.open(..., encoding='utf-8',
+  newline='')`. Most files are CRLF in the working copy and LF in git, and the
+  sources are full of em dashes that the default locale encoding mangles.
 
 ## Environment keys
 

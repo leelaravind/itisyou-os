@@ -82,15 +82,28 @@ fuller platform: capability handles + revocation, signed packages (key
 provisioning), userspace FS writes, long-running background services,
 kernel-image updates.
 
-## V0.8 — Networking
+## V0.8 — Networking, Authenticity & Hardening (delivered)
 
-NIC driver (VM target first), Ethernet, ARP/NDP, IPv4/IPv6 foundations,
-UDP/TCP, DNS, strict network permission model.
+Delivered and verified: an e1000 driver with polled descriptor rings; ARP,
+IPv4, ICMP echo (client and responder), UDP and DNS; capability-scoped Ring 3
+sockets; Ed25519 package signatures with a compiled-in trust root;
+capability-scoped userspace filesystem writes with atomic overwrite; the local
+APIC, I/O APIC and MSI-X with real interrupt-delivery evidence; xHCI
+enumeration and HID input; a hash-chained audit trail that survives reboots and
+detects tampering; and SMEP/SMAP/UMIP alongside the existing W^X and stack
+guard.
 
-## V0.9 — Advanced Hardware + Interrupt Modernization
+Deliberately NOT delivered, and recorded as such rather than reworded: **TCP**,
+IPv6, DHCP, and routing beyond a single gateway. The I/O APIC is programmed but
+its entries stay masked — line IRQs remain on the verified PIC path.
 
-USB xHCI, APIC/IOAPIC/MSI, ACPI/power foundations, additional device classes,
-laptop hardware research, targeted driver strategy.
+## V0.9 — Transport, Interrupt Cutover & Key Management
+
+TCP with a real retransmission timer and connection state machine; DHCP and
+IPv6 foundations; moving line-based IRQs onto the I/O APIC (with ACPI MADT
+parsing) so the PIC can be retired; a signing key that never enters the source
+tree, with rotation and revocation; signing the audit chain head; ACPI/power
+foundations, additional device classes, laptop hardware research.
 
 ## V0.10 — AI-Native System Layer
 

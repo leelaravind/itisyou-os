@@ -453,3 +453,79 @@ move no packets, and the docs say so: there is no NIC driver yet.
 
 Local evidence: selftest pass=113 fail=0, 181 host tests, 15/15 QEMU legs
 Success including the new `services-bg-bios` leg.
+
+
+### 2026-09-05 - V0.8: the first milestone whose inputs come from elsewhere
+
+Everything up to V0.7 processed bytes this machine produced: an image the build
+made, a disk the harness generated, a keypress the harness injected. A network
+stack is the first subsystem that parses input chosen by someone else, arriving
+before any authentication exists to judge it by. That framing shaped the whole
+milestone.
+
+**The network is verified against something other than itself.** The harness
+brings its own Ethernet peer over a QEMU `dgram` netdev and *is* the entire
+network the guest sees - no slirp, no host resolver, nothing outside this
+machine. It is deliberately an independent byte-level implementation rather
+than a second use of `kernel_core::net`, because a test where both ends share a
+checksum routine proves the two agree, not that either is right. It also probes
+the guest with an ARP request and a ping: a stack that only ever initiates is
+not a host on a network. Then it sends five frames a correct stack must refuse
+- a corrupt IP checksum, a ping addressed elsewhere but delivered to our MAC,
+UDP to an unbound port, an 802.1Q tag, and an ARP whose hardware type
+contradicts its address lengths - and the assertion is that the guest counts
+them as refused AND answers none of them.
+
+Three bugs came out of running it rather than reading it:
+
+- `match IFACE.lock().arp_lookup(hop)` keeps the guard alive for the whole
+  match, and the `None` arm re-locks to send the request. A self-deadlock on a
+  spin lock, with interrupts off: a dead machine, from a line that reads
+  perfectly.
+- Bounded waits were built on the timer tick, which does not advance inside a
+  syscall because `SFMASK` clears IF on entry. A one-second timeout therefore
+  burned its entire 400-million-spin backstop. The fix was a TSC calibrated
+  against the PIT - the only clock that advances with interrupts off - plus
+  making the datagram syscalls non-blocking so waiting happens on the caller's
+  own scheduling slice, where yielding is free.
+- A tight userspace retry loop emitted one ARP broadcast per attempt: 879 in a
+  single run.
+
+**Ed25519, written out, with the constants derived.** Package authenticity
+needed a signature scheme, and it lives in `kernel-core` alongside SHA-256 for
+the same reasons: no dependency, no allocator, host-testable. It is validated
+against RFC 8032's own vectors rather than only against itself, and every curve
+constant is computed from small integers at use time. A mistyped 32-byte
+constant yields a working implementation of a *different curve*: self-
+consistent, passing every round-trip test, and unable to verify a single real
+signature. Integrity and authenticity are separate steps so that a corrupt
+download, a package from a stranger and a forged signature stay three
+distinguishable refusals.
+
+**The hardening had to be allowed before it could be proved.** QEMU's default
+`qemu64` model advertises neither SMEP nor SMAP nor UMIP, so enabling them in
+the kernel would have been enabling them into a void. The runner now requests
+`+smep,+smap,+umip`, which means every leg runs with supervisor-mode protection
+on - and the other 23 legs passing is itself the evidence that the kernel's own
+legitimate access to user memory still works. SMAP inverts the default: instead
+of the kernel being allowed to touch user memory everywhere and being careful
+not to, it is forbidden everywhere and has to say where it means to. There
+turned out to be exactly three such places.
+
+The harness also gained `--forbid`. Two of the hardening assertions are about
+*absence*: "the CPU refused" prints no line of its own, so the only way to
+state it is that the marker printed on success never appeared.
+
+**What was deliberately not built.** TCP. A correct TCP needs a retransmission
+timer, window management and a connection state machine, and those are exactly
+the parts a half-implementation hides. It is recorded as NOT DONE in the
+requirement matrix rather than reworded into something that sounds finished.
+The I/O APIC is programmed and read back but its entries stay masked, so line
+IRQs still run on the verified PIC path - and the evidence line says
+`masked=true` precisely so it cannot be misread. The package trust root is a
+development key whose seed is published in the source tree; that is stated
+everywhere it matters, because a build-time key that looked secret would invite
+someone to trust it.
+
+Local evidence: 24/24 QEMU legs Success, selftest pass=113 fail=0, 278 host
+tests.

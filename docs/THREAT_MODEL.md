@@ -33,3 +33,41 @@ Remote attackers (no network stack), malicious local users (single-developer
 VM), physical attacks, and side channels are out of scope until the relevant
 subsystems exist. Each later milestone (userspace, storage, networking) must
 extend this document before shipping the feature.
+
+
+## V0.8 additions — the network changes the shape of this document
+
+Until V0.8 every input came from the developer's own machine: an image the
+build produced, a disk the harness generated, a keypress the harness injected.
+A network stack is the first subsystem that processes bytes chosen by someone
+else, arriving before any authentication exists to judge them by. That is a
+different class of exposure, and it is worth stating plainly even though the
+only network this OS has ever been attached to is a test harness on localhost.
+
+### New assets
+
+- The guest's own integrity while parsing untrusted frames. A parser bug here
+  is reachable by anything that can put a frame on the wire.
+- The package trust root: the one key that decides what may be installed.
+- The audit trail's truthfulness: evidence that can be edited is not evidence.
+
+### New adversary assumptions
+
+| Risk | Vector | Mitigation |
+|---|---|---|
+| Malformed frame corrupts or hangs the stack | any peer on the link | allocation-free parsers with a distinct error per rejection; fragments, VLAN tags and non-echo ICMP refused rather than handled; DNS compression bounded by a jump budget; verified by a hostile-frame sequence the guest must refuse and answer nothing |
+| The guest used as a reflector or amplifier | spoofed source, packets addressed elsewhere | the IP layer re-checks the destination even though the NIC filters; no ICMP errors are ever generated; a datagram to an unbound port is dropped silently |
+| Unbounded kernel memory from remote traffic | flooding | ARP cache, socket table and per-socket queues are fixed-size arrays; a peer can cause entries to be *replaced*, never allocated |
+| A program reaching the network without authority | any Ring 3 process | network access is a capability scoped to a port, re-checked on every datagram call against the socket's own port, so a handle narrowed or revoked after the bind stops working at the next use |
+| A hostile package installed | a package from any source | Ed25519 signature over context + lengths + digest, verified against a compiled-in trust root; unsigned, foreign and forged packages refused as three distinct outcomes; re-verified at launch as well as install |
+| A stolen or misused signing key | the development key is published | ACCEPTED for a pre-alpha build and documented: the mechanism is enforced, the key it currently anchors is not a secret. Not acceptable for any real deployment |
+| Evidence tampering | editing the persisted trail | records hash-chained, chain extended before the bounded ring drops anything, verified on every boot. Does NOT cover an attacker who rewrites the file including its head |
+| Kernel dereferencing a user pointer by accident | a logic bug | SMAP: forbidden by default, permitted only inside three declared windows |
+| Ring 3 leaking kernel addresses | `sgdt`/`sidt`/`sldt`/`str`/`smsw` | UMIP; verified by a probe whose success marker is forbidden from the log |
+
+### Explicit non-threats, still
+
+The guest has never been attached to a real network. Its only peer is the test
+harness on localhost, and there is no DHCP, no IPv6, and no TCP — so there is
+no listening service, no connection state to exhaust, and nothing that
+initiates traffic on its own.
