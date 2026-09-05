@@ -65,8 +65,9 @@ far, each with QEMU or host evidence:
    the 174 kernel-core tests. Parsers only; no NIC driver, no data path, and
    no networking claim anywhere in the docs or the website.
 
-Local gate at this checkpoint: selftest pass=113 fail=0, 181 host tests,
-15/15 QEMU legs Success (`TEST: OK`). `status/current.json` is untouched and
+Gate at this checkpoint: selftest pass=113 fail=0, 181 host tests, 15/15 QEMU
+legs Success, `scripts/verify.ps1` -> `VERIFY: OK`; CI run `33955559882` green
+on ubuntu-24.04 for commit `6be344e`. `status/current.json` is untouched and
 still stamped to V0.7; nothing has been deployed.
 
 ## Environment keys

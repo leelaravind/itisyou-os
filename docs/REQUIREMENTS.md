@@ -204,8 +204,8 @@ the host-tested network protocol layer.
 | USB08-001 | xHCI enumeration and HID path | NOT STARTED | V0.7 UHCI/HID path preserved |
 | AUD08-001 | Persistent tamper-aware audit records | NOT STARTED | V0.7 in-memory audit ring preserved |
 | HARD08-001 | SMEP/SMAP, guard pages, pointer/W^X hardening | NOT STARTED | V0.7 W^X and user-window validation preserved |
-| REG-V08 | V0.1-V0.7 regression matrix remains green | NOT VERIFIED | Must be re-run after V0.8 integration |
-| CI-V08 | Full V0.8 CI/QEMU matrix green | NOT VERIFIED | No V0.8 release CI run yet |
+| REG-V08 | V0.1-V0.7 regression matrix remains green | VERIFIED for the V0.8 work landed so far | every V0.1-V0.7 leg (boot smoke, selftests, shell, desktop/PS-2, AC97, UHCI HID, platform, update/recovery, panic, fs-persist) passes with the persistent services running: local 15/15 Success, selftest pass=113 fail=0; CI run `33955559882` green on ubuntu-24.04. Re-run again at the V0.8 release |
+| CI-V08 | Full V0.8 CI/QEMU matrix green | VERIFIED for the V0.8 work landed so far | CI run `33955559882` (commit `6be344e`) success on ubuntu-24.04: format, split clippy, host tests, image build, all 15 QEMU legs including the new `QEMU long-running background services (BIOS)` step, website check+build, secret scan. Not a release gate until the remaining V0.8 requirements land |
 | WEB-V08 | Production website reflects only verified V0.8 behavior | NOT VERIFIED | Website update waits for runtime evidence |
 
 ## Testing & verification

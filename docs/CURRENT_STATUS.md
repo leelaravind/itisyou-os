@@ -57,7 +57,10 @@
   boundary. It moves no packets: there is no NIC driver and no data path yet,
   so **no networking claim is made**.
 - Local matrix after this slice: selftest **113** / fail **0**; 181 host tests;
-  15/15 QEMU legs Success (`TEST: OK`).
+  15/15 QEMU legs Success; `scripts/verify.ps1` -> `VERIFY: OK` (secret scan
+  clean over 243 files). Remotely reproduced: CI run `33955559882` on commit
+  `6be344e` is green on ubuntu-24.04, including the new background-services
+  leg.
 - Filesystem writes, signed packages, the NIC data path, interrupt
   modernization, xHCI, persistent audit and hardening are not yet verified.
 - `status/current.json` — the machine-readable source of website truth — is
