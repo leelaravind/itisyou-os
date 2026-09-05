@@ -51,7 +51,7 @@ pub fn state() -> (bool, bool, bool) {
 pub fn init() {
     // CPUID leaf 7 subleaf 0: EBX bit 7 = SMEP, bit 20 = SMAP; ECX bit 2 =
     // UMIP.
-    let leaf7 = unsafe { core::arch::x86_64::__cpuid_count(7, 0) };
+    let leaf7 = core::arch::x86_64::__cpuid_count(7, 0);
     let smep = leaf7.ebx & (1 << 7) != 0;
     let smap = leaf7.ebx & (1 << 20) != 0;
     let umip = leaf7.ecx & (1 << 2) != 0;

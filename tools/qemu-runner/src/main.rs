@@ -137,6 +137,11 @@ struct Options {
     /// Attach a UHCI USB controller with a USB HID keyboard + mouse, so the OS
     /// can enumerate real USB devices and read HID input.
     usb: bool,
+    /// Attach an xHCI controller with a USB HID keyboard instead of UHCI, so
+    /// the newer host-controller path can be exercised on its own. Kept
+    /// separate from `--usb` because a test that could not say which
+    /// controller delivered a keystroke would prove nothing about either.
+    xhci: bool,
     /// Attach an e1000 NIC wired to the runner's own host-side Ethernet peer
     /// (`wire.rs`) over a `dgram` netdev, so the guest's stack is exercised
     /// against a real, independent implementation of ARP/ICMP/UDP/DNS with no
@@ -199,6 +204,7 @@ fn parse_args() -> Result<Options, String> {
     let mut audio = false;
     let mut audio_out = None;
     let mut usb = false;
+    let mut xhci = false;
     let mut net = false;
     let mut nvme = false;
     let mut nvme_persist = None;
@@ -251,6 +257,7 @@ fn parse_args() -> Result<Options, String> {
                 audio = true;
             }
             "--usb" => usb = true,
+            "--xhci" => xhci = true,
             "--net" => net = true,
             "--nvme" => nvme = true,
             "--nvme-persist" => nvme_persist = Some(PathBuf::from(value("--nvme-persist")?)),
@@ -306,6 +313,7 @@ fn parse_args() -> Result<Options, String> {
         audio,
         audio_out,
         usb,
+        xhci,
         net,
         nvme,
         nvme_persist,
@@ -460,6 +468,14 @@ fn build_command(
                 "-device",
                 "e1000,netdev=net0,mac=52:54:00:12:34:56",
             ]);
+    }
+    if opts.xhci {
+        cmd.args([
+            "-device",
+            "qemu-xhci,id=xhci",
+            "-device",
+            "usb-kbd,bus=xhci.0,port=1",
+        ]);
     }
     if opts.nvme {
         match make_nvme_disk(&opts.artifacts) {

@@ -182,6 +182,16 @@ jobs:
             --require "DESKTOP-INPUT-VERIFIED" \
             --timeout-secs 180 --label usb-hid-bios
 
+      - name: QEMU xHCI enumeration + HID input
+        run: |
+          # A structurally different USB controller from UHCI: ring-based
+          # and command-driven rather than a frame list the controller
+          # walks. Proves the whole chain - reset, command and event rings,
+          # Enable Slot, Address Device, two control IN transfers,
+          # Configure Endpoint, SET_CONFIGURATION/SET_PROTOCOL, and an
+          # interrupt transfer carrying a real keypress tagged src=xhci.
+          cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --xhci --expect B190 --expect B210             --send "lsdev" --send "xhciwait"             --inject-after "XHCI-HID-WAITING"             --monitor-cmd "sendkey g"             --send "shutdown"             --require "xhci ready caplength="             --require "xhci device vendor=0x0627"             --require "xhci hid iface=0 endpoint=0x81"             --require "XHCI-HID-REPORT bytes=8"             --require "ascii=g"             --require "[ITISYOU:INPUT] key=g src=xhci"             --forbid "xhci enumerate_failed"             --timeout-secs 300 --label xhci-hid-bios
+
       - name: QEMU system platform (caps, sandbox, services, packages)
         run: |
           # V0.7 driven through the shell over a persistent NVMe store: a

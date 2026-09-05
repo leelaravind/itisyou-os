@@ -206,6 +206,9 @@ pub struct Xhci {
     port: u8,
     hid_endpoint: Option<u8>,
     hid_packet: usize,
+    /// The endpoint has been configured and the device put into its
+    /// configured, boot-protocol state. Done once, on the first poll.
+    hid_ready: bool,
 }
 
 // Only ever reached through STATE's mutex.
@@ -232,10 +235,7 @@ impl Xhci {
     }
 
     fn portsc(&self, port: u8) -> u32 {
-        Self::read32(
-            self.op,
-            OP_PORTSC_BASE + (port as u64 - 1) * OP_PORT_STRIDE,
-        )
+        Self::read32(self.op, OP_PORTSC_BASE + (port as u64 - 1) * OP_PORT_STRIDE)
     }
 
     fn set_portsc(&self, port: u8, value: u32) {
@@ -449,6 +449,7 @@ impl Driver for XhciDriver {
             port: 0,
             hid_endpoint: None,
             hid_packet: 8,
+            hid_ready: false,
         };
 
         serial_println!(
@@ -517,7 +518,6 @@ impl Xhci {
             let mps = max_packet_for(speed);
             core::ptr::write_volatile((ep0 + 4) as *mut u32, (4 << 3) | (3 << 1) | (mps << 16));
             core::ptr::write_volatile((ep0 + 8) as *mut u64, self.ep0.dma.phys | 1);
-            self.hid_packet = mps as usize;
         }
         // Publish the device context before addressing: the controller writes
         // its output there.
@@ -550,8 +550,8 @@ impl Xhci {
 max_packet={}",
             device.vendor,
             device.product,
-            device.device_class,
-            device.max_packet_size,
+            device.class,
+            device.max_packet_size0,
         );
 
         // Configuration descriptor: first the 9-byte header to learn the total
@@ -564,16 +564,21 @@ max_packet={}",
         }
         let mut config = [0u8; 256];
         self.control_in(0x80, 6, 0x0200, 0, &mut config[..total])?;
-        let hid = kernel_core::usb::find_hid_interrupt_endpoint(&config[..total])
+        let (interface, endpoint) = kernel_core::usb::find_hid_interrupt_in(&config[..total])
             .ok_or("no HID interrupt endpoint")?;
         serial_println!(
-            "[ITISYOU:USB] xhci hid iface={} endpoint={:#04x} packet={} interval={}",
-            hid.interface,
-            hid.endpoint,
-            hid.max_packet,
-            hid.interval,
+            "[ITISYOU:USB] xhci hid iface={} endpoint={:#04x} packet={} interval={} \
+protocol={}",
+            interface.interface_number,
+            endpoint.address,
+            endpoint.max_packet_size,
+            endpoint.interval,
+            interface.protocol,
         );
-        self.hid_endpoint = Some(hid.endpoint);
+        self.hid_endpoint = Some(endpoint.address);
+        // The interrupt endpoint has its own packet size, which is not the
+        // control endpoint's; reusing EP0's would truncate every report.
+        self.hid_packet = endpoint.max_packet_size as usize;
         Ok(())
     }
 
@@ -603,8 +608,7 @@ max_packet={}",
             length as u32,
             (TRB_DATA << 10) | (1 << 16) | TRB_ISP | TRB_ENT,
         );
-        self.ep0
-            .push(0, 0, (TRB_STATUS << 10) | TRB_IOC);
+        self.ep0.push(0, 0, (TRB_STATUS << 10) | TRB_IOC);
         self.doorbell(self.slot_id, 1);
 
         let event = self
@@ -617,8 +621,41 @@ max_packet={}",
         // SAFETY: our own DMA buffer, at least `out.len()` bytes, and the
         // controller has finished with it (the transfer event arrived).
         unsafe {
-            core::ptr::copy_nonoverlapping(self.hid_buffer.virt as *const u8, out.as_mut_ptr(), out.len())
+            core::ptr::copy_nonoverlapping(
+                self.hid_buffer.virt as *const u8,
+                out.as_mut_ptr(),
+                out.len(),
+            )
         };
+        Ok(())
+    }
+
+    /// A control transfer with no data stage (SET_CONFIGURATION,
+    /// SET_PROTOCOL). Two TRBs instead of three: Setup then Status.
+    fn control_no_data(
+        &mut self,
+        request_type: u8,
+        request: u8,
+        value: u16,
+        index: u16,
+    ) -> Result<(), &'static str> {
+        let setup = (request_type as u64)
+            | ((request as u64) << 8)
+            | ((value as u64) << 16)
+            | ((index as u64) << 32);
+        // TRT = 0: no data stage. Getting this field wrong is the classic way
+        // a no-data control transfer hangs waiting for a stage nobody sends.
+        self.ep0.push(setup, 8, (TRB_SETUP << 10) | TRB_IDT);
+        // A no-data status stage is always IN (direction bit set).
+        self.ep0
+            .push(0, 0, (TRB_STATUS << 10) | TRB_IOC | (1 << 16));
+        self.doorbell(self.slot_id, 1);
+        let event = self
+            .await_event(TRB_TRANSFER_EVENT, 500)
+            .ok_or("control transfer timed out")?;
+        if event.completion_code != 1 && event.completion_code != 13 {
+            return Err("control transfer failed");
+        }
         Ok(())
     }
 
@@ -630,8 +667,25 @@ max_packet={}",
         let ep_num = endpoint & 0x0F;
         // Endpoint context index: 2 * ep + 1 for an IN endpoint.
         let dci = (ep_num * 2 + 1) as usize;
-        if !self.configure_hid_endpoint(dci) {
-            return None;
+        if !self.hid_ready {
+            if !self.configure_hid_endpoint(dci) {
+                return None;
+            }
+            // The CONTROLLER now knows about the endpoint; the DEVICE still
+            // has to be told to enter its configured state, and a boot-protocol
+            // keyboard has to be put into boot protocol explicitly — its
+            // default is the report protocol, whose reports have a different
+            // layout. Skipping either leaves an endpoint that is correctly
+            // configured and never sends anything.
+            if self.control_no_data(0x00, 9, 1, 0).is_err() {
+                serial_println!("[ITISYOU:USB] xhci set_configuration failed");
+                return None;
+            }
+            // SET_PROTOCOL(boot) is class-specific and interface-directed.
+            // A device that does not support it answers with a stall, which is
+            // not fatal: it simply has no alternative protocol to leave.
+            let _ = self.control_no_data(0x21, 0x0B, 0, 0);
+            self.hid_ready = true;
         }
         let len = core::cmp::min(out.len(), self.hid_packet);
         self.hid_ring.push(
