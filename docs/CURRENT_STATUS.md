@@ -30,6 +30,23 @@
     the stored trail is edited.
   - **Hardening** — SMEP, SMAP and UMIP, alongside the existing W^X, stack
     guard and user-pointer validation.
+### Release evidence
+
+- Local canonical gate: `scripts/verify.ps1` → `VERIFY: OK` (doctor, format,
+  both clippy gates, 278 host tests, 24/24 QEMU legs, website build, secret
+  scan clean over 275 files).
+- Remote: CI run `33987853808` green on ubuntu-24.04 for commit `e6e3496`.
+- `status/current.json` stamped to that commit; staging verified before
+  production. Staging version `edaab8e1-37e3-4c3a-a13b-398494ab988c`, production version `a3544b0a-5fe1-44ab-8dfc-b2bd4a3dda0d`.
+- Live: https://os.itisyou.app — 16/16 routes 200, `/nope` 404, strict CSP,
+  `nosniff`, `X-Frame-Options: DENY`, TLS 200, zero client JS, rendering
+  `v0.8.0 · Current Build VERIFIED · COMMIT e6e3496d129f5f9d753ddd90b875bccafbe5cefe`.
+- Browser automation was unavailable in this session (the Chrome extension was
+  not connected), so the site was verified over HTTP against the rendered
+  markup rather than through a browser. The site ships zero client-side
+  JavaScript, so the rendered HTML is the whole of what a browser would show —
+  but the limitation is recorded rather than glossed.
+
 - Deliberately **not** delivered, recorded as NOT DONE rather than reworded:
   **TCP**, IPv6, DHCP, and routing beyond a single gateway. Line-based IRQs
   still run on the legacy PIC.

@@ -1,5 +1,10 @@
 # Deployment — os.itisyou.app
 
+**Last release:** V0.8 — `status/current.json` stamped to CI-verified commit
+`e6e3496` (run `33987853808`); staging version
+`edaab8e1-37e3-4c3a-a13b-398494ab988c`, production version
+`a3544b0a-5fe1-44ab-8dfc-b2bd4a3dda0d`.
+
 ## Topology
 
 - **Model:** Cloudflare Worker with static assets only (no server code).
