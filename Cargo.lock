@@ -654,6 +654,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "user-harden-probe"
+version = "0.7.0-dev"
+dependencies = [
+ "ulib",
+]
+
+[[package]]
 name = "user-hello-app"
 version = "0.7.0-dev"
 dependencies = [
@@ -718,6 +725,13 @@ dependencies = [
 
 [[package]]
 name = "user-spin-forever"
+version = "0.7.0-dev"
+dependencies = [
+ "ulib",
+]
+
+[[package]]
+name = "user-stack-guard-probe"
 version = "0.7.0-dev"
 dependencies = [
  "ulib",

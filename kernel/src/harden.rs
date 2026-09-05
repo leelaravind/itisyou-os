@@ -1,0 +1,113 @@
+//! CPU-enforced separation between kernel and user memory (V0.8).
+//!
+//! The page tables already say which pages are user pages, and the kernel
+//! already validates every pointer userspace hands it. SMEP and SMAP add the
+//! thing neither of those can: enforcement that does not depend on the kernel
+//! being correct.
+//!
+//! * **SMEP** — the CPU refuses to *execute* a user page in kernel mode. A
+//!   corrupted function pointer that lands in a page userspace controls stops
+//!   being an exploit primitive and becomes a fault.
+//! * **SMAP** — the CPU refuses to *read or write* a user page in kernel mode
+//!   unless `EFLAGS.AC` is set. That inverts the default: instead of the
+//!   kernel being allowed to touch user memory everywhere and being careful
+//!   not to, it is forbidden everywhere and must say explicitly where it
+//!   means to. The three places that legitimately do — the two user-copy
+//!   helpers and `write` — bracket their access with `stac`/`clac`; anywhere
+//!   else, a stray dereference of a user pointer now faults instead of
+//!   quietly working.
+//! * **UMIP** — userspace cannot read the descriptor-table registers
+//!   (`sgdt`/`sidt`/`sldt`/`str`/`smsw`), which otherwise leak kernel
+//!   addresses to a Ring 3 program for free.
+//!
+//! Each is enabled only if the CPU advertises it, and what was actually
+//! enabled is reported rather than assumed — a hardening feature you believe
+//! is on and is not is worse than one you know is off.
+
+use crate::serial_println;
+use core::sync::atomic::{AtomicBool, Ordering};
+use x86_64::registers::control::{Cr4, Cr4Flags};
+
+/// True once SMAP is enabled, so the user-copy helpers know whether the
+/// `stac`/`clac` bracket is needed. Executing `stac` on a CPU without SMAP is
+/// an invalid opcode, so this is not merely an optimisation.
+static SMAP_ENABLED: AtomicBool = AtomicBool::new(false);
+static SMEP_ENABLED: AtomicBool = AtomicBool::new(false);
+static UMIP_ENABLED: AtomicBool = AtomicBool::new(false);
+
+/// Which protections are active.
+pub fn state() -> (bool, bool, bool) {
+    (
+        SMEP_ENABLED.load(Ordering::Relaxed),
+        SMAP_ENABLED.load(Ordering::Relaxed),
+        UMIP_ENABLED.load(Ordering::Relaxed),
+    )
+}
+
+/// Enable every supported supervisor-mode protection.
+///
+/// Must run before any Ring 3 process exists: turning SMAP on while a syscall
+/// is mid-copy would fault the kernel on its own legitimate access.
+pub fn init() {
+    // CPUID leaf 7 subleaf 0: EBX bit 7 = SMEP, bit 20 = SMAP; ECX bit 2 =
+    // UMIP.
+    let leaf7 = unsafe { core::arch::x86_64::__cpuid_count(7, 0) };
+    let smep = leaf7.ebx & (1 << 7) != 0;
+    let smap = leaf7.ebx & (1 << 20) != 0;
+    let umip = leaf7.ecx & (1 << 2) != 0;
+
+    // SAFETY: each bit is only set after CPUID advertised the feature, and
+    // this runs during single-threaded boot before any user process exists.
+    unsafe {
+        Cr4::update(|flags| {
+            if smep {
+                flags.insert(Cr4Flags::SUPERVISOR_MODE_EXECUTION_PROTECTION);
+            }
+            if smap {
+                flags.insert(Cr4Flags::SUPERVISOR_MODE_ACCESS_PREVENTION);
+            }
+            if umip {
+                flags.insert(Cr4Flags::USER_MODE_INSTRUCTION_PREVENTION);
+            }
+        });
+    }
+    SMEP_ENABLED.store(smep, Ordering::SeqCst);
+    SMAP_ENABLED.store(smap, Ordering::SeqCst);
+    UMIP_ENABLED.store(umip, Ordering::SeqCst);
+    serial_println!(
+        "[ITISYOU:HARDEN] cpu_protection smep={smep} smap={smap} umip={umip} cr4={:#x}",
+        Cr4::read_raw(),
+    );
+}
+
+/// Permit kernel access to user pages for the duration of a guard.
+///
+/// A guard rather than a bare pair of calls: an early return between `stac`
+/// and `clac` would leave the kernel running with user access permitted, which
+/// is precisely the state SMAP exists to prevent. `Drop` closes the window on
+/// every path, including a panic unwind.
+pub struct UserAccess {
+    active: bool,
+}
+
+impl UserAccess {
+    /// Open the window. Cheap and a no-op when SMAP is unavailable.
+    pub fn begin() -> UserAccess {
+        let active = SMAP_ENABLED.load(Ordering::Relaxed);
+        if active {
+            // SAFETY: `stac` is valid because CPUID advertised SMAP and CR4
+            // has it enabled; it only sets EFLAGS.AC.
+            unsafe { core::arch::asm!("stac", options(nomem, nostack)) };
+        }
+        UserAccess { active }
+    }
+}
+
+impl Drop for UserAccess {
+    fn drop(&mut self) {
+        if self.active {
+            // SAFETY: as above; `clac` clears EFLAGS.AC.
+            unsafe { core::arch::asm!("clac", options(nomem, nostack)) };
+        }
+    }
+}

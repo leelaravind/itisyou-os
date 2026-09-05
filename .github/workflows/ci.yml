@@ -220,6 +220,17 @@ jobs:
           # system staying healthy and interactive throughout.
           cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --expect B190             --send "bg /bin/tick-client"             --send "bg /bin/spin-finite"             --send "svc"             --send "bg /bin/tick-client"             --send "shutdown"             --require "bg_start name=tickd pid=1 caps=0x2 long_running=true"             --require "bg_start name=flapd pid=2 caps=0x0 long_running=true"             --require "TICKD-READY" --require "TICKD-ALIVE tick="             --require "TICKD-SERVED n=2" --require "TICKC-OK passes="             --require "bg_restart name=flapd pid=" --require "clean_exit=true"             --require "bg_failed name=flapd restarts=3"             --require "name=flapd state=failed"             --require "tickd  Running"             --require "flapd  Failed { restarts: 3 }"             --require "SVC-CLIENT-OK"             --require "svc: started=3 done=2 failed=1 restarts=3"             --require "shutting down (QEMU exit)"             --timeout-secs 300 --label services-bg-bios
 
+      - name: QEMU hardening (SMEP/SMAP/UMIP, W^X, stack guard)
+        run: |
+          # The whole matrix runs on a CPU advertising SMEP/SMAP/UMIP, so
+          # every other leg passing already shows the kernel's own access
+          # to user memory still works. This leg asserts the protections
+          # are on and that they refuse: `sgdt` from Ring 3 is a #GP, a
+          # W^X segment is refused at load, the page below the stack is
+          # not writable, and a kernel address is unreadable. The two
+          # --forbid assertions state the refusals, which print no line.
+          cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --expect B210             --send "harden"             --send "run /bin/init"             --send "run /bin/wx-test"             --send "run /bin/harden-probe"             --send "run /bin/stack-guard-probe"             --send "run /bin/pf-test"             --send "shutdown"             --require "cpu_protection smep=true smap=true umip=true"             --require "harden: smep=true smap=true umip=true"             --require "RING3-DONE"             --require "load failed: WxSegment"             --require "HARDEN-PROBE-SGDT"             --require "vector=13 addr=0x0 contained=true"             --require "STACKGUARD-WROTE page=15"             --require "vector=14 addr=0x7ffffdf000 contained=true"             --require "addr=0xffff8000dead0000 contained=true"             --forbid "HARDEN-LEAK-SGDT"             --forbid "STACKGUARD-LEAK"             --timeout-secs 300 --label harden-bios
+
       - name: QEMU interrupt modernization (APIC + I/O APIC + MSI-X)
         run: |
           # The local APIC comes up alongside the legacy PIC, which keeps
