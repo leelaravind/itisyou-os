@@ -122,6 +122,7 @@ fn execute(line: &str) {
         "clear" => crate::serial_print!("\x1b[2J\x1b[H"),
         "run" => cmd_run(args),
         "bg" => cmd_bg(args),
+        "xhciwait" => cmd_xhciwait(),
         "harden" => cmd_harden(),
         "irq" => cmd_irq(),
         "store" => cmd_store(args),
@@ -149,7 +150,7 @@ fn execute(line: &str) {
 
 fn cmd_help() {
     crate::serial_println!(
-        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path> [caps|-] [prefix]  run a Ring 3 ELF (optionally sandboxed)\n  bg <path> [caps]  run a Ring 3 ELF co-scheduled with the background services\n  svc               supervise the on-demand services; show all service state\n  pkg <op> ...      app packages: install/stage/launch/rollback/recover/list\n  harden            CPU-enforced kernel/user separation (SMEP/SMAP/UMIP)\n  irq               APIC state and interrupt-delivery counters\n  store <op> ...    persistent store: ls | put <name> <text> | cat <name> | rm <name>\n  net               interface address, counters and bound sockets\n  ping <ip> [n]     ICMP echo the given IPv4 address\n  resolve <name>    DNS A lookup through the configured server\n  audit [save|verify]  privileged-action trail; persist it or re-verify it\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  usbwait           wait for USB HID input (keyboard/mouse)\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU\n  reboot            8042 CPU reset"
+        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path> [caps|-] [prefix]  run a Ring 3 ELF (optionally sandboxed)\n  bg <path> [caps]  run a Ring 3 ELF co-scheduled with the background services\n  svc               supervise the on-demand services; show all service state\n  pkg <op> ...      app packages: install/stage/launch/rollback/recover/list\n  xhciwait          wait for USB HID input through the xHCI controller\n  harden            CPU-enforced kernel/user separation (SMEP/SMAP/UMIP)\n  irq               APIC state and interrupt-delivery counters\n  store <op> ...    persistent store: ls | put <name> <text> | cat <name> | rm <name>\n  net               interface address, counters and bound sockets\n  ping <ip> [n]     ICMP echo the given IPv4 address\n  resolve <name>    DNS A lookup through the configured server\n  audit [save|verify]  privileged-action trail; persist it or re-verify it\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  usbwait           wait for USB HID input (keyboard/mouse)\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU\n  reboot            8042 CPU reset"
     );
 }
 
@@ -343,6 +344,39 @@ fn cmd_bg(args: &[&str]) {
 /// filesystem tests use `put` to plant a file that a *read-only* process then
 /// reads, which is what makes "writes denied, reads still allowed" a
 /// meaningful distinction rather than an empty one.
+/// `xhciwait` — poll the xHCI HID interrupt endpoint for one report.
+///
+/// Separate from `usbwait` (which polls UHCI) rather than folded into it: the
+/// two controllers are genuinely different hardware, and a test that could not
+/// say which one delivered the keystroke would prove nothing about either.
+fn cmd_xhciwait() {
+    if !crate::device::xhci::present() {
+        crate::serial_println!("xhciwait: no xHCI controller bound");
+        return;
+    }
+    // Printed BEFORE blocking so the test harness has a gate to inject a
+    // keypress after: injecting before the endpoint is armed would deliver the
+    // report to nobody.
+    crate::serial_println!("XHCI-HID-WAITING");
+    let mut report = [0u8; 8];
+    let got = crate::device::xhci::with(|c| c.poll_hid(&mut report, 5000)).flatten();
+    match got {
+        Some(n) if n > 0 => {
+            let ascii = kernel_core::usb::hid_keyboard_ascii(&report[..n]);
+            crate::serial_println!(
+                "XHCI-HID-REPORT bytes={n} modifier={:#04x} key={:#04x} ascii={}",
+                report[0],
+                report.get(2).copied().unwrap_or(0),
+                ascii.map(|c| c as char).unwrap_or('.'),
+            );
+            if let Some(c) = ascii {
+                crate::serial_println!("[ITISYOU:INPUT] key={} src=xhci", c as char);
+            }
+        }
+        _ => crate::serial_println!("xhciwait: no report within the deadline"),
+    }
+}
+
 /// `harden` — which CPU-enforced protections are actually on.
 ///
 /// Reported from CR4 rather than from what the kernel intended to enable: a

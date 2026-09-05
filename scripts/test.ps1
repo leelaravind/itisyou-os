@@ -144,6 +144,38 @@ Write-Output '=== QEMU USB (UHCI) enumeration + HID input into the desktop (BIOS
     '--require', 'DESKTOP-INPUT-VERIFIED',
     '--timeout-secs', '150', '--label', 'usb-hid-bios')
 
+Write-Output '=== QEMU xHCI enumeration + HID input (BIOS) ==='
+# A second, structurally different USB host controller. UHCI has the driver
+# build transfer descriptors into a frame list the controller walks; xHCI is
+# ring-based and command-driven - the driver posts TRBs, rings a doorbell, and
+# reads every result off an event ring the controller owns. Sharing the
+# descriptor parsing in kernel-core and nothing else is the point: the same
+# `usb` module now serves two genuinely different controllers.
+#
+# The leg proves the whole chain rather than just binding: controller reset,
+# command and event rings, Enable Slot, Address Device, two control IN
+# transfers (device then configuration descriptor), Configure Endpoint,
+# SET_CONFIGURATION and SET_PROTOCOL on the device, and finally an interrupt
+# transfer carrying a real injected keypress - tagged `src=xhci` so it can
+# never be confused with the UHCI leg's input.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--xhci',
+    '--expect', 'B190', '--expect', 'B210',
+    '--send', 'lsdev',
+    '--send', 'xhciwait',
+    '--inject-after', 'XHCI-HID-WAITING',
+    '--monitor-cmd', 'sendkey g',
+    '--send', 'shutdown',
+    '--require', 'xhci ready caplength=',
+    '--require', 'driver: xhci',
+    '--require', 'xhci device vendor=0x0627',
+    '--require', 'xhci hid iface=0 endpoint=0x81',
+    '--require', 'XHCI-HID-REPORT bytes=8',
+    '--require', 'ascii=g',
+    '--require', '[ITISYOU:INPUT] key=g src=xhci',
+    '--forbid', 'xhci enumerate_failed',
+    '--timeout-secs', '240', '--label', 'xhci-hid-bios')
+
 Write-Output '=== QEMU system platform: caps, sandbox, services, packages (BIOS) ==='
 # The V0.7 platform driven through the shell over a persistent NVMe store:
 # a zero-capability probe proves default deny; a sandboxed fs-probe proves the
