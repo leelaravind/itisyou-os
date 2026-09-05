@@ -40,7 +40,7 @@ const sections: FaqSection[] = [
         q: 'What actually works today?',
         tag: 'STATUS',
         a: [
-          `The project is ${status.maturity} at v${status.version}, milestone “${status.milestone}”. Verified in QEMU so far: the V0.1 kernel foundation; V0.2 Ring 3 userspace; V0.3 per-process isolation, concurrent processes and strict process isolation; V0.4 preemptive multitasking plus persistent storage; V0.5 a real graphical desktop (ownership-isolated windows, GUI syscalls, PS/2 keyboard + mouse); V0.6 hardware foundations (device model + UHCI HID + AC97 + unified input); and V0.7 platform controls: capability default deny, sandboxed fs visibility, service supervision, manifest-launch apps, and atomic update+rollback with reboot recovery. The build page shows the live evidence-backed module table.`
+          `The project is ${status.maturity} at v${status.version}, milestone “${status.milestone}”. Verified in QEMU so far: the V0.1 kernel foundation; V0.2 Ring 3 userspace; V0.3 per-process isolation, concurrent processes and strict process isolation; V0.4 preemptive multitasking plus persistent storage; V0.5 a real graphical desktop (ownership-isolated windows, GUI syscalls, PS/2 keyboard + mouse); V0.6 hardware foundations (device model + UHCI HID + AC97 + unified input); V0.7 platform controls: capability default deny, sandboxed fs visibility, service supervision, manifest-launch apps, and atomic update+rollback with reboot recovery; and V0.8 networking (e1000 with ARP/IPv4/ICMP/UDP/DNS and port-scoped socket capabilities), Ed25519 package signatures, capability-scoped userspace filesystem writes, APIC/MSI-X interrupt delivery, xHCI enumeration and HID input, a hash-chained audit trail that survives reboots, and SMEP/SMAP/UMIP. The build page shows the live evidence-backed module table.`
         ],
       },
     ],
@@ -107,7 +107,7 @@ const sections: FaqSection[] = [
         q: 'Is it secure?',
         tag: 'HONESTY',
         a: [
-          'The platform is not production hardened, but V0.7 moved core trust controls into tested platform enforcement: default-deny capabilities, delegation only through controlled paths, filesystem sandboxing by normalized prefixes, deterministic service mediation, auditable denials, atomic update/rollback/recovery, and crash containment. Remaining gaps: no capability revocation/handles yet, no package signing, no network, and no userspace filesystem write API.',
+          'The platform is not production hardened, but V0.7 and V0.8 moved core trust controls into tested enforcement: default-deny capabilities as revocable handles re-checked on every use, filesystem sandboxing by normalized prefixes, deterministic service mediation, auditable denials, atomic update/rollback/recovery, crash containment, Ed25519 package authenticity, a hash-chained audit trail that survives reboots, and SMEP/SMAP/UMIP enforcing kernel/user separation in the CPU. Remaining gaps, stated plainly: the package trust root is a DEVELOPMENT key whose seed is published in the source tree, with no rotation or revocation; the audit chain detects editing but not an attacker who rewrites the file including its head; there is no TCP, DHCP or IPv6; and line IRQs still run on the legacy PIC.',
         ],
       },
     ],

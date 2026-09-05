@@ -125,6 +125,47 @@ update-state resolution, sandbox path math — lives host-tested in
 request → capability check → service → action → audit path; no AI exists in
 the kernel.
 
+## Networking (V0.8, ADR-0015)
+
+An **e1000** driver with polled RX/TX descriptor rings, above it an interface
+holding one IPv4 address and a bounded ARP cache, and above that a bounded UDP
+socket table. Everything that *parses* lives host-tested in
+`kernel_core::net::{checksum,eth,arp,ipv4,icmp,udp,dns}`: allocation-free,
+borrowing from the DMA buffer, and refusing what it does not fully understand
+(VLAN tags, fragments, ICMP types other than echo, DNS compression bombs)
+rather than guessing. Authority is a **capability scoped to a port**: `udp_bind`
+checks the Network handle against the port, and every later datagram call
+re-checks the socket's own port, so a handle narrowed after the bind stops
+working at the next use. Datagram syscalls never block — inside a syscall
+`SFMASK` has cleared IF, so a wait there would freeze the machine — and return
+`ERR_AGAIN` for the caller to retry on its own slice.
+
+## Interrupt controllers (V0.8, ADR-0017)
+
+The legacy **PIC** still carries the timer and PS/2 input; the **local APIC**
+runs alongside it and is proved to deliver (one-shot APIC timer on vector
+0x41). **MSI-X** is programmed on the NVMe controller and delivered by a real
+block read's completion. The **I/O APIC** is discovered, mapped and programmed
+with a verified register round-trip, but its entry is left masked: line IRQs
+stay on the path that is already verified.
+
+## USB (V0.6 UHCI, V0.8 xHCI, ADR-0018)
+
+Two structurally different host controllers sharing only descriptor parsing.
+UHCI walks a frame list; xHCI is ring-based and command-driven — command ring,
+per-endpoint transfer rings, and an event ring the controller owns. Input is
+tagged with the controller that delivered it (`src=usb` / `src=xhci`).
+
+## Hardening (V0.8)
+
+**SMEP**, **SMAP** and **UMIP** are enabled from CPUID and reported from CR4.
+SMAP inverts the default for user memory: the kernel is forbidden to touch it
+except in three declared windows (the two user-copy helpers and `write`), each
+bracketed by a guard whose `Drop` closes the window on every path. W^X is
+enforced at load (a segment both writable and executable is refused), the user
+stack is bounded by unmapped memory, and every user pointer is validated
+against the ACTIVE address space.
+
 ## Crate boundaries
 
 - **`kernel/`** — the only privileged code. Library + two binaries:
@@ -132,8 +173,9 @@ the kernel.
   (boots, runs in-kernel checks, exits QEMU with a deterministic status).
 - **`crates/kernel-core`** — pure logic with zero I/O: boot-stage contract,
   serial-marker grammar, and (as subsystems land) memory-map normalization,
-  path handling, parsers — including `net::{checksum,eth,ipv4}`, the
-  host-tested protocol layer that a future NIC driver will sit under. Compiled unchanged into both the kernel and host
+  path handling, parsers — including `net::{checksum,eth,arp,ipv4,icmp,udp,
+  dns}` under the NIC driver, `ed25519` + `sha512` for package authenticity,
+  and `audit_chain` for the tamper-evident trail. Compiled unchanged into both the kernel and host
   tools, unit-tested on the host.
 - **`tools/image-builder`** — host tool; turns kernel ELFs into bootable
   BIOS/UEFI disk images (pure Rust) + SHA-256 manifest.

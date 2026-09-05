@@ -83,7 +83,6 @@ export const MILESTONES: Milestone[] = [
     id: 'V0.7',
     name: 'System Platform',
     status: 'verified',
-    current: true,
     summary:
       'A coherent platform over the kernel: an explicit capability model enforced default-deny at the syscall boundary (delegation only narrows - a child can never hold what its parent lacked); a traversal-proof filesystem sandbox; a service supervisor over ordinary Ring 3 processes (deterministic cycle-checked startup order, crash containment, bounded restart policy - no hidden privileged daemons); applications as SHA-256-verified ITPKG packages launched with manifest-requested capabilities only; atomic updates with rollback and reboot-proven recovery (an interrupted update can never activate); and an audit trail recording every privileged action and every denial. Future AI agents can only request through this same capability/policy/service path.',
     components: [
@@ -94,19 +93,24 @@ export const MILESTONES: Milestone[] = [
   },
   {
     id: 'V0.8',
-    name: 'Networking',
-    status: 'planned',
+    name: 'Networking, Authenticity & Hardening',
+    status: 'verified',
+    current: true,
     summary:
-      'NIC driver (VM target first), Ethernet, ARP/NDP, IPv4/IPv6 foundations, UDP/TCP, DNS, strict network permission model.',
-    components: ['NIC driver (VM target first)', 'IPv4/IPv6, UDP/TCP, DNS', 'Strict network permission model'],
+      'The first milestone whose inputs come from somewhere other than this machine. An e1000 driver with polled descriptor rings; ARP, IPv4, ICMP echo (answered as well as sent), UDP and DNS; Ring 3 sockets behind a capability scoped to a port. Packages are now authenticated as well as integrity-checked: Ed25519 signatures over a context, the declared lengths and the content digest, against a compiled-in trust root - an unsigned package, one signed by a stranger and one with a forged signature are three DIFFERENT refusals. Userspace can write to the persistent store under the write right and its sandbox, with an overwrite that is one crash-atomic commit. The local APIC, I/O APIC and MSI-X are up with real delivery evidence, xHCI enumerates and reads HID input, the audit trail is hash-chained and survives reboots, and SMEP/SMAP/UMIP now enforce kernel/user separation in the CPU rather than only in the page tables. NOT delivered, and said so: TCP, IPv6 and DHCP.',
+    components: [
+      'e1000 + ARP/IPv4/ICMP/UDP/DNS; port-scoped socket capability',
+      'Ed25519 package signatures; userspace filesystem writes',
+      'APIC/MSI-X, xHCI, hash-chained persistent audit, SMEP/SMAP/UMIP',
+    ],
   },
   {
     id: 'V0.9',
-    name: 'Advanced Hardware + Interrupt Modernization',
+    name: 'Transport, Interrupt Cutover & Key Management',
     status: 'planned',
     summary:
-      'USB xHCI, APIC/IOAPIC/MSI interrupt routing, ACPI/power foundations, additional device classes, laptop hardware research, targeted driver strategy.',
-    components: ['USB xHCI', 'APIC/IOAPIC/MSI', 'ACPI/power foundations'],
+      'TCP with a real retransmission timer and connection state machine; DHCP and IPv6 foundations; moving line IRQs onto the I/O APIC (with ACPI MADT parsing) so the PIC can be retired; a signing key that never enters the source tree, with rotation and revocation; signing the audit chain head; ACPI/power foundations and additional device classes.',
+    components: ['TCP, DHCP, IPv6', 'I/O APIC cutover + ACPI', 'Key provisioning, rotation, revocation'],
   },
   {
     id: 'V0.10',

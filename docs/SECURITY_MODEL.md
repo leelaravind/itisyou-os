@@ -69,13 +69,37 @@ only through narrow, deterministic, auditable paths).
   visibility is normalized and prefix-confined.
 - Updates use integrity-verified packages and crash-atomic staging/rollback;
   interrupted updates are detected and recovered after reboot.
+- Packages are **authenticated as well as integrity-checked** (V0.8): an
+  Ed25519 signature over a context string, the declared lengths and the content
+  digest, verified against a compiled-in trust root. Integrity and authenticity
+  are separate steps so a corrupt download, a package from a stranger and a
+  forged signature are three distinguishable refusals. An empty trust store
+  trusts nothing.
+- **CPU-enforced kernel/user separation** (V0.8): SMEP, SMAP and UMIP. SMAP
+  makes kernel access to user pages forbidden by default and permitted only in
+  three declared windows, so a stray dereference of a user pointer faults
+  instead of quietly working.
+- The **audit trail is hash-chained and durable** (V0.8): each record's hash
+  covers the previous one, the chain is extended before the bounded ring drops
+  anything, and it continues across boots from the head recovered at startup.
+  It detects editing; it does not defend against an attacker who can rewrite
+  the whole file including its head. Signing the head is the missing step.
+- The network stack refuses more than it accepts: fragments, VLAN tags, ICMP
+  types other than echo, and packets addressed elsewhere are counted and
+  dropped. It generates no ICMP errors, so it cannot be used as a reflector.
+  Network access is a capability scoped to a port.
 
 ## Capability model and remaining direction
 
 `subject → capability → object → permitted operation → constraints →
 provenance` is the V0.7 platform contract. The current implementation uses
 static process bit capabilities and path prefixes. Per-resource handles,
-revocation, and enforcement at the syscall boundary have since landed in V0.8
+revocation, enforcement at the syscall boundary, signed package authenticity
+and a port-scoped network policy have since landed in V0.8
 (forged, expired and revoked handles are each refused on the real syscall
-path, with the reason audited). Signed package authenticity and network
-policy remain open; there is no network data path to police yet.
+path, with the reason audited). What remains open is key management: the
+package trust root is a single compiled-in DEVELOPMENT key whose seed is
+published in the source tree, with no rotation, revocation list or expiry. A
+real deployment requires provisioning a signing key that never enters the
+source tree; until then the mechanism is real and the key it anchors is not a
+secret.

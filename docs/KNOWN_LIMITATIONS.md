@@ -20,10 +20,38 @@ Updated continuously; last update: 2026-09-03 (V0.7 release evidence closeout).
   `run`) starves them for its duration. There is still no userspace `init`,
   no service priorities or fairness beyond round-robin, and the background
   registry is a static array (no runtime start/stop of a named service).
-- Networking (V0.8): protocol parsing/building only
-  (`kernel_core::net::{checksum,eth,ipv4}`, host-tested). There is **no NIC
-  driver and no data path** — nothing is sent or received, and no ARP, ICMP,
-  UDP or TCP exists. The e1000 is enumerated by the PCI scan and left alone.
+- Networking (V0.8): IPv4 over one e1000 NIC — ARP, ICMP echo (client and
+  responder), UDP with capability-scoped Ring 3 sockets, and a DNS resolver.
+  **No TCP**: the stack is datagram-only, and a correct TCP needs a
+  retransmission timer, window management and a connection state machine whose
+  failure modes are exactly what a half-implementation hides. No IPv6, no
+  DHCP (the address plan is static: 10.0.2.15/24 via 10.0.2.2), no routing
+  beyond a single gateway, no fragmentation in either direction, and no ICMP
+  error generation — an unreachable port is dropped silently. One NIC, polled;
+  the RX path is drained from a scheduling slice, so a program that never
+  yields also never receives.
+- Package signing (V0.8): the trust root is a single **development** key whose
+  seed is a literal in `kernel/build.rs`. It is published deliberately — a
+  build-time key that looked secret would invite someone to trust it — but it
+  means the current build authenticates packages against a key anyone can use.
+  No key rotation, no revocation list, no expiry. Shipping to real users
+  requires provisioning a signing key that never enters the source tree.
+- Audit (V0.8): the trail is hash-chained and survives reboots, and it detects
+  a record being altered, deleted, reordered or inserted. It does **not**
+  defend against an attacker who can rewrite the whole file including its
+  stored head; signing the head, or writing it somewhere the running system
+  cannot reach, is what would close that gap. Persisting is explicit
+  (`audit save`), not automatic on every record — one full filesystem write per
+  privileged action would be its own denial of service.
+- Interrupts (V0.8): line-based IRQs are **not** routed through the I/O APIC.
+  Its registers are programmed and read back, but the entry stays masked and
+  the PIC keeps serving the timer and PS/2 input, so this is not yet a system
+  that could run without the PIC. No ACPI MADT parsing (the I/O APIC address is
+  the architectural one), single CPU only — no IPIs, no AP startup — and the
+  APIC timer is not the scheduler tick.
+- USB (V0.8): xHCI handles one device, one interrupt endpoint, one slot. No
+  hubs, no bulk or isochronous transfers, no USB3 streams, and no runtime
+  attach/detach — a device plugged in after boot is not noticed.
 - QEMU is the only supported execution environment. Physical hardware boot
   is intentionally out of scope and untested.
 - Scheduling (V0.4): **preemptive**, round-robin, no priorities; the quantum

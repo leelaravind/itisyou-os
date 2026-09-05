@@ -1,12 +1,12 @@
 {
-  "version": "0.7.0",
+  "version": "0.8.0",
   "maturity": "pre-alpha",
   "architecture": "x86_64",
   "environment": "QEMU",
-  "milestone": "V0.7 — System Platform",
-  "commit": "1f08bf5fe013102a133a090d35ab23c1b9858361",
-  "lastVerifiedAt": "2026-09-03T21:58:55Z",
-  "verification": "verified",
+  "milestone": "V0.8 \u2014 Networking, Authenticity & Hardening",
+  "commit": "",
+  "lastVerifiedAt": "",
+  "verification": "pending",
   "modules": [
     {
       "id": "boot",
@@ -200,7 +200,7 @@
     },
     {
       "id": "packages",
-      "name": "ITPKG packages (SHA-256 verified install/launch)",
+      "name": "ITPKG packages (SHA-256 integrity + Ed25519 authenticity)",
       "status": "verified"
     },
     {
@@ -210,18 +210,48 @@
     },
     {
       "id": "audit",
-      "name": "Audit/provenance trail (actions + denials)",
+      "name": "Audit/provenance trail, hash-chained and persistent",
+      "status": "verified"
+    },
+    {
+      "id": "net-stack",
+      "name": "IPv4 networking: e1000, ARP, ICMP, UDP, DNS",
+      "status": "verified"
+    },
+    {
+      "id": "net-sockets",
+      "name": "Capability-scoped Ring 3 UDP sockets",
+      "status": "verified"
+    },
+    {
+      "id": "net-tcp",
+      "name": "TCP",
+      "status": "planned"
+    },
+    {
+      "id": "net-dhcp",
+      "name": "DHCP and IPv6",
+      "status": "planned"
+    },
+    {
+      "id": "fs-write",
+      "name": "Capability-scoped userspace filesystem writes (atomic)",
+      "status": "verified"
+    },
+    {
+      "id": "hardening",
+      "name": "SMEP/SMAP/UMIP, W^X, stack guard, pointer validation",
       "status": "verified"
     },
     {
       "id": "usb-xhci",
-      "name": "USB xHCI host controller",
-      "status": "planned"
+      "name": "USB xHCI host controller (enumeration + HID)",
+      "status": "verified"
     },
     {
       "id": "irq-apic",
-      "name": "APIC/IOAPIC/MSI interrupt routing",
-      "status": "planned"
+      "name": "Local APIC, I/O APIC and MSI-X delivery",
+      "status": "verified"
     },
     {
       "id": "storage-second-driver",
@@ -235,8 +265,8 @@
     },
     {
       "id": "pkg-signing",
-      "name": "Package signatures (authenticity)",
-      "status": "planned"
+      "name": "Ed25519 package signatures + trusted-key verification",
+      "status": "verified"
     }
   ]
 }

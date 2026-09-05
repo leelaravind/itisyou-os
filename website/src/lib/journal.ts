@@ -19,6 +19,58 @@ export interface JournalEntry {
 
 export const JOURNAL: JournalEntry[] = [
   {
+    date: '2026-09-05',
+    time: '18:40',
+    session: 'Session 3 — V0.8',
+    title: 'V0.8: networking, package authenticity, interrupt modernization, hardening',
+    what:
+      'An e1000 driver with polled RX/TX descriptor rings, ARP, IPv4, ICMP echo (answered as well as sent), UDP with port-scoped Ring 3 sockets, and DNS. Ed25519 signatures for packages, verified against a compiled-in trust root. Capability-scoped userspace filesystem writes with a crash-atomic overwrite. Local APIC, I/O APIC and MSI-X with real interrupt-delivery evidence. xHCI enumeration and HID input. A hash-chained audit trail that survives reboots. SMEP, SMAP and UMIP.',
+    detail:
+      'Three bugs came out of RUNNING the network stack rather than reading it, and each is a class worth naming. A `match` on a `Mutex` guard kept the lock alive across the arm that re-locks to send an ARP request \u2014 a self-deadlock on a spin lock with interrupts off, which is a dead machine. Bounded waits were built on the timer tick, which does not advance inside a syscall because SFMASK has cleared IF, so a 1-second timeout burned a 400-million-spin backstop instead; the fix was a TSC calibrated against the PIT, plus making the datagram syscalls non-blocking so waiting happens on the caller\u2019s own scheduling slice. And a tight userspace retry loop emitted one ARP broadcast per attempt \u2014 879 in a single run.',
+    evidence:
+      'artifacts/qemu/net-bios.result.json \u00b7 guest_arp_replies=1 guest_icmp_replies=1 hostile_sent=true replies_to_hostile=0 \u00b7 bad_ip_csum=0 bad_udp_csum=0 bad_icmp_csum=0',
+    status: 'implemented',
+  },
+  {
+    date: '2026-09-05',
+    time: '18:30',
+    session: 'Session 3 — V0.8',
+    title: 'The network is verified against an independent implementation, not against itself',
+    what:
+      'The test harness brings its own Ethernet peer over a QEMU `dgram` netdev: it answers ARP, ICMP echo, a UDP echo service and DNS, and it is the entire network the guest sees \u2014 no slirp, no host resolver, nothing outside the machine.',
+    detail:
+      'The peer is deliberately a separate byte-level implementation rather than a second use of kernel_core::net. A test where both ends share a checksum routine proves the two agree, not that either is right. It also probes the guest \u2014 an ARP request and a ping \u2014 because a stack that only ever initiates is not a host on a network, and then sends five frames a correct stack must refuse: a corrupt IP checksum, a ping addressed elsewhere but delivered to our MAC, UDP to an unbound port, an 802.1Q tag, and an ARP whose hardware type contradicts its address lengths. The assertion is that the guest counts them as refused AND answers none of them, detected by content rather than by timing.',
+    evidence: 'tools/qemu-runner/src/wire.rs \u00b7 rx_malformed=3 rx_unwanted=2 \u00b7 replies_to_hostile=0',
+    status: 'implemented',
+  },
+  {
+    date: '2026-09-05',
+    time: '18:20',
+    session: 'Session 3 — V0.8',
+    title: 'Ed25519 written out, with every curve constant derived rather than transcribed',
+    what:
+      'Package authenticity needed a signature scheme. It is implemented in kernel-core alongside SHA-256 and SHA-512 rather than pulled in as a dependency, and validated against the RFC 8032 test vectors \u2014 public keys, signatures and verification \u2014 not only against itself.',
+    detail:
+      'The curve constants (d = -121665/121666, sqrt(-1) = 2^((p-1)/4), the base point from y = 4/5) are computed from small integers at use time. A mistyped 32-byte constant produces a working implementation of a DIFFERENT curve: self-consistent, passing every round-trip test, and unable to verify a single real signature. Deriving them removes the possibility. Integrity and authenticity stay separate steps so that a corrupt download, a package from a stranger and a forged signature are three distinguishable refusals rather than one.',
+    evidence:
+      'RFC 8032 \u00a77.1 vectors pass \u00b7 [L]B = identity \u00b7 signature result=refused reason=unsigned | untrusted_signer | bad_signature',
+    status: 'implemented',
+  },
+  {
+    date: '2026-09-05',
+    time: '18:10',
+    session: 'Session 3 — V0.8',
+    title: 'SMAP inverts the default, so the harness had to be told to allow it',
+    what:
+      'SMEP, SMAP and UMIP are enabled from CPUID and reported from CR4. SMAP makes kernel access to user pages forbidden by default; the three places that legitimately need it bracket their access with a guard whose Drop closes the window on every path.',
+    detail:
+      'QEMU\u2019s default qemu64 model advertises none of the three, so the hardening would have been enabled into a void and silently done nothing. The runner now requests +smep,+smap,+umip, which means every leg in the matrix runs with supervisor-mode protection on \u2014 a far stronger statement than one leg that enables it, because the other 23 passing is the evidence that the kernel\u2019s own legitimate access to user memory still works. The harness also gained a --forbid assertion: a refusal prints no line of its own, so the only way to state one is that the marker printed on success never appeared.',
+    evidence:
+      'harden-bios \u00b7 cpu_protection smep=true smap=true umip=true \u00b7 sgdt from Ring 3 is a contained #GP \u00b7 stack guard exactly 16 pages down',
+    status: 'implemented',
+  },
+
+  {
     date: '2026-09-02',
     time: '02:30',
     session: 'Session 1 — Foundation',
