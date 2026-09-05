@@ -52,6 +52,100 @@ pub fn run_all(suite: &mut Suite) {
     graphics_tests(suite);
     device_tests(suite);
     security_tests(suite);
+    capability_handle_tests(suite);
+}
+
+/// V0.8: the capability-handle table as the LIVE enforcement path, exercised
+/// against the real kernel registry (not the host-side unit tests).
+fn capability_handle_tests(suite: &mut Suite) {
+    use kernel_core::capability::{rights, CapabilityHandle, CapabilityKind, ResourceScope};
+
+    // A pid that never existed owns nothing; a check against it must fail
+    // rather than fall through to some ambient authority.
+    let ghost_pid = u64::MAX - 7;
+    suite.check(
+        "caph_unknown_owner_has_no_handles",
+        crate::capability::count_owned(ghost_pid) == 0,
+    );
+    suite.check(
+        "caph_invalid_handle_denied",
+        crate::capability::check(
+            CapabilityHandle::INVALID,
+            ghost_pid,
+            CapabilityKind::Filesystem,
+            ResourceScope::ANY,
+            rights::READ,
+            crate::interrupts::ticks(),
+        )
+        .is_err(),
+    );
+
+    // Setting capability BITS alone must never be mistaken for granting
+    // authority: `set_authority` is the only way in, and it must leave the
+    // process holding real handles. (A launcher that assigned `caps` directly
+    // produced an app with no authority at all — caught by this check.)
+    match crate::user::load_from_bytes(crate::fs::read("/bin/init").unwrap_or(&[])) {
+        Ok(mut probe) => {
+            let minted_none = crate::capability::count_owned(probe.pid);
+            probe.set_authority(kernel_core::caps::CAP_FS_READ, None);
+            let minted_read = crate::capability::count_owned(probe.pid);
+            suite.check(
+                "caph_set_authority_mints_handles",
+                minted_none == 0 && minted_read == 1,
+            );
+            // Re-authorizing replaces rather than accumulates.
+            probe.set_authority(
+                kernel_core::caps::CAP_FS_READ | kernel_core::caps::CAP_SPAWN,
+                None,
+            );
+            suite.check(
+                "caph_reauthorize_replaces",
+                crate::capability::count_owned(probe.pid) == 2,
+            );
+            crate::capability::revoke_owner(probe.pid);
+            probe.space.teardown();
+        }
+        Err(_) => {
+            suite.check("caph_set_authority_mints_handles", false);
+            suite.check("caph_reauthorize_replaces", false);
+        }
+    }
+
+    // Teardown revocation on the real path: load a process (which mints its
+    // handles in the kernel table), run it to completion, and confirm the
+    // table holds nothing for that pid afterwards. A dead process's authority
+    // must never outlive it or be inherited by a recycled pid.
+    match crate::user::load("/bin/init") {
+        Ok(process) => {
+            let pid = process.pid;
+            let before = crate::capability::count_owned(pid);
+            let exit = crate::user::run(process);
+            let after = crate::capability::count_owned(pid);
+            suite.check("caph_process_gets_handles", before > 0);
+            suite.check(
+                "caph_teardown_revokes_all",
+                after == 0 && matches!(exit, crate::user::UserExit::Exit(0)),
+            );
+            // And the pid's (now dangling) authority cannot be revived.
+            suite.check(
+                "caph_dead_pid_denied",
+                crate::capability::check(
+                    CapabilityHandle::from_raw(1),
+                    pid,
+                    CapabilityKind::Filesystem,
+                    ResourceScope::ANY,
+                    rights::READ,
+                    crate::interrupts::ticks(),
+                )
+                .is_err(),
+            );
+        }
+        Err(_) => {
+            suite.check("caph_process_gets_handles", false);
+            suite.check("caph_teardown_revokes_all", false);
+            suite.check("caph_dead_pid_denied", false);
+        }
+    }
 }
 
 /// V0.7: capability enforcement, sandboxing, delegation, audit, services.

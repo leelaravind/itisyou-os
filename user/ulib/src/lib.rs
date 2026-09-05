@@ -20,6 +20,8 @@ pub const SYS_FS_READ: u64 = 13;
 pub const SYS_SPAWN_CAPS: u64 = 14;
 pub const SYS_CAP_LIST: u64 = 15;
 pub const SYS_CAP_CHECK: u64 = 16;
+pub const SYS_CAP_REVOKE: u64 = 17;
+pub const SYS_CAP_RESTRICT: u64 = 18;
 
 pub const ERR_NOSYS: u64 = u64::MAX;
 pub const ERR_FAULT: u64 = u64::MAX - 1;
@@ -191,6 +193,42 @@ pub fn cap_list(out: &mut [u64]) -> u64 {
 /// are the stable V0.8 ABI order documented in ADR-0013.
 pub fn cap_check(handle: u64, kind: u64, scope_end: u64) -> u64 {
     raw_syscall(SYS_CAP_CHECK, handle, kind, scope_end)
+}
+
+/// Capability kinds — the stable V0.8 ABI indices a process uses to address
+/// its own handles (same order as the kernel's `CapabilityKind::index`).
+pub const KIND_FILESYSTEM: u64 = 0;
+pub const KIND_DEVICE: u64 = 1;
+pub const KIND_GUI: u64 = 2;
+pub const KIND_NETWORK: u64 = 3;
+pub const KIND_AUDIO: u64 = 4;
+pub const KIND_PROCESS: u64 = 5;
+pub const KIND_SERVICE: u64 = 6;
+pub const KIND_SYSADMIN: u64 = 7;
+
+/// Rights carried inside a handle (V0.8). A filesystem handle holding only
+/// `RIGHT_READ` can never satisfy a write.
+pub const RIGHT_USE: u64 = 1 << 0;
+pub const RIGHT_READ: u64 = 1 << 1;
+pub const RIGHT_WRITE: u64 = 1 << 2;
+pub const RIGHT_CONTROL: u64 = 1 << 3;
+pub const RIGHT_ADMIN: u64 = 1 << 4;
+
+/// Permanently give up this process's authority over a resource kind.
+///
+/// Least privilege a program can apply to itself: once a task is done with an
+/// authority it drops it, so a later compromise cannot use it. Enforcement
+/// reads the capability table on every syscall, so this bites immediately.
+pub fn cap_revoke(kind: u64) -> u64 {
+    raw_syscall(SYS_CAP_REVOKE, kind, 0, 0)
+}
+
+/// Narrow this process's own handle for `kind`: keep only `rights_mask`, and
+/// (when `expires_in_ticks` is non-zero) make it expire that many timer ticks
+/// from now. Requests are intersected with what is already held, so this can
+/// only ever remove authority.
+pub fn cap_restrict(kind: u64, rights_mask: u64, expires_in_ticks: u64) -> u64 {
+    raw_syscall(SYS_CAP_RESTRICT, kind, rights_mask, expires_in_ticks)
 }
 
 /// Read device record `index` into `buf` (>= 16 bytes) via the kernel device

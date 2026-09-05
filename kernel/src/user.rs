@@ -142,6 +142,29 @@ pub struct Process {
     pub handles: [kernel_core::capability::CapabilityHandle; crate::capability::HANDLE_SLOTS],
 }
 
+impl Process {
+    /// Install this process's authority: capability bits, filesystem sandbox,
+    /// and the V0.8 capability handles minted from those bits.
+    ///
+    /// Setting `caps` alone is NOT enough to grant anything under V0.8 —
+    /// enforcement reads the handle table, not the bitmask — so the three are
+    /// bound together here rather than left to each call site to remember.
+    /// (A launcher that set only `caps` produced a process that silently held
+    /// no authority at all; that is exactly what this method prevents.)
+    pub fn set_authority(
+        &mut self,
+        caps: u64,
+        fs_prefixes: Option<alloc::sync::Arc<alloc::vec::Vec<alloc::string::String>>>,
+    ) {
+        // Drop anything previously minted for this pid so re-authorizing
+        // cannot leave stale handles behind in the table.
+        crate::capability::revoke_owner(self.pid);
+        self.caps = caps;
+        self.fs_prefixes = fs_prefixes;
+        self.handles = crate::capability::handles_for(self.pid, caps);
+    }
+}
+
 static NEXT_PID: AtomicU64 = AtomicU64::new(1);
 
 /// Load an ELF64 executable from the VFS with the LEGACY-FULL capability set
@@ -159,9 +182,7 @@ pub fn load_with(
 ) -> Result<Process, LoadError> {
     let bytes = crate::fs::read(path).map_err(LoadError::File)?;
     let mut process = load_from_bytes(bytes)?;
-    process.caps = caps;
-    process.fs_prefixes = fs_prefixes;
-    process.handles = crate::capability::handles_for(process.pid, caps);
+    process.set_authority(caps, fs_prefixes);
     Ok(process)
 }
 
@@ -307,6 +328,11 @@ pub fn run_quantum(process: &mut Process, first: bool) -> UserExit {
     crate::interrupts::arm_quantum();
     let exit = transition::enter_or_resume(&mut process.ctx);
     crate::interrupts::disarm_quantum();
+    // Persist authority changes the process made to ITSELF during the quantum
+    // (cap_revoke / cap_restrict). Without this write-back the next quantum
+    // would republish the load-time handle set and silently restore authority
+    // the process had deliberately given up.
+    process.handles = crate::syscall::current_handles();
     activate_l4(paging::boot_l4_frame());
     crate::syscall::CURRENT_PID.store(0, Ordering::SeqCst);
     crate::syscall::CURRENT_CAPS.store(0, Ordering::SeqCst);
