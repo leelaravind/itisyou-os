@@ -24,6 +24,7 @@ pub mod input;
 pub mod interrupts;
 pub mod ipc;
 pub mod memory;
+pub mod net;
 pub mod platform;
 pub mod proc;
 pub mod qemu;
@@ -142,6 +143,10 @@ pub fn init_subsystems(boot_info: &'static mut BootInfo) {
 
     // B090: PIC remap + PIT timer + interrupts on.
     interrupts::enable_timer();
+    // Calibrate the TSC against the now-running PIT. It is the only clock
+    // that keeps advancing inside a syscall, where SFMASK has cleared IF
+    // and the timer ISR cannot run.
+    interrupts::calibrate_tsc();
     bootstage::emit(Stage::B090InterruptTimerReady);
 
     // B100: scheduler (boot context becomes task 0).
@@ -202,6 +207,21 @@ pub fn init_subsystems(boot_info: &'static mut BootInfo) {
     let devices = device::init();
     serial_println!("[ITISYOU:INFO] devmodel_ready devices={devices}");
     bootstage::emit(Stage::B190DeviceModelReady);
+
+    // B200: network interface. The NIC is bound by the device model above;
+    // this applies the address plan and marks the stack ready. Emitted with
+    // `nic=absent` when no card is attached so a test can tell "no NIC in this
+    // guest" apart from "the stage never ran".
+    net::init();
+    serial_println!(
+        "[ITISYOU:INFO] network_ready nic={}",
+        if device::e1000::present() {
+            "e1000"
+        } else {
+            "absent"
+        }
+    );
+    bootstage::emit(Stage::B200NetworkReady);
 }
 
 /// Enumerate PCI, find the NVMe controller, and initialize it. Used by the

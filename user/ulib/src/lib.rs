@@ -23,6 +23,12 @@ pub const SYS_CAP_CHECK: u64 = 16;
 pub const SYS_CAP_REVOKE: u64 = 17;
 pub const SYS_CAP_RESTRICT: u64 = 18;
 pub const SYS_UPTIME: u64 = 19;
+pub const SYS_NET_INFO: u64 = 20;
+pub const SYS_UDP_BIND: u64 = 21;
+pub const SYS_UDP_SEND: u64 = 22;
+pub const SYS_UDP_RECV: u64 = 23;
+pub const SYS_UDP_CLOSE: u64 = 24;
+pub const SYS_NET_RESOLVE: u64 = 25;
 
 pub const ERR_NOSYS: u64 = u64::MAX;
 pub const ERR_FAULT: u64 = u64::MAX - 1;
@@ -252,6 +258,84 @@ pub fn devinfo(index: u64, buf: &mut [u8]) -> u64 {
 }
 
 /// Write a u16 as 4-digit lowercase hex (no allocator in userspace).
+/// Largest UDP payload `udp_send` will assemble on the stack. Bounded by the
+/// 64 KiB user stack, not by the protocol.
+pub const UDP_SEND_MAX: usize = 1024;
+
+/// Copy the 20-byte interface record: `[mac:6, ip:4, mask:4, gateway:4,
+/// dns_low:1, link_up:1]`.
+pub fn net_info(out: &mut [u8; 20]) -> u64 {
+    raw_syscall(SYS_NET_INFO, out.as_mut_ptr() as u64, out.len() as u64, 0)
+}
+
+/// Bind a UDP port. Returns a socket descriptor or an ERR_*.
+///
+/// This is where the network capability is checked, scoped to the port: a
+/// program whose handle does not cover `port` gets `ERR_PERM` here rather than
+/// silently binding something it may not use.
+pub fn udp_bind(port: u16) -> u64 {
+    raw_syscall(SYS_UDP_BIND, port as u64, 0, 0)
+}
+
+/// Send `payload` to `dst:dst_port` from a bound socket.
+pub fn udp_send(sock: u64, dst: [u8; 4], dst_port: u16, payload: &[u8]) -> u64 {
+    if payload.len() > UDP_SEND_MAX {
+        return ERR_INVAL;
+    }
+    let mut req = [0u8; 6 + UDP_SEND_MAX];
+    req[0..4].copy_from_slice(&dst);
+    req[4..6].copy_from_slice(&dst_port.to_le_bytes());
+    req[6..6 + payload.len()].copy_from_slice(payload);
+    raw_syscall(
+        SYS_UDP_SEND,
+        sock,
+        req.as_ptr() as u64,
+        (6 + payload.len()) as u64,
+    )
+}
+
+/// Take the oldest queued datagram: `[src_ip:4, src_port:2, payload...]`.
+/// Returns the byte count, or `ERR_AGAIN` when nothing has arrived.
+pub fn udp_recv(sock: u64, buf: &mut [u8]) -> u64 {
+    raw_syscall(
+        SYS_UDP_RECV,
+        sock,
+        buf.as_mut_ptr() as u64,
+        buf.len() as u64,
+    )
+}
+
+pub fn udp_close(sock: u64) -> u64 {
+    raw_syscall(SYS_UDP_CLOSE, sock, 0, 0)
+}
+
+/// Resolve a host name to an IPv4 address. Writes four bytes on success.
+pub fn net_resolve(name: &str, out: &mut [u8; 4]) -> u64 {
+    raw_syscall(
+        SYS_NET_RESOLVE,
+        name.as_ptr() as u64,
+        name.len() as u64,
+        out.as_mut_ptr() as u64,
+    )
+}
+
+/// Print a dotted-quad address.
+pub fn write_ipv4(addr: [u8; 4]) {
+    for (i, octet) in addr.iter().enumerate() {
+        if i > 0 {
+            write(".");
+        }
+        write_u64(*octet as u64);
+    }
+}
+
+/// Print one byte as two lowercase hex digits (MAC octets, status bytes).
+pub fn write_hex8(v: u8) {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let buf = [HEX[(v >> 4) as usize], HEX[(v & 0x0F) as usize]];
+    write_raw(buf.as_ptr() as u64, 2);
+}
+
 pub fn write_hex16(v: u16) {
     let digits = b"0123456789abcdef";
     let mut buf = [0u8; 4];

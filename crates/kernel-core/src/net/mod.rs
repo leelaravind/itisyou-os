@@ -14,6 +14,10 @@
 //! sequences — including truncated, oversized, malformed and hostile ones —
 //! with no emulator, no NIC and no kernel in the loop.
 
+pub mod arp;
 pub mod checksum;
+pub mod dns;
 pub mod eth;
+pub mod icmp;
 pub mod ipv4;
+pub mod udp;

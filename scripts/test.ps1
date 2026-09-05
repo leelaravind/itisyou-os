@@ -231,6 +231,74 @@ Write-Output '=== QEMU long-running background services (BIOS) ==='
     '--require', 'shutting down (QEMU exit)',
     '--timeout-secs', '240', '--label', 'services-bg-bios')
 
+Write-Output '=== QEMU networking: e1000 + ARP/IPv4/ICMP/UDP/DNS (BIOS) ==='
+# The guest's NIC is wired to the runner's own host-side Ethernet peer over a
+# `dgram` netdev, so the runner IS the network: no slirp, no host resolver,
+# nothing outside this machine. The peer is an independent implementation
+# (tools/qemu-runner/src/wire.rs), so a bug in the guest's codec cannot cancel
+# itself out against the same code on the other side.
+#
+# The leg proves the data path in BOTH directions and the capability gate:
+#   * client paths - ARP resolve, ICMP echo, a Ring 3 app completing a UDP
+#     round trip through the socket ABI, and a DNS A lookup;
+#   * responder paths - the guest answering the peer's ARP request and ping,
+#     which its own traffic never exercises;
+#   * refusal - five hostile frames (corrupt IP checksum, ping addressed
+#     elsewhere, UDP to an unbound port, a VLAN tag, an ARP with a
+#     contradictory hardware type) counted as refused by the guest and
+#     answered by NOTHING (`replies_to_hostile=0`);
+#   * authority - an app holding `network` completes the round trip; an app
+#     with no capabilities is denied every network syscall.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--net',
+    '--expect', 'B190', '--expect', 'B200',
+    '--send', 'run /bin/net-probe network',
+    '--send', 'run /bin/net-denied -',
+    '--send', 'ping 10.0.2.2 2',
+    '--send', 'resolve os.itisyou.app',
+    '--send', 'net',
+    '--send', 'audit',
+    '--send', 'shutdown',
+    '--require', 'nic_ready driver=e1000 mac=52:54:00:12:34:56 link_up=true',
+    '--require', 'iface_up ip=10.0.2.15 gateway=10.0.2.2',
+    # Ring 3 client path, end to end.
+    '--require', 'NETPROBE-IFACE mac=52:54:00:12:34:56 ip=10.0.2.15 link_up=1',
+    '--require', 'NETPROBE-BOUND port=40100',
+    '--require', 'NETPROBE-ECHO-OK bytes=25 from=10.0.2.2',
+    '--require', 'NETPROBE-RESOLVE-OK name=os.itisyou.app address=93.184.216.34',
+    '--require', 'NETPROBE-OK',
+    # Capability gate: every network syscall denied without a handle.
+    '--require', 'NETDENY-OK call=net_info',
+    '--require', 'NETDENY-OK call=udp_bind',
+    '--require', 'NETDENY-OK call=udp_send',
+    '--require', 'NETDENY-OK call=udp_recv',
+    '--require', 'NETDENY-OK call=net_resolve',
+    '--require', 'NETDENY-ALL-DENIED',
+    '--require', 'action=udp_bind cap=0x100 result=ok',
+    # And the denial is audited with a precise reason, not a bare refusal.
+    '--require', 'action=udp_bind cap=0x0 result=denied',
+    '--require', 'action=net_info cap=0x0 result=denied',
+    # The reason is recorded too, so a refusal is diagnosable rather than a
+    # bare ERR_PERM. (Asserted separately: an embedded quote in a require
+    # string does not survive native-argument quoting on Windows.)
+    '--require', 'kind=network reason=no_handle',
+    # Kernel client paths.
+    '--require', 'PING-SUMMARY target=10.0.2.2 sent=2 received=2',
+    '--require', 'RESOLVE-OK name=os.itisyou.app address=93.184.216.34',
+    # What the HOST observed: the guest really put these frames on the wire,
+    # with checksums that verify against an independent implementation.
+    '--require', '[HOST:NET] guest_mac=52:54:00:12:34:56',
+    '--require', '[HOST:NET] guest_ip=10.0.2.15',
+    '--require', '[HOST:NET] guest_arp_reply from=10.0.2.15',
+    '--require', '[HOST:NET] guest_icmp_reply id=4919',
+    '--require', '[HOST:NET] dns_query name=os.itisyou.app type=1 class=1',
+    '--require', '[HOST:NET] hostile_probe_start',
+    '--require', 'guest_arp_replies=1 guest_icmp_replies=1 hostile_sent=true replies_to_hostile=0',
+    '--require', 'bad_ip_csum=0 bad_udp_csum=0 bad_icmp_csum=0',
+    # The guest counted every hostile frame as refused, by the right reason.
+    '--require', 'rx_malformed=3 rx_unwanted=2',
+    '--timeout-secs', '240', '--label', 'net-bios')
+
 Write-Output '=== QEMU interrupted update -> recovery (BIOS, two boots) ==='
 # Boot 1 installs v1 and STAGES v2 without committing (a simulated crash mid-
 # update), then powers off. Boot 2 (fresh guest, same disk) must find v1

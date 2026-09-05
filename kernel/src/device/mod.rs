@@ -12,6 +12,7 @@
 
 pub mod ac97;
 pub mod block;
+pub mod e1000;
 pub mod nvme;
 pub mod pci;
 pub mod uhci;
@@ -78,7 +79,7 @@ pub trait Driver: Sync {
 /// Registered drivers, probed in order against each device. Kept small and
 /// explicit — no dynamic registration — so binding is deterministic. Drivers
 /// are appended here as they land (USB, ...).
-static DRIVERS: &[&dyn Driver] = &[&ac97::AC97_DRIVER, &uhci::UHCI_DRIVER];
+static DRIVERS: &[&dyn Driver] = &[&ac97::AC97_DRIVER, &uhci::UHCI_DRIVER, &e1000::E1000_DRIVER];
 
 /// The device table, populated by [`enumerate`].
 static DEVICES: Mutex<Vec<Device>> = Mutex::new(Vec::new());

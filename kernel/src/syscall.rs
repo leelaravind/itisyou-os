@@ -68,6 +68,18 @@ pub const SYS_CAP_RESTRICT: u64 = 18;
 /// authority (a free-running counter, no wall clock, nothing about any other
 /// process), so like `getpid` it needs no capability.
 pub const SYS_UPTIME: u64 = 19;
+/// Interface facts: MAC, address plan, link state (V0.8).
+pub const SYS_NET_INFO: u64 = 20;
+/// Bind a UDP port; the port is the scoped resource the handle must cover.
+pub const SYS_UDP_BIND: u64 = 21;
+/// Send a datagram from a bound socket.
+pub const SYS_UDP_SEND: u64 = 22;
+/// Take the oldest queued datagram from a bound socket.
+pub const SYS_UDP_RECV: u64 = 23;
+/// Release a bound socket.
+pub const SYS_UDP_CLOSE: u64 = 24;
+/// Resolve a host name to an IPv4 address over DNS.
+pub const SYS_NET_RESOLVE: u64 = 25;
 
 pub const ERR_NOSYS: u64 = u64::MAX;
 pub const ERR_FAULT: u64 = u64::MAX - 1;
@@ -77,6 +89,10 @@ pub const ERR_AGAIN: u64 = u64::MAX - 4;
 pub const ERR_INVAL: u64 = u64::MAX - 5;
 pub const ERR_2BIG: u64 = u64::MAX - 6;
 pub const ERR_PERM: u64 = u64::MAX - 7;
+
+/// Cap on a network request buffer copied from user memory: a full-MTU UDP
+/// payload plus the six-byte destination prefix.
+const NET_REQ_MAX: u64 = 6 + 1472;
 
 /// Cap on a GUI request buffer copied from user memory.
 const GUI_REQ_MAX: u64 = 256;
@@ -374,6 +390,26 @@ extern "C" fn syscall_dispatch(a1: u64, a2: u64, a3: u64, nr: u64) -> u64 {
             Ok(()) => sys_fs_read(a1, a2, a3),
             Err(e) => e,
         },
+        // Network. Binding is scoped to the port, so a handle narrowed to a
+        // port range cannot listen outside it; the datagram calls then check
+        // the socket's OWN port, which is the resource actually being used.
+        SYS_NET_INFO => match require_any(CapabilityKind::Network, rights::READ, "net_info") {
+            Ok(()) => sys_net_info(a1, a2),
+            Err(e) => e,
+        },
+        SYS_UDP_BIND => {
+            match require_scoped(CapabilityKind::Network, rights::USE, a1, "udp_bind") {
+                Ok(()) => sys_udp_bind(a1),
+                Err(e) => e,
+            }
+        }
+        SYS_UDP_SEND => sys_udp_send(a1, a2, a3),
+        SYS_UDP_RECV => sys_udp_recv(a1, a2, a3),
+        SYS_UDP_CLOSE => sys_udp_close(a1),
+        SYS_NET_RESOLVE => match require_any(CapabilityKind::Network, rights::USE, "net_resolve") {
+            Ok(()) => sys_net_resolve(a1, a2, a3),
+            Err(e) => e,
+        },
         SYS_CAP_LIST => sys_cap_list(a1, a2),
         SYS_CAP_CHECK => sys_cap_check(a1, a2, a3),
         SYS_CAP_REVOKE => sys_cap_revoke(a1),
@@ -382,6 +418,185 @@ extern "C" fn syscall_dispatch(a1: u64, a2: u64, a3: u64, nr: u64) -> u64 {
             NOSYS_COUNT.fetch_add(1, Ordering::SeqCst);
             ERR_NOSYS
         }
+    }
+}
+
+/// net_info(buf_ptr, buf_len): copy a fixed 20-byte interface record.
+///
+/// Layout: `[mac:6, ip:4, netmask:4, gateway:4, dns_low:1, link_up:1]` — the
+/// DNS server's low octet is enough for a program to see it is configured
+/// without handing out a second full address it has no use for.
+fn sys_net_info(buf_ptr: u64, buf_len: u64) -> u64 {
+    if buf_len < 20 {
+        return ERR_INVAL;
+    }
+    let (ip, mask, gw, dns) = crate::net::address();
+    let mac = crate::net::mac();
+    let mut record = [0u8; 20];
+    record[0..6].copy_from_slice(&mac.octets());
+    record[6..10].copy_from_slice(&ip.octets());
+    record[10..14].copy_from_slice(&mask.octets());
+    record[14..18].copy_from_slice(&gw.octets());
+    record[18] = dns.octets()[3];
+    record[19] = u8::from(crate::net::is_up());
+    match copy_to_user(buf_ptr, &record) {
+        Ok(_) => 20,
+        Err(e) => e,
+    }
+}
+
+/// udp_bind(port): bind a UDP port, returning a socket descriptor.
+///
+/// The capability check happened in the dispatcher, scoped to `port`: a
+/// process whose network handle was narrowed to one port range cannot bind
+/// outside it, and the refusal is audited with that port.
+fn sys_udp_bind(port: u64) -> u64 {
+    if port == 0 || port > u16::MAX as u64 {
+        return ERR_INVAL;
+    }
+    if !crate::net::is_up() {
+        return ERR_NOENT;
+    }
+    let pid = CURRENT_PID.load(Ordering::SeqCst);
+    match crate::net::socket::bind(pid, port as u16) {
+        Ok(index) => {
+            crate::audit::allowed(
+                "udp_bind",
+                kernel_core::caps::CAP_NETWORK,
+                Some(alloc::format!("port={port}")),
+            );
+            index as u64
+        }
+        Err(crate::net::socket::BindError::InUse) => ERR_PERM,
+        Err(_) => ERR_INVAL,
+    }
+}
+
+/// The socket's own port, or an error if the caller does not own it.
+///
+/// Every datagram call re-checks the network capability against THIS port
+/// rather than trusting the descriptor: a handle that was narrowed or revoked
+/// after the bind must stop working at the next use, which is the whole point
+/// of handles over static bits.
+fn socket_port(index: u64, action: &'static str) -> Result<u16, u64> {
+    use kernel_core::capability::{rights, CapabilityKind};
+    // Class-level authority first, ownership second. Order matters for the
+    // audit trail: a process with no network handle must be refused as a
+    // capability denial (ERR_PERM, recorded with a reason), not as a bad
+    // descriptor — otherwise a real gate failure would be indistinguishable
+    // from someone passing a number they never bound.
+    require_any(CapabilityKind::Network, rights::USE, action)?;
+    let pid = CURRENT_PID.load(Ordering::SeqCst);
+    let port = crate::net::socket::port_of(index as usize, pid).ok_or(ERR_BADF)?;
+    // Then the port itself: a handle narrowed or revoked after the bind stops
+    // working at the next use, which is the whole point of handles over bits.
+    require_scoped(CapabilityKind::Network, rights::USE, port as u64, action)?;
+    Ok(port)
+}
+
+/// udp_send(sock, req_ptr, req_len): send from a bound socket.
+///
+/// Request layout: `[dst_ip:4, dst_port:2, payload...]`. Passing the
+/// destination in the buffer rather than packed into a register keeps the ABI
+/// readable and leaves room for a longer address family later.
+fn sys_udp_send(sock: u64, req_ptr: u64, req_len: u64) -> u64 {
+    let port = match socket_port(sock, "udp_send") {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+    if req_len < 6 {
+        return ERR_INVAL;
+    }
+    let req = match copy_from_user(req_ptr, req_len, NET_REQ_MAX) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let dst = kernel_core::net::ipv4::Ipv4Addr([req[0], req[1], req[2], req[3]]);
+    let dst_port = u16::from_le_bytes([req[4], req[5]]);
+    if dst_port == 0 {
+        return ERR_INVAL;
+    }
+    // Poll first: a reply to an earlier ARP request may be sitting in the
+    // ring, in which case this send succeeds immediately instead of needing
+    // another round through userspace.
+    crate::net::poll();
+    match crate::net::try_send_udp(dst, dst_port, port, &req[6..]) {
+        Ok(()) => req_len - 6,
+        // Non-blocking by design: waiting for ARP here would spin with
+        // interrupts disabled and freeze the machine. The caller yields and
+        // retries, which costs nothing and keeps the system scheduling.
+        Err(crate::net::SendError::Unresolved) => ERR_AGAIN,
+        Err(crate::net::SendError::Failed) => ERR_INVAL,
+    }
+}
+
+/// udp_recv(sock, buf_ptr, buf_len): take the oldest queued datagram.
+///
+/// Writes `[src_ip:4, src_port:2, payload...]` and returns the total bytes
+/// written, or `ERR_AGAIN` when nothing is queued. Polling the card here (not
+/// only from the shell) is what lets a Ring 3 program drive the network on its
+/// own scheduling slice.
+fn sys_udp_recv(sock: u64, buf_ptr: u64, buf_len: u64) -> u64 {
+    if let Err(e) = socket_port(sock, "udp_recv") {
+        return e;
+    }
+    if buf_len < 6 {
+        return ERR_INVAL;
+    }
+    crate::net::poll();
+    let pid = CURRENT_PID.load(Ordering::SeqCst);
+    let mut payload = [0u8; crate::net::socket::MAX_DATAGRAM];
+    let cap = core::cmp::min((buf_len - 6) as usize, payload.len());
+    let Some((len, src, src_port)) =
+        crate::net::socket::take_owned(sock as usize, pid, &mut payload[..cap])
+    else {
+        return ERR_AGAIN;
+    };
+    let mut out = [0u8; 6 + crate::net::socket::MAX_DATAGRAM];
+    out[0..4].copy_from_slice(&src.octets());
+    out[4..6].copy_from_slice(&src_port.to_le_bytes());
+    out[6..6 + len].copy_from_slice(&payload[..len]);
+    match copy_to_user(buf_ptr, &out[..6 + len]) {
+        Ok(n) => n,
+        Err(e) => e,
+    }
+}
+
+/// udp_close(sock): release a socket the caller owns.
+fn sys_udp_close(sock: u64) -> u64 {
+    let pid = CURRENT_PID.load(Ordering::SeqCst);
+    if crate::net::socket::close(sock as usize, pid) {
+        0
+    } else {
+        ERR_BADF
+    }
+}
+
+/// net_resolve(name_ptr, name_len, out_ptr): DNS A lookup.
+///
+/// Writes four address bytes on success. A failed lookup is an error, never a
+/// fallback address: a resolver that invents an answer sends the caller's
+/// traffic somewhere it never asked for.
+fn sys_net_resolve(name_ptr: u64, name_len: u64, out_ptr: u64) -> u64 {
+    if name_len == 0 || name_len > 253 {
+        return ERR_INVAL;
+    }
+    let bytes = match copy_from_user(name_ptr, name_len, 253) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let Ok(name) = core::str::from_utf8(&bytes) else {
+        return ERR_INVAL;
+    };
+    // The one network syscall that waits. Interrupts are off here, so the
+    // bound is deliberately short: a lookup either completes in a couple of
+    // round trips or is reported as a failure, rather than holding the CPU.
+    match crate::net::resolve_name(name, 1500) {
+        Some(addr) => match copy_to_user(out_ptr, &addr.octets()) {
+            Ok(_) => 4,
+            Err(e) => e,
+        },
+        None => ERR_NOENT,
     }
 }
 

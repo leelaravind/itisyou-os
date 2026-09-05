@@ -48,6 +48,10 @@ pub enum Stage {
     /// Device model built — PCI enumerated, BARs/capabilities probed, drivers
     /// bound (V0.6).
     B190DeviceModelReady,
+    /// Network interface up — NIC bound, address plan applied, stack polling
+    /// (V0.8). Emitted even when no NIC is attached, carrying `nic=absent`, so
+    /// "no network" is an observed state rather than a missing marker.
+    B200NetworkReady,
 }
 
 impl Stage {
@@ -74,6 +78,7 @@ impl Stage {
             Stage::B170GraphicsReady => "B170",
             Stage::B180DesktopReady => "B180",
             Stage::B190DeviceModelReady => "B190",
+            Stage::B200NetworkReady => "B200",
         }
     }
 
@@ -100,6 +105,7 @@ impl Stage {
             Stage::B170GraphicsReady => "graphics framebuffer + compositor ready",
             Stage::B180DesktopReady => "PS/2 input online + desktop composited",
             Stage::B190DeviceModelReady => "device model built — PCI/BAR/caps + drivers",
+            Stage::B200NetworkReady => "network interface up — NIC bound + IPv4 stack polling",
         }
     }
 
@@ -110,7 +116,7 @@ impl Stage {
 }
 
 /// Every stage in canonical order.
-pub const ALL_STAGES: [Stage; 20] = [
+pub const ALL_STAGES: [Stage; 21] = [
     Stage::B000FirmwareHandoff,
     Stage::B010KernelEntry,
     Stage::B020SerialReady,
@@ -131,6 +137,7 @@ pub const ALL_STAGES: [Stage; 20] = [
     Stage::B170GraphicsReady,
     Stage::B180DesktopReady,
     Stage::B190DeviceModelReady,
+    Stage::B200NetworkReady,
 ];
 
 #[cfg(test)]

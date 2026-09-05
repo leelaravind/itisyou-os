@@ -165,7 +165,12 @@ pub fn rights_from_bits(bits: u64) -> [u32; CapabilityKind::COUNT] {
         add(CapabilityKind::Audio, rights::USE);
     }
     if bits & CAP_NETWORK != 0 {
-        add(CapabilityKind::Network, rights::USE);
+        // Reading the interface's own address and link state is part of
+        // using it, not a separate privilege — a program that may send
+        // packets but may not learn its own IP is an awkward fiction. A
+        // handle narrowed to USE alone (via `restrict`) still loses the
+        // observation right, so the distinction stays available.
+        add(CapabilityKind::Network, rights::USE | rights::READ);
     }
     if bits & CAP_SYS_ADMIN != 0 {
         add(CapabilityKind::SystemAdministration, rights::ADMIN);

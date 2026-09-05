@@ -30,6 +30,8 @@ use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
+mod wire;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 enum Outcome {
@@ -128,6 +130,11 @@ struct Options {
     /// Attach a UHCI USB controller with a USB HID keyboard + mouse, so the OS
     /// can enumerate real USB devices and read HID input.
     usb: bool,
+    /// Attach an e1000 NIC wired to the runner's own host-side Ethernet peer
+    /// (`wire.rs`) over a `dgram` netdev, so the guest's stack is exercised
+    /// against a real, independent implementation of ARP/ICMP/UDP/DNS with no
+    /// external network and nothing non-deterministic in the loop.
+    net: bool,
     /// Attach an emulated NVMe controller backed by a generated raw disk
     /// whose first sector carries a known magic (for storage read tests).
     nvme: bool,
@@ -184,6 +191,7 @@ fn parse_args() -> Result<Options, String> {
     let mut audio = false;
     let mut audio_out = None;
     let mut usb = false;
+    let mut net = false;
     let mut nvme = false;
     let mut nvme_persist = None;
     let mut timeout = Duration::from_secs(60);
@@ -234,6 +242,7 @@ fn parse_args() -> Result<Options, String> {
                 audio = true;
             }
             "--usb" => usb = true,
+            "--net" => net = true,
             "--nvme" => nvme = true,
             "--nvme-persist" => nvme_persist = Some(PathBuf::from(value("--nvme-persist")?)),
             "--timeout-secs" => {
@@ -287,6 +296,7 @@ fn parse_args() -> Result<Options, String> {
         audio,
         audio_out,
         usb,
+        net,
         nvme,
         nvme_persist,
         timeout,
@@ -376,7 +386,12 @@ fn main() {
 /// a client. `-serial stdio` is NOT used because QEMU's Windows stdio chardev
 /// stops feeding redirected stdin after the guest UART's 16-byte RX FIFO
 /// fills once, which stalls interactive shell tests (observed 2026-09-02).
-fn build_command(opts: &Options, serial_port: u16, monitor_port: Option<u16>) -> Command {
+fn build_command(
+    opts: &Options,
+    serial_port: u16,
+    monitor_port: Option<u16>,
+    net_ports: Option<(u16, u16)>,
+) -> Command {
     let mut cmd = Command::new(&opts.qemu);
     cmd.arg("-drive")
         .arg(format!("format=raw,file={}", opts.image.display()))
@@ -416,6 +431,20 @@ fn build_command(opts: &Options, serial_port: u16, monitor_port: Option<u16>) ->
             "-device",
             "usb-mouse,bus=uhci.0,port=2",
         ]);
+    }
+    if let Some((host_port, guest_port)) = net_ports {
+        // `dgram` carries one raw Ethernet frame per UDP datagram: QEMU binds
+        // `local` and sends to `remote`, so the runner's peer is literally the
+        // only thing on the wire. No slirp, no host networking, no DHCP — the
+        // guest sees exactly the packets the peer chooses to send.
+        cmd.arg("-netdev")
+            .arg(format!(
+                "dgram,id=net0,local.type=inet,local.host=127.0.0.1,local.port={guest_port},remote.type=inet,remote.host=127.0.0.1,remote.port={host_port}"
+            ))
+            .args([
+                "-device",
+                "e1000,netdev=net0,mac=52:54:00:12:34:56",
+            ]);
     }
     if opts.nvme {
         match make_nvme_disk(&opts.artifacts) {
@@ -562,7 +591,38 @@ fn run(opts: &Options) -> RunResult {
         .as_ref()
         .map(|l| l.local_addr().unwrap().port());
 
-    let mut cmd = build_command(opts, serial_port, monitor_port);
+    // The serial line channel is created before launch so the host-side
+    // network peer can publish its observations into the SAME stream the guest
+    // writes to: its `[HOST:NET]` lines land in the serial log next to the
+    // guest's, and `--require` sees both without a second artifact to
+    // correlate. Host lines are prefixed so nobody can mistake them for
+    // something the guest claimed about itself.
+    let (tx, rx) = mpsc::channel::<String>();
+    // The peer gets a SEPARATE channel, drained into the same line stream by
+    // the main loop. Sharing `tx` would keep the serial channel open after the
+    // guest exited, so the loop would wait for the peer instead of noticing
+    // that QEMU was gone — a harness that hangs on a healthy run.
+    let (net_tx, net_rx) = mpsc::channel::<String>();
+    let wire_peer = if opts.net {
+        match wire::WirePeer::start(net_tx.clone()) {
+            Ok(peer) => {
+                let _ = net_tx.send(format!(
+                    "[HOST:NET] peer_ready host_port={} guest_port={} peer_ip=10.0.2.2 dns_ip=10.0.2.3",
+                    peer.host_port, peer.guest_port
+                ));
+                Some(peer)
+            }
+            Err(e) => {
+                eprintln!("qemu-runner: could not start the network peer: {e}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let net_ports = wire_peer.as_ref().map(|p| (p.host_port, p.guest_port));
+
+    let mut cmd = build_command(opts, serial_port, monitor_port, net_ports);
     let command_line: Vec<String> = std::iter::once(opts.qemu.clone())
         .chain(cmd.get_args().map(|a| a.to_string_lossy().into_owned()))
         .collect();
@@ -669,8 +729,8 @@ fn run(opts: &Options) -> RunResult {
         }
     }
 
-    // Stream serial lines through a channel so the main loop owns the timeout.
-    let (tx, rx) = mpsc::channel::<String>();
+    // Stream serial lines through the channel created above so the main loop
+    // owns the timeout.
     let reader_handle = std::thread::spawn(move || {
         let reader = BufReader::new(serial_stream);
         for line in reader.lines() {
@@ -709,6 +769,11 @@ fn run(opts: &Options) -> RunResult {
     let mut first_output_at: Option<Instant> = None;
     let mut last_line_at = connected_at;
     loop {
+        // Fold in whatever the host-side peer observed since the last pass, so
+        // its lines interleave with the guest's in the order they happened.
+        while let Ok(host_line) = net_rx.try_recv() {
+            serial_lines.push(host_line);
+        }
         let now = Instant::now();
         if now >= overall_deadline {
             timed_out = true;
@@ -814,6 +879,9 @@ fn run(opts: &Options) -> RunResult {
         }
         std::thread::sleep(Duration::from_millis(20));
     }
+    while let Ok(host_line) = net_rx.try_recv() {
+        serial_lines.push(host_line);
+    }
     let mut child = guard.release();
     // Reap QEMU before joining the reader: that closes QEMU's TCP half even on
     // Windows, so `BufRead::lines` cannot retain a runner process after a
@@ -836,6 +904,17 @@ fn run(opts: &Options) -> RunResult {
     if !stderr_text.is_empty() {
         log_text.push_str("--- qemu stderr ---\n");
         log_text.push_str(&stderr_text);
+    }
+
+    // The peer's own tally, appended after the run so a test can assert on
+    // what the HOST observed rather than only on what the guest reported about
+    // itself. A guest that printed "NETPROBE-OK" without transmitting a frame
+    // fails here.
+    if let Some(peer) = &wire_peer {
+        let summary = peer.summary();
+        serial_lines.push(summary.clone());
+        log_text.push_str(&summary);
+        log_text.push('\n');
     }
 
     let missing: Vec<String> = opts
