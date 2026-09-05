@@ -605,6 +605,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "user-flapd"
+version = "0.7.0-dev"
+dependencies = [
+ "ulib",
+]
+
+[[package]]
 name = "user-fs-probe"
 version = "0.7.0-dev"
 dependencies = [
@@ -683,6 +690,20 @@ dependencies = [
 
 [[package]]
 name = "user-svc-client"
+version = "0.7.0-dev"
+dependencies = [
+ "ulib",
+]
+
+[[package]]
+name = "user-tick-client"
+version = "0.7.0-dev"
+dependencies = [
+ "ulib",
+]
+
+[[package]]
+name = "user-tickd"
 version = "0.7.0-dev"
 dependencies = [
  "ulib",

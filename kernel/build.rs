@@ -36,6 +36,9 @@ fn main() {
         "echo-svc",
         "crashy-svc",
         "svc-client",
+        "tickd",
+        "tick-client",
+        "flapd",
         "hello-app",
     ] {
         println!(
@@ -116,6 +119,12 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
             "-p",
             "user-svc-client",
             "-p",
+            "user-tickd",
+            "-p",
+            "user-tick-client",
+            "-p",
+            "user-flapd",
+            "-p",
             "user-hello-app",
         ])
         .arg("--target-dir")
@@ -160,6 +169,9 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
         ("user-echo-svc", "bin/echo-svc"),
         ("user-crashy-svc", "bin/crashy-svc"),
         ("user-svc-client", "bin/svc-client"),
+        ("user-tickd", "bin/tickd"),
+        ("user-tick-client", "bin/tick-client"),
+        ("user-flapd", "bin/flapd"),
     ];
     entries.push(("bin/".to_string(), Vec::new(), true));
     for (artifact, dest) in programs {

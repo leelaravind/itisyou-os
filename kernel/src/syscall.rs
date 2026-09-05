@@ -61,6 +61,13 @@ pub const SYS_CAP_REVOKE: u64 = 17;
 /// Narrow the caller's own handle for a resource kind (rights subset, scope
 /// subset, optional expiry). Never amplifies.
 pub const SYS_CAP_RESTRICT: u64 = 18;
+/// Monotonic tick count since boot (V0.8). A long-running service has to pace
+/// itself in REAL time: a daemon that counts its own scheduling passes is
+/// measuring how loaded the machine is, not how much time has gone by, so its
+/// heartbeat cadence swings by orders of magnitude with load. This conveys no
+/// authority (a free-running counter, no wall clock, nothing about any other
+/// process), so like `getpid` it needs no capability.
+pub const SYS_UPTIME: u64 = 19;
 
 pub const ERR_NOSYS: u64 = u64::MAX;
 pub const ERR_FAULT: u64 = u64::MAX - 1;
@@ -315,6 +322,7 @@ extern "C" fn syscall_dispatch(a1: u64, a2: u64, a3: u64, nr: u64) -> u64 {
             transition::abort_yield();
         }
         SYS_GETPID => CURRENT_PID.load(Ordering::SeqCst),
+        SYS_UPTIME => crate::interrupts::ticks(),
         SYS_SPAWN => match require_any(CapabilityKind::Process, rights::USE, "spawn") {
             Ok(()) => crate::proc::sys_spawn(a1, a2),
             Err(e) => e,

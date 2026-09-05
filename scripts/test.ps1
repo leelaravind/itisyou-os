@@ -189,6 +189,48 @@ Remove-Item $platDisk -ErrorAction SilentlyContinue
     '--require', 'result=denied',
     '--timeout-secs', '240', '--label', 'platform-bios')
 
+Write-Output '=== QEMU long-running background services (BIOS) ==='
+# V0.8 persistent services: `tickd` and `flapd` are ordinary Ring 3 processes
+# started at boot with exactly the capabilities they declare (tickd IPC-only,
+# flapd none), co-scheduled with the interactive shell instead of run to
+# completion. The assertions prove all four properties that distinguish a
+# long-running service from V0.7's run-to-completion tasks:
+#   * it is still ALIVE later in the boot - heartbeats are stamped with real
+#     kernel ticks, not scheduling passes, so the cadence is load-independent;
+#   * it is still SERVING, not merely resident - two `bg` clients complete an
+#     IPC round trip against the SAME instance (tickd's own counter reaches
+#     n=2, which a restarted service could never print);
+#   * a daemon's clean exit is a FAULT - flapd returns immediately and is
+#     restarted under the bounded policy, then marked Failed at the ceiling
+#     instead of restarting forever;
+#   * the system stays healthy and interactive throughout - the on-demand
+#     supervisor still runs its own services correctly alongside them, the
+#     `svc` table reports background and on-demand state together, and the
+#     shell still accepts commands afterwards.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B190',
+    '--send', 'bg /bin/tick-client',
+    '--send', 'bg /bin/spin-finite',
+    '--send', 'svc',
+    '--send', 'bg /bin/tick-client',
+    '--send', 'shutdown',
+    '--require', 'bg_start name=tickd pid=1 caps=0x2 long_running=true',
+    '--require', 'bg_start name=flapd pid=2 caps=0x0 long_running=true',
+    '--require', 'TICKD-READY',
+    '--require', 'TICKD-ALIVE tick=',
+    '--require', 'TICKD-SERVED n=2',
+    '--require', 'TICKC-OK passes=',
+    '--require', 'bg_restart name=flapd pid=',
+    '--require', 'clean_exit=true',
+    '--require', 'bg_failed name=flapd restarts=3',
+    '--require', 'name=flapd state=failed',
+    '--require', 'tickd  Running',
+    '--require', 'flapd  Failed { restarts: 3 }',
+    '--require', 'SVC-CLIENT-OK',
+    '--require', 'svc: started=3 done=2 failed=1 restarts=3',
+    '--require', 'shutting down (QEMU exit)',
+    '--timeout-secs', '240', '--label', 'services-bg-bios')
+
 Write-Output '=== QEMU interrupted update -> recovery (BIOS, two boots) ==='
 # Boot 1 installs v1 and STAGES v2 without committing (a simulated crash mid-
 # update), then powers off. Boot 2 (fresh guest, same disk) must find v1

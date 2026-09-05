@@ -11,6 +11,15 @@ use kernel_core::shellparse;
 
 const MAX_LINE: usize = 256;
 
+/// How long the shell hands the CPU to background services when no input is
+/// pending. One tick (10 ms at 100 Hz) keeps the console responsive while
+/// still letting a daemon run a full quantum.
+const SHELL_IDLE_SLICE_TICKS: u64 = 1;
+
+/// Ceiling on a co-scheduled `bg` job (30 s at 100 Hz), so a client that never
+/// completes reports a timeout instead of taking the console with it.
+const BG_JOB_MAX_TICKS: u64 = 3_000;
+
 /// Emit B120 (input path ready). Serial RX needs no extra initialization —
 /// the UART was configured during early boot.
 pub fn init_input() {
@@ -48,7 +57,11 @@ fn read_line(buf: &mut [u8; MAX_LINE]) -> Option<&str> {
     let mut overflow = false;
     loop {
         let Some(byte) = serial::try_read_byte() else {
-            core::hint::spin_loop();
+            // Idle time belongs to the background services (V0.8): the shell
+            // is waiting on a human, so hand the CPU to the persistent Ring 3
+            // daemons instead of burning it in a spin loop. The slice is
+            // bounded in real time, so keystroke latency stays bounded too.
+            crate::services::pump(SHELL_IDLE_SLICE_TICKS);
             continue;
         };
         match byte {
@@ -108,6 +121,7 @@ fn execute(line: &str) {
         "echo" => cmd_echo(args),
         "clear" => crate::serial_print!("\x1b[2J\x1b[H"),
         "run" => cmd_run(args),
+        "bg" => cmd_bg(args),
         "svc" => cmd_svc(),
         "pkg" => cmd_pkg(args),
         "audit" => cmd_audit(),
@@ -129,7 +143,8 @@ fn execute(line: &str) {
 
 fn cmd_help() {
     crate::serial_println!(
-        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path> [caps|-] [prefix]  run a Ring 3 ELF (optionally sandboxed)\n  svc               start + supervise system services\n  pkg <op> ...      app packages: install/stage/launch/rollback/recover/list\n  audit             show the privileged-action audit trail\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  usbwait           wait for USB HID input (keyboard/mouse)\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU\n  reboot            8042 CPU reset"
+        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path> [caps|-] [prefix]  run a Ring 3 ELF (optionally sandboxed)\n  bg <path> [caps]  run a Ring 3 ELF co-scheduled with the background services
+  svc               supervise the on-demand services; show all service state\n  pkg <op> ...      app packages: install/stage/launch/rollback/recover/list\n  audit             show the privileged-action audit trail\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  usbwait           wait for USB HID input (keyboard/mouse)\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU\n  reboot            8042 CPU reset"
     );
 }
 
@@ -249,6 +264,68 @@ fn cmd_run(args: &[&str]) {
     match crate::user::run_path_with(path, caps, sandbox) {
         Ok(exit) => crate::serial_println!("run: {path}: {exit:?}"),
         Err(err) => crate::serial_println!("run: {path}: load failed: {err:?}"),
+    }
+}
+
+/// `bg <path> [caps]` — run a program CO-SCHEDULED with the persistent
+/// background services, rather than to completion on its own.
+///
+/// `run` executes a process start-to-finish while nothing else is on the CPU,
+/// so a program that needs to talk to a long-running service could never
+/// succeed under it: the service is not running while the client is. `bg`
+/// admits the program to the process table and pumps the scheduler until it
+/// terminates, so client and daemon are runnable in the same period — which
+/// is what makes an IPC round-trip with a live service possible at all.
+fn cmd_bg(args: &[&str]) {
+    let Some(path) = args.first() else {
+        crate::serial_println!("bg: missing program path (e.g. bg /bin/tick-client)");
+        return;
+    };
+    let caps = match args.get(1) {
+        None => kernel_core::caps::CAP_LEGACY_FULL,
+        Some(&"-") => 0,
+        Some(list) => match kernel_core::caps::parse(list) {
+            Ok(c) => c,
+            Err(_) => {
+                crate::serial_println!("bg: unknown capability in \"{list}\"");
+                return;
+            }
+        },
+    };
+    let process = match crate::user::load_with(path, caps, None) {
+        Ok(p) => p,
+        Err(err) => {
+            crate::serial_println!("bg: {path}: load failed: {err:?}");
+            return;
+        }
+    };
+    let pid = crate::proc::admit(process);
+    // Bounded: a client that never finishes must not wedge the console.
+    let deadline = crate::interrupts::ticks() + BG_JOB_MAX_TICKS;
+    loop {
+        crate::services::pump(1);
+        match crate::proc::state_of(pid) {
+            Some(crate::proc::ProcState::Exited(code)) => {
+                crate::proc::reap(pid);
+                crate::serial_println!("bg: {path}: exit={code}");
+                return;
+            }
+            Some(crate::proc::ProcState::Faulted { vector }) => {
+                crate::proc::reap(pid);
+                crate::serial_println!("bg: {path}: faulted vector={vector} contained=true");
+                return;
+            }
+            None => {
+                crate::serial_println!("bg: {path}: vanished");
+                return;
+            }
+            Some(_) => {}
+        }
+        if crate::interrupts::ticks() >= deadline {
+            crate::proc::reap(pid);
+            crate::serial_println!("bg: {path}: timed out after {BG_JOB_MAX_TICKS} ticks");
+            return;
+        }
     }
 }
 

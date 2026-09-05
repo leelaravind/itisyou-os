@@ -194,6 +194,21 @@ jobs:
           cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --nvme-persist artifacts/platform-test.img             --expect B190             --send "run /bin/sandbox-probe -"             --send "run /bin/cap-handle-probe"             --send "run /bin/fs-probe fs_read /etc"             --send "svc"             --send "pkg install /pkgs/hello-app-1.itpkg"             --send "pkg install /pkgs/hello-app-bad.itpkg"             --send "pkg launch hello-app"             --send "pkg install /pkgs/hello-app-2.itpkg"             --send "pkg rollback hello-app"             --send "pkg launch hello-app"             --send "pkg list"             --send "audit"             --send "shutdown"             --require "SANDBOX-DENIED-OK" --require "FS-SANDBOX-OK"             --require "CAPH-FORGED-DENIED" --require "CAPH-EXPIRED-DENIED"             --require "CAPH-REVOKED-DENIED" --require "CAPH-ENFORCEMENT-OK"             --require "reason=expired" --require "reason=no_handle"             --require "ECHOD-SERVED-3" --require "SVC-CLIENT-OK"             --require "name=crashd state=failed pid=" --require "restarts=3"             --require "install name=hello-app v=1 result=ok"             --require "verify result=refused reason=DigestMismatch"             --require "HELLO-APP-OK"             --require "rollback name=hello-app from=v2 to=v1 result=ok"             --require "result=denied"             --timeout-secs 300 --label platform-bios
           rm -f artifacts/platform-test.img
 
+      - name: QEMU long-running background services (BIOS)
+        run: |
+          # V0.8 persistent services: tickd (IPC-only) and flapd (no caps)
+          # start at boot and are supervised for the life of the system.
+          # Asserts the four properties that separate a daemon from a
+          # run-to-completion task: still alive later in the boot (heartbeats
+          # stamped with real kernel ticks, so the cadence is load-
+          # independent); still SERVING, not merely resident (two bg clients
+          # complete IPC round trips against the same instance - n=2 is a
+          # number a restarted service could not print); a daemon's clean
+          # exit treated as a fault and restarted under the bounded policy,
+          # then Failed at the ceiling rather than a restart storm; and the
+          # system staying healthy and interactive throughout.
+          cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --expect B190             --send "bg /bin/tick-client"             --send "bg /bin/spin-finite"             --send "svc"             --send "bg /bin/tick-client"             --send "shutdown"             --require "bg_start name=tickd pid=1 caps=0x2 long_running=true"             --require "bg_start name=flapd pid=2 caps=0x0 long_running=true"             --require "TICKD-READY" --require "TICKD-ALIVE tick="             --require "TICKD-SERVED n=2" --require "TICKC-OK passes="             --require "bg_restart name=flapd pid=" --require "clean_exit=true"             --require "bg_failed name=flapd restarts=3"             --require "name=flapd state=failed"             --require "tickd  Running"             --require "flapd  Failed { restarts: 3 }"             --require "SVC-CLIENT-OK"             --require "svc: started=3 done=2 failed=1 restarts=3"             --require "shutting down (QEMU exit)"             --timeout-secs 300 --label services-bg-bios
+
       - name: QEMU interrupted update -> recovery (two boots)
         run: |
           # Boot 1 installs v1 and stages v2 WITHOUT committing (simulated
