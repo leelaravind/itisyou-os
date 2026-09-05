@@ -122,6 +122,7 @@ fn execute(line: &str) {
         "clear" => crate::serial_print!("\x1b[2J\x1b[H"),
         "run" => cmd_run(args),
         "bg" => cmd_bg(args),
+        "store" => cmd_store(args),
         "net" => cmd_net(),
         "ping" => cmd_ping(args),
         "resolve" => cmd_resolve(args),
@@ -146,11 +147,7 @@ fn execute(line: &str) {
 
 fn cmd_help() {
     crate::serial_println!(
-        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path> [caps|-] [prefix]  run a Ring 3 ELF (optionally sandboxed)\n  bg <path> [caps]  run a Ring 3 ELF co-scheduled with the background services
-  svc               supervise the on-demand services; show all service state\n  pkg <op> ...      app packages: install/stage/launch/rollback/recover/list\n  net               interface address, counters and bound sockets
-  ping <ip> [n]     ICMP echo the given IPv4 address
-  resolve <name>    DNS A lookup through the configured server
-  audit             show the privileged-action audit trail\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  usbwait           wait for USB HID input (keyboard/mouse)\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU\n  reboot            8042 CPU reset"
+        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path> [caps|-] [prefix]  run a Ring 3 ELF (optionally sandboxed)\n  bg <path> [caps]  run a Ring 3 ELF co-scheduled with the background services\n  svc               supervise the on-demand services; show all service state\n  pkg <op> ...      app packages: install/stage/launch/rollback/recover/list\n  store <op> ...    persistent store: ls | put <name> <text> | cat <name> | rm <name>\n  net               interface address, counters and bound sockets\n  ping <ip> [n]     ICMP echo the given IPv4 address\n  resolve <name>    DNS A lookup through the configured server\n  audit             show the privileged-action audit trail\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  usbwait           wait for USB HID input (keyboard/mouse)\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU\n  reboot            8042 CPU reset"
     );
 }
 
@@ -338,6 +335,75 @@ fn cmd_bg(args: &[&str]) {
 /// `net` — everything an operator needs to tell a working link from a broken
 /// one: the address plan, the driver's frame counters, this stack's per-layer
 /// counters (including what it refused and why), and the bound sockets.
+/// `store` — operator access to the persistent ITFS volume.
+///
+/// It exists so the store can be inspected and seeded without a program: the
+/// filesystem tests use `put` to plant a file that a *read-only* process then
+/// reads, which is what makes "writes denied, reads still allowed" a
+/// meaningful distinction rather than an empty one.
+fn cmd_store(args: &[&str]) {
+    let Some(&sub) = args.first() else {
+        crate::serial_println!(
+            "store: subcommands: ls | put <name> <text> | cat <name> | rm <name>"
+        );
+        return;
+    };
+    match (sub, args.get(1)) {
+        ("ls", _) => match crate::with_persistent_store(|fs| {
+            let names: alloc::vec::Vec<alloc::string::String> = fs
+                .list()
+                .iter()
+                .map(|n| alloc::string::String::from(*n))
+                .collect();
+            (names, fs.file_count(), fs.generation())
+        }) {
+            Some((names, count, generation)) => {
+                for name in &names {
+                    crate::serial_println!("  {name}");
+                }
+                crate::serial_println!("store: files={count} generation={generation}");
+            }
+            None => crate::serial_println!("store: no persistent storage attached"),
+        },
+        ("put", Some(name)) => {
+            // Everything after the name is the contents, rejoined with the
+            // single spaces the tokenizer removed.
+            let mut text = alloc::string::String::new();
+            for (i, word) in args[2..].iter().enumerate() {
+                if i > 0 {
+                    text.push(' ');
+                }
+                text.push_str(word);
+            }
+            match crate::with_persistent_store(|fs| fs.write(name, text.as_bytes())) {
+                Some(Ok(())) => {
+                    crate::serial_println!("store: put name={name} bytes={}", text.len())
+                }
+                Some(Err(e)) => crate::serial_println!("store: put name={name} failed: {e:?}"),
+                None => crate::serial_println!("store: no persistent storage attached"),
+            }
+        }
+        ("cat", Some(name)) => match crate::with_persistent_store(|fs| fs.read(name)) {
+            Some(Ok(data)) => match core::str::from_utf8(&data) {
+                Ok(text) => crate::serial_println!("store: {name} = {text}"),
+                Err(_) => {
+                    crate::serial_println!("store: {name} is not UTF-8 ({} bytes)", data.len())
+                }
+            },
+            Some(Err(e)) => crate::serial_println!("store: cat name={name} failed: {e:?}"),
+            None => crate::serial_println!("store: no persistent storage attached"),
+        },
+        ("rm", Some(name)) => match crate::with_persistent_store(|fs| fs.remove(name)) {
+            Some(Ok(())) => crate::serial_println!("store: rm name={name}"),
+            Some(Err(e)) => crate::serial_println!("store: rm name={name} failed: {e:?}"),
+            None => crate::serial_println!("store: no persistent storage attached"),
+        },
+        _ => crate::serial_println!(
+            "store: subcommands: ls | put <name> <text> | cat <name> | rm <name>"
+        ),
+    }
+}
+
 fn cmd_net() {
     if !crate::net::is_up() {
         crate::serial_println!("net: interface down (no NIC bound)");

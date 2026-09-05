@@ -41,6 +41,9 @@ fn main() {
         "flapd",
         "net-probe",
         "net-denied",
+        "fs-writer",
+        "fs-write-denied",
+        "fs-user-persist",
         "hello-app",
     ] {
         println!(
@@ -131,6 +134,12 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
             "-p",
             "user-net-denied",
             "-p",
+            "user-fs-writer",
+            "-p",
+            "user-fs-write-denied",
+            "-p",
+            "user-fs-user-persist",
+            "-p",
             "user-hello-app",
         ])
         .arg("--target-dir")
@@ -180,6 +189,9 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
         ("user-flapd", "bin/flapd"),
         ("user-net-probe", "bin/net-probe"),
         ("user-net-denied", "bin/net-denied"),
+        ("user-fs-writer", "bin/fs-writer"),
+        ("user-fs-write-denied", "bin/fs-write-denied"),
+        ("user-fs-user-persist", "bin/fs-user-persist"),
     ];
     entries.push(("bin/".to_string(), Vec::new(), true));
     for (artifact, dest) in programs {

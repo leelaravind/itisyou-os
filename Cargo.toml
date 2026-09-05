@@ -28,6 +28,9 @@ members = [
     "user/flapd",
     "user/net-probe",
     "user/net-denied",
+    "user/fs-writer",
+    "user/fs-write-denied",
+    "user/fs-user-persist",
     "user/hello-app",
 ]
 # The kernel must NEVER share a cargo invocation with host packages: cargo

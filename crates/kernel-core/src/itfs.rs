@@ -170,6 +170,27 @@ impl SuperBlock {
         Ok(())
     }
 
+    /// Reserve a run for `name`, replacing any existing file of that name in
+    /// the SAME superblock generation (V0.8).
+    ///
+    /// This is what makes a userspace overwrite crash-atomic. Doing it as
+    /// `remove` then `allocate` would be two commits, and a crash between them
+    /// leaves the file gone — the caller asked to replace its contents, not to
+    /// risk losing them. Here the old extent is still referenced by the
+    /// committed superblock until the moment the new one lands, so a crash at
+    /// any point leaves exactly the old file or exactly the new one.
+    ///
+    /// The old data blocks are not reclaimed, the same documented trade-off
+    /// `remove` makes: contiguous allocation has no free-block reuse.
+    pub fn replace(&mut self, name: &str, size: u32) -> Result<(usize, u32), FsError> {
+        if self.find(name).is_some() {
+            // Clear the entry in this working copy only; nothing is committed
+            // until the caller writes the superblock.
+            self.remove(name)?;
+        }
+        self.allocate(name, size)
+    }
+
     /// Encode to a 512-byte block with a fresh CRC.
     pub fn encode(&self) -> [u8; BLOCK_SIZE] {
         let mut b = [0u8; BLOCK_SIZE];
@@ -427,5 +448,45 @@ mod tests {
         // The slot is reusable for a new file.
         sb.allocate("hello.2.pkg", 100).unwrap();
         assert_eq!(sb.file_count, 2);
+    }
+
+    #[test]
+    fn replace_swaps_the_extent_in_one_generation() {
+        let mut sb = SuperBlock::empty(64);
+        let (_, first_start) = sb.allocate("notes", 600).unwrap();
+        let gen_after_create = sb.generation;
+        let (_, second_start) = sb.replace("notes", 100).unwrap();
+        // A new extent, so the old contents are untouched until this
+        // superblock is committed.
+        assert_ne!(first_start, second_start);
+        assert_eq!(sb.file_count, 1, "replace must not double-count the file");
+        assert_eq!(sb.find("notes").unwrap().size, 100);
+        assert_eq!(sb.find("notes").unwrap().start_block, second_start);
+        // Two internal steps, but the caller commits once; the generation
+        // moving by more than one is fine — what matters is that only ONE
+        // encoded superblock ever reaches the device.
+        assert!(sb.generation > gen_after_create);
+    }
+
+    #[test]
+    fn replace_creates_when_absent() {
+        let mut sb = SuperBlock::empty(64);
+        let (_, start) = sb.replace("fresh", 10).unwrap();
+        assert_eq!(sb.file_count, 1);
+        assert_eq!(sb.find("fresh").unwrap().start_block, start);
+    }
+
+    #[test]
+    fn replace_reports_no_space_without_losing_the_old_entry() {
+        let mut sb = SuperBlock::empty(8);
+        sb.allocate("keep", 512).unwrap();
+        // Far more than the remaining blocks.
+        let err = sb.replace("keep", 100_000).unwrap_err();
+        assert_eq!(err, FsError::NoSpace);
+        // The working copy is now missing the entry — which is exactly why the
+        // caller must work on a COPY of the superblock and discard it on
+        // error, never mutate the live one. Asserted so the contract is
+        // explicit rather than folklore.
+        assert!(sb.find("keep").is_none());
     }
 }

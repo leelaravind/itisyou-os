@@ -232,6 +232,42 @@ pub fn open_nvme() -> Option<device::nvme::Nvme> {
     device::nvme::Nvme::init(&dev).ok()
 }
 
+/// The persistent store's namespace prefix. A path under it addresses the
+/// ITFS volume on NVMe; anything else is the read-only initramfs.
+pub const STORE_PREFIX: &str = "/data/";
+
+/// Mount the persistent ITFS and run `f` over it.
+///
+/// A blank disk is formatted on first use, but a disk that mounts as
+/// *corrupt* is NOT: reformatting on a bad CRC would turn a recoverable
+/// read error into data loss. Only `NoValidSuperblock`/`BadMagic` — the
+/// signatures of a disk that never held a filesystem — lead to a format.
+pub fn with_persistent_store<R>(f: impl FnOnce(&mut fs_disk::FileSystem) -> R) -> Option<R> {
+    let nvme = open_nvme()?;
+    let mut fs = match fs_disk::FileSystem::mount(&nvme) {
+        Ok(fs) => fs,
+        Err(fs_disk::Error::Fs(
+            kernel_core::itfs::FsError::NoValidSuperblock | kernel_core::itfs::FsError::BadMagic,
+        )) => fs_disk::FileSystem::format(&nvme).ok()?,
+        Err(_) => return None,
+    };
+    Some(f(&mut fs))
+}
+
+/// Split a `/data/<name>` path into its store-relative name.
+///
+/// Returns `None` for anything outside the store, for an empty name, for a
+/// name with a further `/` in it (ITFS has no directories, and silently
+/// flattening `a/b` to one name would let two different paths collide), or
+/// for a name longer than ITFS allows.
+pub fn store_name(path: &str) -> Option<&str> {
+    let name = path.strip_prefix(STORE_PREFIX)?;
+    if name.is_empty() || name.len() > kernel_core::itfs::NAME_LEN || name.contains('/') {
+        return None;
+    }
+    Some(name)
+}
+
 /// Filesystem-persistence boot logic (invoked by `itisyou-fs-persist`): if a
 /// valid ITFS with `name` already exists, verify its contents (post-reboot
 /// run); otherwise format and write it (first run). Never returns — exits
