@@ -949,6 +949,9 @@ pub fn copy_from_user(ptr: u64, len: u64, max: u64) -> Result<alloc::vec::Vec<u8
         return Err(ERR_2BIG);
     }
     validate_user_range(ptr, len)?;
+    // SMAP forbids kernel access to user pages by default; this is one of
+    // the three places that legitimately needs it, so it says so explicitly.
+    let _access = crate::harden::UserAccess::begin();
     // SAFETY: range validated in the active space; the owning process is
     // suspended in this syscall so the mapping cannot change.
     let src = unsafe { core::slice::from_raw_parts(ptr as *const u8, len as usize) };
@@ -958,6 +961,7 @@ pub fn copy_from_user(ptr: u64, len: u64, max: u64) -> Result<alloc::vec::Vec<u8
 /// Copy kernel bytes into a validated user buffer; returns bytes written.
 pub fn copy_to_user(ptr: u64, data: &[u8]) -> Result<u64, u64> {
     validate_user_range(ptr, data.len() as u64)?;
+    let _access = crate::harden::UserAccess::begin();
     // SAFETY: as above.
     let dst = unsafe { core::slice::from_raw_parts_mut(ptr as *mut u8, data.len()) };
     dst.copy_from_slice(data);
@@ -1111,6 +1115,7 @@ fn sys_write(fd: u64, ptr: u64, len: u64) -> u64 {
     if let Err(e) = validate_user_range(ptr, len) {
         return e;
     }
+    let _access = crate::harden::UserAccess::begin();
     // SAFETY: range validated in the active space; owning process suspended.
     let bytes = unsafe { core::slice::from_raw_parts(ptr as *const u8, len as usize) };
     for chunk in bytes.utf8_chunks() {

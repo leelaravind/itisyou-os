@@ -31,6 +31,8 @@ members = [
     "user/fs-writer",
     "user/fs-write-denied",
     "user/fs-user-persist",
+    "user/harden-probe",
+    "user/stack-guard-probe",
     "user/hello-app",
 ]
 # The kernel must NEVER share a cargo invocation with host packages: cargo

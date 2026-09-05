@@ -312,6 +312,46 @@ Write-Output '=== QEMU networking: e1000 + ARP/IPv4/ICMP/UDP/DNS (BIOS) ==='
     '--require', 'rx_malformed=3 rx_unwanted=2',
     '--timeout-secs', '240', '--label', 'net-bios')
 
+Write-Output '=== QEMU hardening: SMEP/SMAP/UMIP, W^X, stack guard (BIOS) ==='
+# Every leg in this matrix already runs on a CPU that advertises SMEP, SMAP and
+# UMIP (see the runner's -cpu line), so the whole suite passing is itself
+# evidence that supervisor-mode protection did not break the kernel's own
+# legitimate access to user memory. This leg asserts the protections are ON and
+# that they REFUSE things.
+#
+# Two assertions are about absence, which is what `--forbid` is for: "the CPU
+# refused" prints no line of its own, so the only way to state it is that the
+# marker printed on success never appeared.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B210',
+    '--send', 'harden',
+    '--send', 'run /bin/init',
+    '--send', 'run /bin/wx-test',
+    '--send', 'run /bin/harden-probe',
+    '--send', 'run /bin/stack-guard-probe',
+    '--send', 'run /bin/pf-test',
+    '--send', 'shutdown',
+    '--require', 'cpu_protection smep=true smap=true umip=true',
+    '--require', 'harden: smep=true smap=true umip=true',
+    # SMAP is on and the kernel still reads and writes user buffers correctly
+    # through its three declared windows - RING3-DONE comes from a `write`.
+    '--require', 'RING3-DONE',
+    # W^X: a segment marked both writable and executable is refused at load.
+    '--require', 'load failed: WxSegment',
+    # UMIP: `sgdt` from Ring 3 is a #GP, contained.
+    '--require', 'HARDEN-PROBE-SGDT',
+    '--require', 'vector=13 addr=0x0 contained=true',
+    # The stack is exactly as large as the kernel says, and the page below it
+    # is not writable.
+    '--require', 'STACKGUARD-WROTE page=15',
+    '--require', 'vector=14 addr=0x7ffffdf000 contained=true',
+    # A Ring 3 read of a kernel address still faults and is contained.
+    '--require', 'addr=0xffff8000dead0000 contained=true',
+    # Absence assertions: neither probe may ever reach its success path.
+    '--forbid', 'HARDEN-LEAK-SGDT',
+    '--forbid', 'STACKGUARD-LEAK',
+    '--timeout-secs', '240', '--label', 'harden-bios')
+
 Write-Output '=== QEMU interrupt modernization: APIC + I/O APIC + MSI-X (BIOS) ==='
 # The local APIC comes up ALONGSIDE the legacy PIC, which keeps serving the
 # timer and PS/2 input; the leg asserts both, so "the APIC works" can never be

@@ -108,6 +108,13 @@ struct Options {
     send: Vec<String>,
     /// Substrings that must appear somewhere in the serial log.
     require: Vec<String>,
+    /// Substrings that must NOT appear anywhere in the serial log.
+    ///
+    /// Adversarial tests need this: "the guest refused" is only provable by
+    /// the absence of the marker it would have printed had it not refused.
+    /// Expressing that as a positive assertion is impossible — there is no
+    /// line to match — so the harness has to be able to fail on presence.
+    forbid: Vec<String>,
     /// Attach a QEMU HMP monitor over TCP (the runner listens; QEMU connects)
     /// so keyboard/mouse input can be injected into the guest's PS/2 devices.
     monitor: bool,
@@ -184,6 +191,7 @@ fn parse_args() -> Result<Options, String> {
     let mut expect_panic = false;
     let mut send = Vec::new();
     let mut require = Vec::new();
+    let mut forbid: Vec<String> = Vec::new();
     let mut monitor = false;
     let mut inject_after = None;
     let mut monitor_cmds = Vec::new();
@@ -222,6 +230,7 @@ fn parse_args() -> Result<Options, String> {
             "--expect-panic" => expect_panic = true,
             "--send" => send.push(value("--send")?),
             "--require" => require.push(value("--require")?),
+            "--forbid" => forbid.push(value("--forbid")?),
             "--monitor" => monitor = true,
             "--inject-after" => {
                 inject_after = Some(value("--inject-after")?);
@@ -289,6 +298,7 @@ fn parse_args() -> Result<Options, String> {
         expect_panic,
         send,
         require,
+        forbid,
         monitor,
         inject_after,
         monitor_cmds,
@@ -397,6 +407,11 @@ fn build_command(
         .arg(format!("format=raw,file={}", opts.image.display()))
         .arg("-serial")
         .arg(format!("tcp:127.0.0.1:{serial_port},nodelay"))
+        // The default `qemu64` model advertises neither SMEP nor SMAP, so the
+        // guest's hardening would silently do nothing. Requesting them means
+        // every leg in the matrix runs WITH supervisor-mode protection on,
+        // which is a far stronger statement than one leg that enables it.
+        .args(["-cpu", "qemu64,+smep,+smap,+umip"])
         .args(["-display", "none", "-no-reboot", "-m", "256M"])
         .args(["-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"]);
     if let Some(mport) = monitor_port {
@@ -929,6 +944,14 @@ fn run(opts: &Options) -> RunResult {
         .filter(|needle| !serial_lines.iter().any(|l| l.contains(needle.as_str())))
         .cloned()
         .collect();
+    // A forbidden marker that DID appear is folded into the same list, so it
+    // fails the run the same way a missing one does and shows up in the same
+    // place in the evidence — prefixed so the two are never confused.
+    for needle in &opts.forbid {
+        if serial_lines.iter().any(|l| l.contains(needle.as_str())) {
+            missing_required.push(format!("forbidden-present:{needle}"));
+        }
+    }
 
     // Audio evidence: the captured WAV must contain non-silent PCM — proof the
     // OS's generated samples actually reached the output backend, not just that

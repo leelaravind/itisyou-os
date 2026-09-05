@@ -21,6 +21,7 @@ pub mod fs;
 pub mod fs_disk;
 pub mod gdt;
 pub mod gfx;
+pub mod harden;
 pub mod input;
 pub mod interrupts;
 pub mod ipc;
@@ -164,6 +165,10 @@ pub fn init_subsystems(boot_info: &'static mut BootInfo) {
 
     // B140: Ring 3 transition machinery (user GDT segments were installed
     // at B080; this arms the syscall MSRs and kernel syscall stack).
+    // CPU-enforced kernel/user separation, before any Ring 3 process can
+    // exist: enabling SMAP while a syscall was mid-copy would fault the kernel
+    // on its own legitimate access.
+    harden::init();
     syscall::init();
     proc::init();
     ipc::init();
