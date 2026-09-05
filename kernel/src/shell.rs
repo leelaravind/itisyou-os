@@ -122,13 +122,14 @@ fn execute(line: &str) {
         "clear" => crate::serial_print!("\x1b[2J\x1b[H"),
         "run" => cmd_run(args),
         "bg" => cmd_bg(args),
+        "irq" => cmd_irq(),
         "store" => cmd_store(args),
         "net" => cmd_net(),
         "ping" => cmd_ping(args),
         "resolve" => cmd_resolve(args),
         "svc" => cmd_svc(),
         "pkg" => cmd_pkg(args),
-        "audit" => cmd_audit(),
+        "audit" => cmd_audit(args),
         "lsdev" => cmd_lsdev(),
         "beep" => cmd_beep(),
         "usbwait" => cmd_usbwait(),
@@ -147,7 +148,7 @@ fn execute(line: &str) {
 
 fn cmd_help() {
     crate::serial_println!(
-        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path> [caps|-] [prefix]  run a Ring 3 ELF (optionally sandboxed)\n  bg <path> [caps]  run a Ring 3 ELF co-scheduled with the background services\n  svc               supervise the on-demand services; show all service state\n  pkg <op> ...      app packages: install/stage/launch/rollback/recover/list\n  store <op> ...    persistent store: ls | put <name> <text> | cat <name> | rm <name>\n  net               interface address, counters and bound sockets\n  ping <ip> [n]     ICMP echo the given IPv4 address\n  resolve <name>    DNS A lookup through the configured server\n  audit             show the privileged-action audit trail\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  usbwait           wait for USB HID input (keyboard/mouse)\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU\n  reboot            8042 CPU reset"
+        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path> [caps|-] [prefix]  run a Ring 3 ELF (optionally sandboxed)\n  bg <path> [caps]  run a Ring 3 ELF co-scheduled with the background services\n  svc               supervise the on-demand services; show all service state\n  pkg <op> ...      app packages: install/stage/launch/rollback/recover/list\n  irq               APIC state and interrupt-delivery counters\n  store <op> ...    persistent store: ls | put <name> <text> | cat <name> | rm <name>\n  net               interface address, counters and bound sockets\n  ping <ip> [n]     ICMP echo the given IPv4 address\n  resolve <name>    DNS A lookup through the configured server\n  audit [save|verify]  privileged-action trail; persist it or re-verify it\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  usbwait           wait for USB HID input (keyboard/mouse)\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU\n  reboot            8042 CPU reset"
     );
 }
 
@@ -341,6 +342,70 @@ fn cmd_bg(args: &[&str]) {
 /// filesystem tests use `put` to plant a file that a *read-only* process then
 /// reads, which is what makes "writes denied, reads still allowed" a
 /// meaningful distinction rather than an empty one.
+/// `irq` — the state of both interrupt controllers and what each has
+/// actually delivered.
+///
+/// It fires a one-shot local-APIC timer as part of the report rather than
+/// only reading counters: "the APIC is enabled" is a configuration claim,
+/// while "an interrupt arrived on vector 0x41 just now" is evidence.
+fn cmd_irq() {
+    if !crate::apic::is_enabled() {
+        crate::serial_println!("irq: local APIC not enabled");
+        return;
+    }
+    // The legacy path is still the one carrying real work; report it first so
+    // nobody reads the APIC counters as a claim that the PIC was replaced.
+    crate::serial_println!(
+        "irq: pic timer_ticks={} preemptions={} (legacy PIC path, still primary)",
+        crate::interrupts::ticks(),
+        crate::interrupts::preemption_count(),
+    );
+    let delivered = crate::apic::timer_oneshot(100_000, 500);
+
+    // Message-signalled delivery. The NIC in this machine model exposes no MSI
+    // capability, so the proof uses the NVMe controller's MSI-X: arm entry 0,
+    // then do a real block read whose completion raises it. Using actual I/O
+    // rather than a synthetic poke is the point — it is the same path a driver
+    // would rely on.
+    let before_msi = crate::apic::counters().1;
+    let armed = crate::device::with_devices(|devices| {
+        devices
+            .iter()
+            // Pick by CAPABILITY, not by class: this machine also has an IDE
+            // controller, which is storage and has no capabilities at all —
+            // selecting the first storage device found it instead of the NVMe.
+            .find(|d| d.has_cap(kernel_core::pci::CapabilityId::MsiX))
+            .map(|d| crate::apic::enable_msix(d, crate::interrupts::VECTOR_MSI))
+            .unwrap_or(false)
+    });
+    if armed {
+        if let Some(nvme) = crate::open_nvme() {
+            let mut block = [0u8; 512];
+            use crate::device::block::BlockDevice;
+            let read_ok = nvme.read_block(0, &mut block).is_ok();
+            let mut deadline = crate::interrupts::Deadline::after_ms(500);
+            while crate::apic::counters().1 == before_msi && deadline.pending() {}
+            crate::serial_println!(
+                "irq: msix armed=true block_read={read_ok} delivered={}",
+                crate::apic::counters().1 > before_msi,
+            );
+        } else {
+            crate::serial_println!("irq: msix armed=true nvme=unavailable");
+        }
+    } else {
+        crate::serial_println!("irq: msix armed=false (no MSI-X capable device attached)");
+    }
+    let (timer, msi, spurious) = crate::apic::counters();
+    crate::serial_println!(
+        "irq: apic_timer delivered={delivered} count={timer} vector={:#x}",
+        crate::interrupts::VECTOR_APIC_TIMER,
+    );
+    crate::serial_println!(
+        "irq: msi count={msi} vector={:#x} spurious={spurious}",
+        crate::interrupts::VECTOR_MSI,
+    );
+}
+
 fn cmd_store(args: &[&str]) {
     let Some(&sub) = args.first() else {
         crate::serial_println!(
@@ -556,7 +621,22 @@ fn cmd_svc() {
     }
 }
 
-fn cmd_audit() {
+fn cmd_audit(args: &[&str]) {
+    match args.first().copied() {
+        Some("save") => {
+            crate::audit::save();
+            return;
+        }
+        Some("verify") => {
+            crate::audit::recover();
+            return;
+        }
+        Some(other) => {
+            crate::serial_println!("audit: unknown subcommand \"{other}\" (save | verify)");
+            return;
+        }
+        None => {}
+    }
     let (total, denials) = crate::audit::counts();
     crate::audit::with_records(|records| {
         for r in records {
@@ -572,7 +652,14 @@ fn cmd_audit() {
             );
         }
     });
+    let (head, boot, saved) = crate::audit::chain_state();
+    let mut buf = [0u8; 64];
+    let head_text = kernel_core::audit_chain::format_head(&head, &mut buf);
     crate::serial_println!("audit: total={total} denials={denials} (ring keeps the newest 64)");
+    // The chain head covers every record ever pushed, including ones the
+    // bounded ring has already dropped — which is the point of keeping it
+    // separately from the ring.
+    crate::serial_println!("audit: chain boot={boot} saved_records={saved} head={head_text}");
 }
 
 fn cmd_pkg(args: &[&str]) {

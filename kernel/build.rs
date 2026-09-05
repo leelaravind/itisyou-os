@@ -15,7 +15,9 @@ fn main() {
     let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let workspace = manifest_dir.join("..");
     let root = manifest_dir.join("../initramfs/root");
-    let out = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("initramfs.tar");
+    let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
+    let out = out_dir.join("initramfs.tar");
+    emit_dev_public_key(&out_dir);
     println!("cargo::rerun-if-changed={}", root.display());
     for dir in [
         "ulib",
@@ -218,59 +220,121 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
     // fixtures (corrupted payload; hostile manifest) under /pkgs.
     let hello = fs::read(bin_dir.join("user-hello-app")).unwrap();
     entries.push(("pkgs/".to_string(), Vec::new(), true));
-    entries.push((
-        "pkgs/hello-app-1.itpkg".to_string(),
-        pack_itpkg(
-            "name=hello-app
+    let manifest_v1 = "name=hello-app
 version=1.0.0
 caps=fs_read
-",
-            &hello,
-        ),
+";
+    let manifest_v2 = "name=hello-app
+version=1.0.1
+caps=fs_read
+";
+    entries.push((
+        "pkgs/hello-app-1.itpkg".to_string(),
+        pack_signed(manifest_v1, &hello, &DEV_SIGNING_SECRET),
         false,
     ));
     entries.push((
         "pkgs/hello-app-2.itpkg".to_string(),
-        pack_itpkg(
-            "name=hello-app
-version=1.0.1
-caps=fs_read
-",
-            &hello,
-        ),
+        pack_signed(manifest_v2, &hello, &DEV_SIGNING_SECRET),
         false,
     ));
-    // Corrupted AFTER digest computation -> the kernel must refuse it.
-    let mut bad = pack_itpkg(
-        "name=hello-app
-version=1.0.0
-caps=fs_read
-",
-        &hello,
-    );
+    // Corrupted AFTER digest computation -> refused on integrity, before the
+    // signature is ever considered.
+    let mut bad = pack_signed(manifest_v1, &hello, &DEV_SIGNING_SECRET);
     let last = bad.len() - 1;
     bad[last] ^= 0x01;
     entries.push(("pkgs/hello-app-bad.itpkg".to_string(), bad, false));
+    // Authenticity fixtures (V0.8). Each is INTACT: the content hashes
+    // correctly and the manifest is valid, so only the trust check can refuse
+    // them — which is the point.
+    //   * unsigned: a V0.7-format package, still parseable.
+    entries.push((
+        "pkgs/hello-app-unsigned.itpkg".to_string(),
+        pack_itpkg(manifest_v1, &hello),
+        false,
+    ));
+    //   * untrusted: correctly signed by a key the kernel does not know.
+    entries.push((
+        "pkgs/hello-app-untrusted.itpkg".to_string(),
+        pack_signed(manifest_v1, &hello, &FOREIGN_SIGNING_SECRET),
+        false,
+    ));
+    //   * forged: signed by the trusted key, then the signature is altered.
+    let mut forged = pack_signed(manifest_v1, &hello, &DEV_SIGNING_SECRET);
+    forged[80] ^= 0x01;
+    entries.push(("pkgs/hello-app-forged.itpkg".to_string(), forged, false));
     // Digest-valid but the manifest demands an undefined capability -> the
     // kernel must refuse it at manifest validation.
     entries.push((
         "pkgs/evil.itpkg".to_string(),
-        pack_itpkg(
+        pack_signed(
             "name=evil
 version=1
 caps=kernel-root
 ",
             &hello,
+            &DEV_SIGNING_SECRET,
         ),
         false,
     ));
 }
 
-/// Assemble an ITPKG (header + manifest + payload) with a fresh digest.
+/// Write the development signer's PUBLIC key into OUT_DIR so the kernel can
+/// `include_bytes!` it as its trust root.
+///
+/// Deriving it here, from the same seed that signs the fixtures, is what keeps
+/// the trust root and the signer in lockstep: there is no second place to
+/// update and no way for them to disagree.
+fn emit_dev_public_key(out_dir: &Path) {
+    let public = kernel_core::ed25519::public_key(&DEV_SIGNING_SECRET);
+    let path = out_dir.join("dev_signing_public_key.bin");
+    fs::write(&path, public).expect("writing the development signing public key");
+    println!("cargo:rerun-if-changed=build.rs");
+}
+
+/// The DEVELOPMENT package-signing seed.
+///
+/// Not a secret and not pretending to be one: it is a fixed byte pattern so
+/// that a build is reproducible and the kernel's compiled-in trust root
+/// matches the fixtures this build produces. A real deployment replaces this
+/// with a key that never enters the source tree — see
+/// docs/SECURITY_MODEL.md. Publishing the development key is deliberate: a
+/// build-time key that looked secret would invite someone to trust it.
+const DEV_SIGNING_SECRET: [u8; 32] = *b"itisyou-os dev package signer v8";
+
+/// A second key the kernel does NOT trust, used to produce the
+/// "correctly signed by a stranger" fixture.
+const FOREIGN_SIGNING_SECRET: [u8; 32] = *b"itisyou-os foreign signer -----8";
+
+/// Assemble an UNSIGNED ITPKG001 (header + manifest + payload).
+///
+/// Kept so the build can still produce a V0.7-format package, which is what
+/// the "unsigned packages are refused" fixture needs. Nothing the system
+/// installs uses this any more.
 fn pack_itpkg(manifest: &str, payload: &[u8]) -> Vec<u8> {
     let digest = kernel_core::pkg::content_digest(manifest.as_bytes(), payload);
     let mut out =
         kernel_core::pkg::header(manifest.len() as u32, payload.len() as u32, &digest).to_vec();
+    out.extend_from_slice(manifest.as_bytes());
+    out.extend_from_slice(payload);
+    out
+}
+
+/// Assemble a SIGNED ITPKG002 using `secret`.
+fn pack_signed(manifest: &str, payload: &[u8], secret: &[u8; 32]) -> Vec<u8> {
+    let digest = kernel_core::pkg::content_digest(manifest.as_bytes(), payload);
+    let input =
+        kernel_core::pkg::signing_input(manifest.len() as u32, payload.len() as u32, &digest);
+    let signature = kernel_core::ed25519::sign(secret, &input);
+    let public = kernel_core::ed25519::public_key(secret);
+    let mut out = kernel_core::pkg::header_signed(
+        manifest.len() as u32,
+        payload.len() as u32,
+        &digest,
+        &public,
+        &signature,
+    )
+    .to_vec();
     out.extend_from_slice(manifest.as_bytes());
     out.extend_from_slice(payload);
     out
