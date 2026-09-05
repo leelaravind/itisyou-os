@@ -118,6 +118,43 @@ impl<'a> FileSystem<'a> {
         Ok(())
     }
 
+    /// Create or overwrite a file in ONE crash-atomic commit (V0.8).
+    ///
+    /// The difference from `remove` + `create` is the whole point: those are
+    /// two superblock commits, and a crash between them leaves the file gone.
+    /// Here the data is written to a fresh extent first, then a single
+    /// superblock commit swings the directory entry onto it, so an
+    /// interrupted overwrite leaves exactly the old contents or exactly the
+    /// new ones — never a truncated file and never no file.
+    pub fn write(&mut self, name: &str, data: &[u8]) -> Result<(), Error> {
+        // Work on a copy: `replace` clears the old entry in the working
+        // superblock, so an allocation failure must not touch the live one.
+        let mut next = self.sb;
+        let (_slot, start) = next.replace(name, data.len() as u32)?;
+
+        let mut lba = start as u64;
+        let mut off = 0usize;
+        while off < data.len() {
+            let mut block = [0u8; BLOCK_SIZE];
+            let n = core::cmp::min(BLOCK_SIZE, data.len() - off);
+            block[..n].copy_from_slice(&data[off..off + n]);
+            self.dev.write_block(lba, &block)?;
+            lba += 1;
+            off += BLOCK_SIZE;
+        }
+        // The body must be on stable media before any superblock references
+        // it, or a crash could commit a directory entry pointing at garbage.
+        self.dev.flush()?;
+
+        let commit_slot = 1 - self.committed_slot;
+        self.dev.write_block(commit_slot as u64, &next.encode())?;
+        self.dev.flush()?;
+
+        self.sb = next;
+        self.committed_slot = commit_slot;
+        Ok(())
+    }
+
     /// Remove a file (V0.7): clear its directory entry and commit the new
     /// superblock to the alternate slot — one crash-atomic metadata
     /// transition (used for uninstall, rollback, and update recovery). Data

@@ -80,6 +80,12 @@ pub const SYS_UDP_RECV: u64 = 23;
 pub const SYS_UDP_CLOSE: u64 = 24;
 /// Resolve a host name to an IPv4 address over DNS.
 pub const SYS_NET_RESOLVE: u64 = 25;
+/// Create or overwrite a file in the persistent store (V0.8).
+pub const SYS_FS_WRITE: u64 = 26;
+/// Delete a file from the persistent store.
+pub const SYS_FS_DELETE: u64 = 27;
+/// List the persistent store's directory.
+pub const SYS_FS_LIST: u64 = 28;
 
 pub const ERR_NOSYS: u64 = u64::MAX;
 pub const ERR_FAULT: u64 = u64::MAX - 1;
@@ -93,6 +99,10 @@ pub const ERR_PERM: u64 = u64::MAX - 7;
 /// Cap on a network request buffer copied from user memory: a full-MTU UDP
 /// payload plus the six-byte destination prefix.
 const NET_REQ_MAX: u64 = 6 + 1472;
+
+/// Cap on a single userspace filesystem write. Bounded so one call cannot ask
+/// the kernel to buffer an arbitrary amount of user memory.
+const FS_WRITE_MAX: u64 = 64 * 1024;
 
 /// Cap on a GUI request buffer copied from user memory.
 const GUI_REQ_MAX: u64 = 256;
@@ -410,6 +420,24 @@ extern "C" fn syscall_dispatch(a1: u64, a2: u64, a3: u64, nr: u64) -> u64 {
             Ok(()) => sys_net_resolve(a1, a2, a3),
             Err(e) => e,
         },
+        // Filesystem mutation. WRITE is a distinct right from READ, so a
+        // process granted only `fs_read` cannot modify anything even inside
+        // its own sandbox — and the sandbox still applies on top, because a
+        // capability says what class of thing you may do, not where.
+        SYS_FS_WRITE => match require_any(CapabilityKind::Filesystem, rights::WRITE, "fs_write") {
+            Ok(()) => sys_fs_write(a1, a2, a3),
+            Err(e) => e,
+        },
+        SYS_FS_DELETE => {
+            match require_any(CapabilityKind::Filesystem, rights::WRITE, "fs_delete") {
+                Ok(()) => sys_fs_delete(a1, a2),
+                Err(e) => e,
+            }
+        }
+        SYS_FS_LIST => match require_any(CapabilityKind::Filesystem, rights::READ, "fs_list") {
+            Ok(()) => sys_fs_list(a1, a2),
+            Err(e) => e,
+        },
         SYS_CAP_LIST => sys_cap_list(a1, a2),
         SYS_CAP_CHECK => sys_cap_check(a1, a2, a3),
         SYS_CAP_REVOKE => sys_cap_revoke(a1),
@@ -723,6 +751,132 @@ fn sys_cap_restrict(kind: u64, rights_mask: u64, expires_in_ticks: u64) -> u64 {
 /// when the process is sandboxed — a path inside one of its allowed prefixes
 /// (checked on the NORMALIZED path, so `..` traversal cannot escape).
 /// Returns bytes copied, or ERR_PERM / ERR_NOENT / ERR_2BIG.
+/// Check a path against the caller's sandbox, auditing a refusal.
+///
+/// The sandbox is a property of the PROCESS, not of the capability: a program
+/// may hold write authority over the filesystem class and still be confined to
+/// one prefix. Both must pass.
+fn sandbox_allows(path: &str, action: &'static str, cap: u64) -> bool {
+    let Some(prefixes) = current_sandbox() else {
+        return true;
+    };
+    let allowed = prefixes
+        .iter()
+        .any(|p| kernel_core::path::is_within(p, path));
+    if !allowed {
+        crate::audit::denied(action, cap);
+    }
+    allowed
+}
+
+/// Copy a path argument out of user memory.
+fn user_path(ptr: u64, len: u64) -> Result<alloc::string::String, u64> {
+    let bytes = copy_from_user(ptr, len, 256)?;
+    match core::str::from_utf8(&bytes) {
+        Ok(s) => Ok(alloc::string::String::from(s)),
+        Err(_) => Err(ERR_INVAL),
+    }
+}
+
+/// fs_write(path_ptr, path_len, req_ptr): create or overwrite a file in the
+/// persistent store. `req` is `[buf_ptr:8, buf_len:8]`.
+///
+/// Returns the number of bytes written. The write is one crash-atomic
+/// superblock commit (see `fs_disk::FileSystem::write`), so an interrupted
+/// overwrite leaves the old contents intact rather than a truncated file.
+fn sys_fs_write(path_ptr: u64, path_len: u64, req_ptr: u64) -> u64 {
+    let path = match user_path(path_ptr, path_len) {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+    if !sandbox_allows(&path, "fs_write_sandbox", kernel_core::caps::CAP_FS_WRITE) {
+        return ERR_PERM;
+    }
+    let Some(name) = crate::store_name(&path) else {
+        return ERR_INVAL;
+    };
+    let req = match copy_from_user(req_ptr, 16, 16) {
+        Ok(b) => b,
+        Err(e) => return e,
+    };
+    let buf_ptr = u64::from_le_bytes(req[0..8].try_into().unwrap());
+    let buf_len = u64::from_le_bytes(req[8..16].try_into().unwrap());
+    let data = match copy_from_user(buf_ptr, buf_len, FS_WRITE_MAX) {
+        Ok(d) => d,
+        Err(e) => return e,
+    };
+    let result = crate::with_persistent_store(|fs| fs.write(name, &data));
+    match result {
+        Some(Ok(())) => {
+            crate::audit::allowed(
+                "fs_write",
+                kernel_core::caps::CAP_FS_WRITE,
+                Some(alloc::format!("path={path} bytes={}", data.len())),
+            );
+            data.len() as u64
+        }
+        Some(Err(crate::fs_disk::Error::Fs(kernel_core::itfs::FsError::NoSpace))) => ERR_2BIG,
+        Some(Err(_)) => ERR_INVAL,
+        None => ERR_NOENT,
+    }
+}
+
+/// fs_delete(path_ptr, path_len): remove a file from the persistent store.
+fn sys_fs_delete(path_ptr: u64, path_len: u64) -> u64 {
+    let path = match user_path(path_ptr, path_len) {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+    if !sandbox_allows(&path, "fs_delete_sandbox", kernel_core::caps::CAP_FS_WRITE) {
+        return ERR_PERM;
+    }
+    let Some(name) = crate::store_name(&path) else {
+        return ERR_INVAL;
+    };
+    let result = crate::with_persistent_store(|fs| fs.remove(name));
+    match result {
+        Some(Ok(())) => {
+            crate::audit::allowed(
+                "fs_delete",
+                kernel_core::caps::CAP_FS_WRITE,
+                Some(alloc::format!("path={path}")),
+            );
+            0
+        }
+        Some(Err(crate::fs_disk::Error::Fs(kernel_core::itfs::FsError::NotFound))) => ERR_NOENT,
+        Some(Err(_)) => ERR_INVAL,
+        None => ERR_NOENT,
+    }
+}
+
+/// fs_list(buf_ptr, buf_len): newline-separated names in the persistent store.
+fn sys_fs_list(buf_ptr: u64, buf_len: u64) -> u64 {
+    if !sandbox_allows(
+        crate::STORE_PREFIX,
+        "fs_list_sandbox",
+        kernel_core::caps::CAP_FS_READ,
+    ) {
+        return ERR_PERM;
+    }
+    let Some(listing) = crate::with_persistent_store(|fs| {
+        let mut out = alloc::string::String::new();
+        for name in fs.list() {
+            out.push_str(name);
+            out.push('\n');
+        }
+        out
+    }) else {
+        return ERR_NOENT;
+    };
+    if listing.len() as u64 > buf_len {
+        return ERR_2BIG;
+    }
+    match copy_to_user(buf_ptr, listing.as_bytes()) {
+        Ok(n) => n,
+        Err(e) => e,
+    }
+}
+
 fn sys_fs_read(path_ptr: u64, path_len: u64, req_ptr: u64) -> u64 {
     let path_bytes = match copy_from_user(path_ptr, path_len, 256) {
         Ok(b) => b,
@@ -747,14 +901,23 @@ fn sys_fs_read(path_ptr: u64, path_len: u64, req_ptr: u64) -> u64 {
     };
     let buf_ptr = u64::from_le_bytes(req[0..8].try_into().unwrap());
     let buf_cap = u64::from_le_bytes(req[8..16].try_into().unwrap());
-    let data = match crate::fs::read(path) {
-        Ok(d) => d,
-        Err(_) => return ERR_NOENT,
+    // A path under the store prefix reads from the persistent ITFS volume;
+    // anything else is the read-only initramfs. One syscall, two backing
+    // stores, so a program does not need to know which it is talking to.
+    let data = match crate::store_name(path) {
+        Some(name) => match crate::with_persistent_store(|fs| fs.read(name)) {
+            Some(Ok(d)) => d,
+            _ => return ERR_NOENT,
+        },
+        None => match crate::fs::read(path) {
+            Ok(d) => d.to_vec(),
+            Err(_) => return ERR_NOENT,
+        },
     };
     if (data.len() as u64) > buf_cap {
         return ERR_2BIG;
     }
-    match copy_to_user(buf_ptr, data) {
+    match copy_to_user(buf_ptr, &data) {
         Ok(n) => n,
         Err(e) => e,
     }

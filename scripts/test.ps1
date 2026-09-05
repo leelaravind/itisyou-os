@@ -299,6 +299,64 @@ Write-Output '=== QEMU networking: e1000 + ARP/IPv4/ICMP/UDP/DNS (BIOS) ==='
     '--require', 'rx_malformed=3 rx_unwanted=2',
     '--timeout-secs', '240', '--label', 'net-bios')
 
+Write-Output '=== QEMU userspace filesystem writes (BIOS, two boots) ==='
+# V0.8 capability-scoped Ring 3 writes to the persistent ITFS store. Boot 1
+# walks the whole contract and boot 2 (a fresh guest, same disk) proves the
+# write survived a real reboot through the USERSPACE path - a different claim
+# from the V0.4 kernel-side persistence test, because the capability check,
+# the sandbox check, the store-name parsing and the atomic commit all sit
+# between the program and the disk.
+#
+# The error paths matter as much as the successes: four refusals, each for a
+# different reason, so one over-broad check cannot pass by accident. And
+# `fs-write-denied` holds `fs_read` and nothing else, so its refusals prove
+# the WRITE right specifically - it can still read and list the same store.
+$fsDisk = Join-Path $env:ITISYOU_SCRATCH 'itisyou-fswrite-test.img'
+Remove-Item $fsDisk -ErrorAction SilentlyContinue
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $fsDisk,
+    '--expect', 'B190',
+    '--send', 'run /bin/fs-writer fs_read,fs_write',
+    '--send', 'store put planted.txt planted',
+    '--send', 'run /bin/fs-write-denied fs_read',
+    '--send', 'run /bin/fs-writer fs_read,fs_write /pkgs',
+    '--send', 'run /bin/fs-user-persist fs_read,fs_write',
+    '--send', 'store ls',
+    '--send', 'audit',
+    '--send', 'shutdown',
+    # Create, atomic overwrite to a different length, list, delete.
+    '--require', 'FSWRITE-CREATED bytes=17',
+    '--require', 'FSWRITE-OVERWROTE bytes=34',
+    '--require', 'FSWRITE-LISTED',
+    '--require', 'FSWRITE-ERRORS-OK',
+    '--require', 'FSWRITE-DELETED',
+    '--require', 'FSWRITE-OK',
+    # The write right, specifically: refused for a process holding fs_read.
+    '--require', 'FSDENY-OK call=fs_write',
+    '--require', 'FSDENY-OK call=fs_delete',
+    '--require', 'FSDENY-READ-STILL-ALLOWED',
+    '--require', 'FSDENY-LIST-STILL-ALLOWED',
+    '--require', 'FSDENY-ALL-DENIED',
+    # The sandbox is separate from the capability: the same program, holding
+    # fs_write, confined to /pkgs, cannot write to /data.
+    '--require', 'FSWRITE-FAILED step=create',
+    '--require', 'action=fs_write_sandbox cap=0x80 result=denied',
+    # Privileged mutations are audited with the path and size.
+    '--require', 'action=fs_write cap=0x80 result=ok',
+    '--require', 'action=fs_delete cap=0x80 result=ok',
+    '--require', 'FSUSER-WROTE bytes=38',
+    '--timeout-secs', '240', '--label', 'fs-write-bios')
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $fsDisk,
+    '--expect', 'B190',
+    '--send', 'run /bin/fs-user-persist fs_read,fs_write',
+    '--send', 'store ls',
+    '--send', 'shutdown',
+    # A fresh guest on the same disk reads back exactly what Ring 3 wrote.
+    '--require', 'FSUSER-VERIFIED bytes=38',
+    '--timeout-secs', '240', '--label', 'fs-write-persist')
+Remove-Item $fsDisk -ErrorAction SilentlyContinue
+
 Write-Output '=== QEMU interrupted update -> recovery (BIOS, two boots) ==='
 # Boot 1 installs v1 and STAGES v2 without committing (a simulated crash mid-
 # update), then powers off. Boot 2 (fresh guest, same disk) must find v1

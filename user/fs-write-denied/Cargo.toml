@@ -1,0 +1,16 @@
+cargo-features = ["per-package-target"]
+
+[package]
+name = "user-fs-write-denied"
+version.workspace = true
+edition.workspace = true
+forced-target = "x86_64-unknown-none"
+
+[dependencies]
+ulib = { path = "../ulib" }
+
+[[bin]]
+name = "user-fs-write-denied"
+path = "src/main.rs"
+test = false
+bench = false

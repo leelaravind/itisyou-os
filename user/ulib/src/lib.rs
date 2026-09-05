@@ -29,6 +29,13 @@ pub const SYS_UDP_SEND: u64 = 22;
 pub const SYS_UDP_RECV: u64 = 23;
 pub const SYS_UDP_CLOSE: u64 = 24;
 pub const SYS_NET_RESOLVE: u64 = 25;
+pub const SYS_FS_WRITE: u64 = 26;
+pub const SYS_FS_DELETE: u64 = 27;
+pub const SYS_FS_LIST: u64 = 28;
+
+/// Everything under this prefix lives on the persistent store; anything else
+/// is the read-only initramfs.
+pub const STORE_PREFIX: &str = "/data/";
 
 pub const ERR_NOSYS: u64 = u64::MAX;
 pub const ERR_FAULT: u64 = u64::MAX - 1;
@@ -327,6 +334,33 @@ pub fn write_ipv4(addr: [u8; 4]) {
         }
         write_u64(*octet as u64);
     }
+}
+
+/// Create or overwrite a file in the persistent store.
+///
+/// Returns the number of bytes written, or an ERR_*. The write is one
+/// crash-atomic commit: an interrupted overwrite leaves the previous contents,
+/// never a truncated file.
+pub fn fs_write(path: &str, data: &[u8]) -> u64 {
+    let mut req = [0u8; 16];
+    req[0..8].copy_from_slice(&(data.as_ptr() as u64).to_le_bytes());
+    req[8..16].copy_from_slice(&(data.len() as u64).to_le_bytes());
+    raw_syscall(
+        SYS_FS_WRITE,
+        path.as_ptr() as u64,
+        path.len() as u64,
+        req.as_ptr() as u64,
+    )
+}
+
+/// Delete a file from the persistent store.
+pub fn fs_delete(path: &str) -> u64 {
+    raw_syscall(SYS_FS_DELETE, path.as_ptr() as u64, path.len() as u64, 0)
+}
+
+/// Newline-separated names in the persistent store.
+pub fn fs_list(buf: &mut [u8]) -> u64 {
+    raw_syscall(SYS_FS_LIST, buf.as_mut_ptr() as u64, buf.len() as u64, 0)
 }
 
 /// Print one byte as two lowercase hex digits (MAC octets, status bytes).

@@ -220,6 +220,21 @@ jobs:
           # system staying healthy and interactive throughout.
           cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --expect B190             --send "bg /bin/tick-client"             --send "bg /bin/spin-finite"             --send "svc"             --send "bg /bin/tick-client"             --send "shutdown"             --require "bg_start name=tickd pid=1 caps=0x2 long_running=true"             --require "bg_start name=flapd pid=2 caps=0x0 long_running=true"             --require "TICKD-READY" --require "TICKD-ALIVE tick="             --require "TICKD-SERVED n=2" --require "TICKC-OK passes="             --require "bg_restart name=flapd pid=" --require "clean_exit=true"             --require "bg_failed name=flapd restarts=3"             --require "name=flapd state=failed"             --require "tickd  Running"             --require "flapd  Failed { restarts: 3 }"             --require "SVC-CLIENT-OK"             --require "svc: started=3 done=2 failed=1 restarts=3"             --require "shutting down (QEMU exit)"             --timeout-secs 300 --label services-bg-bios
 
+      - name: QEMU userspace filesystem writes (two boots)
+        run: |
+          # Capability-scoped Ring 3 writes to the persistent store. Boot 1
+          # walks the contract - create, atomic overwrite to a different
+          # length, list, delete, and four refusals each for a different
+          # reason. `fs-write-denied` holds fs_read and nothing else, so its
+          # refusals prove the WRITE right specifically: it can still read
+          # and list the same store. The sandbox is tested separately from
+          # the capability by confining a writer to /pkgs.
+          # Boot 2 (fresh guest, same disk) reads back what Ring 3 wrote.
+          rm -f artifacts/fswrite-test.img
+          cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --nvme-persist artifacts/fswrite-test.img             --expect B190             --send "run /bin/fs-writer fs_read,fs_write"             --send "store put planted.txt planted"             --send "run /bin/fs-write-denied fs_read"             --send "run /bin/fs-writer fs_read,fs_write /pkgs"             --send "run /bin/fs-user-persist fs_read,fs_write"             --send "store ls" --send "audit" --send "shutdown"             --require "FSWRITE-CREATED bytes=17"             --require "FSWRITE-OVERWROTE bytes=34"             --require "FSWRITE-LISTED"             --require "FSWRITE-ERRORS-OK"             --require "FSWRITE-DELETED"             --require "FSWRITE-OK"             --require "FSDENY-OK call=fs_write"             --require "FSDENY-OK call=fs_delete"             --require "FSDENY-READ-STILL-ALLOWED"             --require "FSDENY-LIST-STILL-ALLOWED"             --require "FSDENY-ALL-DENIED"             --require "FSWRITE-FAILED step=create"             --require "action=fs_write_sandbox cap=0x80 result=denied"             --require "action=fs_write cap=0x80 result=ok"             --require "action=fs_delete cap=0x80 result=ok"             --require "FSUSER-WROTE bytes=38"             --timeout-secs 300 --label fs-write-bios
+          cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --nvme-persist artifacts/fswrite-test.img             --expect B190             --send "run /bin/fs-user-persist fs_read,fs_write"             --send "store ls" --send "shutdown"             --require "FSUSER-VERIFIED bytes=38"             --timeout-secs 300 --label fs-write-persist
+          rm -f artifacts/fswrite-test.img
+
       - name: QEMU interrupted update -> recovery (two boots)
         run: |
           # Boot 1 installs v1 and stages v2 WITHOUT committing (simulated
