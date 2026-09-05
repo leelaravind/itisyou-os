@@ -67,7 +67,9 @@ Delivered and verified:
    runs on a CPU advertising the three protections.
 
 Gate: 24/24 QEMU legs Success, selftest pass=113 fail=0, 278 host tests,
-`scripts/verify.ps1` -> `VERIFY: OK`.
+`scripts/verify.ps1` -> `VERIFY: OK`. Remote: CI run `33987853808` green for commit
+`e6e3496`. Deployed: staging `edaab8e1-37e3-4c3a-a13b-398494ab988c`, then production `a3544b0a-5fe1-44ab-8dfc-b2bd4a3dda0d`;
+https://os.itisyou.app renders `v0.8.0 · Current Build VERIFIED`.
 
 ## Things a resuming session will want to know
 
