@@ -71,6 +71,23 @@ pub fn denied(action: &'static str, cap: u64) {
     push(action, cap, false, None);
 }
 
+/// Record a denied V0.8 handle check with the resource class and the exact
+/// reason (`revoked`, `expired`, `scope_denied`, `not_owner`, …). A bare
+/// "permission denied" is not diagnosable; the reason distinguishes an
+/// authority that was never held from one that was withdrawn or timed out.
+pub fn denied_capability(
+    action: &'static str,
+    kind: kernel_core::capability::CapabilityKind,
+    reason: &'static str,
+) {
+    push(
+        action,
+        0,
+        false,
+        Some(alloc::format!("kind={} reason={reason}", kind.name())),
+    );
+}
+
 /// Record a permitted privileged action (with optional short detail).
 pub fn allowed(action: &'static str, cap: u64, detail: Option<String>) {
     push(action, cap, true, detail);

@@ -13,6 +13,17 @@
 //! | 5  | wait    | pid                   | child exit/fault status, ERR_* |
 //! | 6  | msg_send| ch, ptr, len          | bytes queued, or ERR_*         |
 //! | 7  | msg_recv| ch, ptr, len          | bytes received, or ERR_*       |
+//! | 15 | cap_list| ptr, capacity         | handles copied, or ERR_*       |
+//! | 16 |cap_check| handle, kind, scope   | 0 if valid, else ERR_PERM      |
+//! |17|cap_revoke | kind                  | 0, or ERR_PERM / ERR_INVAL     |
+//! |18|cap_restrict| kind, rights, ttl    | 0, or ERR_PERM / ERR_INVAL     |
+//!
+//! Capability enforcement (V0.8): every syscall past the basic runtime
+//! (write/exit/yield/getpid) resolves the caller's handle for the resource
+//! class it touches and revalidates it in the kernel capability table —
+//! owner, generation, kind, scope, rights and expiry — on every single call.
+//! A static per-process bitmask is no longer consulted, which is what lets
+//! revocation, expiry and scope narrowing take effect immediately.
 //!
 //! Unknown numbers return [`ERR_NOSYS`]; invalid user pointers return
 //! [`ERR_FAULT`] after validation against the ACTIVE address space — the
@@ -45,6 +56,11 @@ pub const SYS_SPAWN_CAPS: u64 = 14;
 pub const SYS_CAP_LIST: u64 = 15;
 /// Validate one handle for a kind and inclusive resource scope.
 pub const SYS_CAP_CHECK: u64 = 16;
+/// Permanently drop the caller's own handle for a resource kind.
+pub const SYS_CAP_REVOKE: u64 = 17;
+/// Narrow the caller's own handle for a resource kind (rights subset, scope
+/// subset, optional expiry). Never amplifies.
+pub const SYS_CAP_RESTRICT: u64 = 18;
 
 pub const ERR_NOSYS: u64 = u64::MAX;
 pub const ERR_FAULT: u64 = u64::MAX - 1;
@@ -79,9 +95,14 @@ static mut SYSCALL_STACK: [u8; KSTACK_SIZE] = [0; KSTACK_SIZE];
 /// PID of the currently running user process (0 = none).
 pub static CURRENT_PID: AtomicU64 = AtomicU64::new(0);
 
-/// Capability bits of the currently running user process (V0.7). Published by
-/// `run_quantum` for the quantum's duration; 0 (no authority) when no user
-/// process is running.
+/// Capability bits of the currently running user process.
+///
+/// NOT an enforcement input as of V0.8. Manifests, service definitions and
+/// `spawn_caps` requests are still written in terms of these bits, so they are
+/// kept to compute what a child ASKS for; what a child actually RECEIVES is
+/// decided by delegating from the parent's live handles in the capability
+/// table. No syscall consults this value to allow an operation — see
+/// [`require_handle`].
 pub static CURRENT_CAPS: AtomicU64 = AtomicU64::new(0);
 
 /// FS sandbox of the currently running process: reads allowed only under
@@ -89,20 +110,30 @@ pub static CURRENT_CAPS: AtomicU64 = AtomicU64::new(0);
 static CURRENT_SANDBOX: spin::Mutex<
     Option<alloc::sync::Arc<alloc::vec::Vec<alloc::string::String>>>,
 > = spin::Mutex::new(None);
-static CURRENT_HANDLES: spin::Mutex<[u64; crate::capability::HANDLE_SLOTS]> =
-    spin::Mutex::new([0; crate::capability::HANDLE_SLOTS]);
+/// The running process's handle set, indexed by `CapabilityKind::index()`.
+/// Published for the quantum's duration; every privileged syscall resolves its
+/// authority from here and revalidates it in the kernel capability table.
+static CURRENT_HANDLES: spin::Mutex<crate::capability::HandleSet> =
+    spin::Mutex::new(crate::capability::EMPTY_HANDLES);
 
-pub fn set_current_handles(
-    handles: &[kernel_core::capability::CapabilityHandle; crate::capability::HANDLE_SLOTS],
-) {
-    let mut current = CURRENT_HANDLES.lock();
-    for (dst, src) in current.iter_mut().zip(handles) {
-        *dst = src.raw();
-    }
+pub fn set_current_handles(handles: &crate::capability::HandleSet) {
+    *CURRENT_HANDLES.lock() = *handles;
 }
 
 pub fn clear_current_handles() {
-    *CURRENT_HANDLES.lock() = [0; crate::capability::HANDLE_SLOTS];
+    *CURRENT_HANDLES.lock() = crate::capability::EMPTY_HANDLES;
+}
+
+/// Snapshot of the running process's handles (used when delegating to a child).
+pub fn current_handles() -> crate::capability::HandleSet {
+    *CURRENT_HANDLES.lock()
+}
+
+/// Replace one slot after a process narrows or drops its own authority.
+fn set_current_handle(index: usize, handle: kernel_core::capability::CapabilityHandle) {
+    if let Some(slot) = CURRENT_HANDLES.lock().get_mut(index) {
+        *slot = handle;
+    }
 }
 
 pub fn set_current_sandbox(
@@ -122,15 +153,73 @@ pub fn current_sandbox_for_child(
     current_sandbox()
 }
 
-/// Capability gate: the current process must hold `cap` or the syscall is
-/// refused with ERR_PERM and the denial is audited (V0.7 default deny).
-fn require_cap(cap: u64, action: &'static str) -> Result<(), u64> {
-    if CURRENT_CAPS.load(Ordering::SeqCst) & cap != 0 {
-        Ok(())
-    } else {
-        crate::audit::denied(action, cap);
-        Err(ERR_PERM)
+/// Capability gate (V0.8): resolve the running process's handle for `kind` and
+/// revalidate it in the kernel table for exactly the `rights` and `scope` this
+/// operation needs.
+///
+/// This replaced the V0.7 static-bitmask test. The distinction matters: a
+/// bitmask is fixed for the process's lifetime, so revocation, expiry and
+/// scope narrowing could only ever be advisory. Going through the table on
+/// every call means an authority that was revoked, has expired, was narrowed,
+/// or belongs to another process is refused at the moment of use.
+///
+/// Denials are audited with the precise reason (`revoked` vs `expired` vs
+/// `scope_denied` …) so a refusal is diagnosable instead of a bare ERR_PERM.
+fn require_handle(
+    kind: kernel_core::capability::CapabilityKind,
+    rights: u32,
+    scope: kernel_core::capability::ResourceScope,
+    action: &'static str,
+) -> Result<(), u64> {
+    let pid = CURRENT_PID.load(Ordering::SeqCst);
+    let handle = CURRENT_HANDLES.lock()[kind.index()];
+    if handle == kernel_core::capability::CapabilityHandle::INVALID {
+        // Distinguish "never granted, or already given up" from "presented a
+        // handle the table rejected" — the audit trail is only useful if the
+        // reason is precise.
+        crate::audit::denied_capability(action, kind, "no_handle");
+        return Err(ERR_PERM);
     }
+    match crate::capability::check(handle, pid, kind, scope, rights, crate::interrupts::ticks()) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            crate::audit::denied_capability(action, kind, crate::capability::reason_name(e));
+            Err(ERR_PERM)
+        }
+    }
+}
+
+/// Authority over a whole resource class (no meaningful sub-resource).
+fn require_any(
+    kind: kernel_core::capability::CapabilityKind,
+    rights: u32,
+    action: &'static str,
+) -> Result<(), u64> {
+    require_handle(
+        kind,
+        rights,
+        kernel_core::capability::ResourceScope::ANY,
+        action,
+    )
+}
+
+/// Authority over one addressable sub-resource (an IPC channel, a device
+/// index, a network port): the handle's scope must actually contain it.
+fn require_scoped(
+    kind: kernel_core::capability::CapabilityKind,
+    rights: u32,
+    resource: u64,
+    action: &'static str,
+) -> Result<(), u64> {
+    require_handle(
+        kind,
+        rights,
+        kernel_core::capability::ResourceScope {
+            start: resource,
+            end: resource,
+        },
+        action,
+    )
 }
 
 /// Count of rejected unknown-syscall attempts (diagnostic evidence).
@@ -211,10 +300,11 @@ unsafe extern "C" fn syscall_entry() {
 }
 
 extern "C" fn syscall_dispatch(a1: u64, a2: u64, a3: u64, nr: u64) -> u64 {
-    use kernel_core::caps::*;
-    // Capability enforcement (V0.7): the basic runtime (write/exit/yield/
+    use kernel_core::capability::{rights, CapabilityKind};
+    // Capability enforcement (V0.8): the basic runtime (write/exit/yield/
     // getpid) needs no capability; every other syscall is default-deny and
-    // requires the matching bit. Denials return ERR_PERM and are audited.
+    // must present a live, owned, in-scope, unexpired handle for the resource
+    // class it touches. Denials return ERR_PERM and are audited with a reason.
     match nr {
         SYS_WRITE => sys_write(a1, a2, a3),
         SYS_EXIT => transition::abort_exit(a1),
@@ -225,52 +315,61 @@ extern "C" fn syscall_dispatch(a1: u64, a2: u64, a3: u64, nr: u64) -> u64 {
             transition::abort_yield();
         }
         SYS_GETPID => CURRENT_PID.load(Ordering::SeqCst),
-        SYS_SPAWN => match require_cap(CAP_SPAWN, "spawn") {
+        SYS_SPAWN => match require_any(CapabilityKind::Process, rights::USE, "spawn") {
             Ok(()) => crate::proc::sys_spawn(a1, a2),
             Err(e) => e,
         },
-        SYS_SPAWN_CAPS => match require_cap(CAP_SPAWN, "spawn_caps") {
+        SYS_SPAWN_CAPS => match require_any(CapabilityKind::Process, rights::USE, "spawn_caps") {
             Ok(()) => crate::proc::sys_spawn_caps(a1, a2, a3),
             Err(e) => e,
         },
-        SYS_WAIT => match require_cap(CAP_SPAWN, "wait") {
+        SYS_WAIT => match require_any(CapabilityKind::Process, rights::USE, "wait") {
             Ok(()) => crate::proc::sys_wait(a1),
             Err(e) => e,
         },
-        SYS_MSG_SEND => match require_cap(CAP_IPC, "msg_send") {
-            Ok(()) => crate::ipc::sys_msg_send(a1, a2, a3),
-            Err(e) => e,
-        },
-        SYS_MSG_RECV => match require_cap(CAP_IPC, "msg_recv") {
-            Ok(()) => crate::ipc::sys_msg_recv(a1, a2, a3),
-            Err(e) => e,
-        },
-        SYS_GUI_CREATE => match require_cap(CAP_GUI, "gui_create") {
+        // The channel id is the scoped resource: a service handed a
+        // channel-scoped handle cannot talk on any other channel.
+        SYS_MSG_SEND => {
+            match require_scoped(CapabilityKind::Service, rights::USE, a1, "msg_send") {
+                Ok(()) => crate::ipc::sys_msg_send(a1, a2, a3),
+                Err(e) => e,
+            }
+        }
+        SYS_MSG_RECV => {
+            match require_scoped(CapabilityKind::Service, rights::USE, a1, "msg_recv") {
+                Ok(()) => crate::ipc::sys_msg_recv(a1, a2, a3),
+                Err(e) => e,
+            }
+        }
+        SYS_GUI_CREATE => match require_any(CapabilityKind::Gui, rights::USE, "gui_create") {
             Ok(()) => sys_gui_create(a1, a2),
             Err(e) => e,
         },
-        SYS_GUI_FILL => match require_cap(CAP_GUI, "gui_fill") {
+        SYS_GUI_FILL => match require_any(CapabilityKind::Gui, rights::USE, "gui_fill") {
             Ok(()) => sys_gui_fill(a1, a2, a3),
             Err(e) => e,
         },
-        SYS_GUI_TEXT => match require_cap(CAP_GUI, "gui_text") {
+        SYS_GUI_TEXT => match require_any(CapabilityKind::Gui, rights::USE, "gui_text") {
             Ok(()) => sys_gui_text(a1, a2, a3),
             Err(e) => e,
         },
-        SYS_GUI_PRESENT => match require_cap(CAP_GUI, "gui_present") {
+        SYS_GUI_PRESENT => match require_any(CapabilityKind::Gui, rights::USE, "gui_present") {
             Ok(()) => sys_gui_present(a1),
             Err(e) => e,
         },
-        SYS_DEVINFO => match require_cap(CAP_DEV, "devinfo") {
+        // Device index is the scoped resource.
+        SYS_DEVINFO => match require_scoped(CapabilityKind::Device, rights::READ, a1, "devinfo") {
             Ok(()) => sys_devinfo(a1, a2, a3),
             Err(e) => e,
         },
-        SYS_FS_READ => match require_cap(CAP_FS_READ, "fs_read") {
+        SYS_FS_READ => match require_any(CapabilityKind::Filesystem, rights::READ, "fs_read") {
             Ok(()) => sys_fs_read(a1, a2, a3),
             Err(e) => e,
         },
         SYS_CAP_LIST => sys_cap_list(a1, a2),
         SYS_CAP_CHECK => sys_cap_check(a1, a2, a3),
+        SYS_CAP_REVOKE => sys_cap_revoke(a1),
+        SYS_CAP_RESTRICT => sys_cap_restrict(a1, a2, a3),
         _ => {
             NOSYS_COUNT.fetch_add(1, Ordering::SeqCst);
             ERR_NOSYS
@@ -281,8 +380,8 @@ extern "C" fn syscall_dispatch(a1: u64, a2: u64, a3: u64, nr: u64) -> u64 {
 fn sys_cap_list(ptr: u64, capacity: u64) -> u64 {
     let count = core::cmp::min(capacity as usize, crate::capability::HANDLE_SLOTS);
     let mut bytes = [0u8; crate::capability::HANDLE_SLOTS * 8];
-    for (i, raw) in CURRENT_HANDLES.lock().iter().take(count).enumerate() {
-        bytes[i * 8..i * 8 + 8].copy_from_slice(&raw.to_le_bytes());
+    for (i, handle) in CURRENT_HANDLES.lock().iter().take(count).enumerate() {
+        bytes[i * 8..i * 8 + 8].copy_from_slice(&handle.raw().to_le_bytes());
     }
     match copy_to_user(ptr, &bytes[..count * 8]) {
         Ok(_) => count as u64,
@@ -291,17 +390,7 @@ fn sys_cap_list(ptr: u64, capacity: u64) -> u64 {
 }
 
 fn sys_cap_check(raw: u64, kind: u64, scope_end: u64) -> u64 {
-    let Some(kind) = (match kind {
-        0 => Some(kernel_core::capability::CapabilityKind::Filesystem),
-        1 => Some(kernel_core::capability::CapabilityKind::Device),
-        2 => Some(kernel_core::capability::CapabilityKind::Gui),
-        3 => Some(kernel_core::capability::CapabilityKind::Network),
-        4 => Some(kernel_core::capability::CapabilityKind::Audio),
-        5 => Some(kernel_core::capability::CapabilityKind::Process),
-        6 => Some(kernel_core::capability::CapabilityKind::Service),
-        7 => Some(kernel_core::capability::CapabilityKind::SystemAdministration),
-        _ => None,
-    }) else {
+    let Some(kind) = kernel_core::capability::CapabilityKind::from_index(kind as usize) else {
         return ERR_INVAL;
     };
     let result = crate::capability::check(
@@ -312,14 +401,97 @@ fn sys_cap_check(raw: u64, kind: u64, scope_end: u64) -> u64 {
             start: 0,
             end: scope_end,
         },
-        1,
+        kernel_core::capability::rights::USE,
         crate::interrupts::ticks(),
     );
-    if result.is_ok() {
-        0
-    } else {
-        crate::audit::denied("cap_handle_check", 0);
-        ERR_PERM
+    match result {
+        Ok(()) => 0,
+        Err(e) => {
+            crate::audit::denied_capability(
+                "cap_handle_check",
+                kind,
+                crate::capability::reason_name(e),
+            );
+            ERR_PERM
+        }
+    }
+}
+
+/// cap_revoke(kind) — permanently drop the caller's own handle for `kind`.
+///
+/// Voluntary least privilege: a process that has finished with an authority
+/// gives it up, so a later compromise cannot use it. Because enforcement now
+/// goes through the capability table on every call, this takes effect on the
+/// caller's very next syscall — which is exactly what a static capability
+/// bitmask could not express.
+fn sys_cap_revoke(kind: u64) -> u64 {
+    let Some(kind) = kernel_core::capability::CapabilityKind::from_index(kind as usize) else {
+        return ERR_INVAL;
+    };
+    let index = kind.index();
+    let handle = CURRENT_HANDLES.lock()[index];
+    let pid = CURRENT_PID.load(Ordering::SeqCst);
+    match crate::capability::revoke(handle, pid, crate::interrupts::ticks()) {
+        Ok(()) => {
+            set_current_handle(index, kernel_core::capability::CapabilityHandle::INVALID);
+            crate::audit::allowed(
+                "cap_revoke",
+                0,
+                Some(alloc::format!("kind={}", kind.name())),
+            );
+            0
+        }
+        Err(e) => {
+            crate::audit::denied_capability("cap_revoke", kind, crate::capability::reason_name(e));
+            ERR_PERM
+        }
+    }
+}
+
+/// cap_restrict(kind, rights_mask, expires_in_ticks) — replace the caller's own
+/// handle for `kind` with a strictly narrower one. `expires_in_ticks` of 0
+/// leaves the lifetime unchanged. Requested rights are intersected with what is
+/// held and an expiry may only move earlier, so this can never amplify.
+fn sys_cap_restrict(kind: u64, rights_mask: u64, expires_in_ticks: u64) -> u64 {
+    let Some(kind) = kernel_core::capability::CapabilityKind::from_index(kind as usize) else {
+        return ERR_INVAL;
+    };
+    if rights_mask > kernel_core::capability::rights::ALL as u64 {
+        return ERR_INVAL;
+    }
+    let index = kind.index();
+    let handle = CURRENT_HANDLES.lock()[index];
+    let pid = CURRENT_PID.load(Ordering::SeqCst);
+    let now = crate::interrupts::ticks();
+    let expires_at = (expires_in_ticks > 0).then(|| now.saturating_add(expires_in_ticks));
+    match crate::capability::restrict(
+        handle,
+        pid,
+        kernel_core::capability::ResourceScope::ANY,
+        rights_mask as u32,
+        expires_at,
+        now,
+    ) {
+        Ok(narrowed) => {
+            set_current_handle(index, narrowed);
+            crate::audit::allowed(
+                "cap_restrict",
+                0,
+                Some(alloc::format!(
+                    "kind={} rights={rights_mask:#x} expires_in={expires_in_ticks}",
+                    kind.name()
+                )),
+            );
+            0
+        }
+        Err(e) => {
+            crate::audit::denied_capability(
+                "cap_restrict",
+                kind,
+                crate::capability::reason_name(e),
+            );
+            ERR_PERM
+        }
     }
 }
 

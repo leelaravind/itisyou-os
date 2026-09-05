@@ -157,6 +157,7 @@ Remove-Item $platDisk -ErrorAction SilentlyContinue
     '--nvme-persist', $platDisk,
     '--expect', 'B190',
     '--send', 'run /bin/sandbox-probe -',
+    '--send', 'run /bin/cap-handle-probe',
     '--send', 'run /bin/fs-probe fs_read /etc',
     '--send', 'svc',
     '--send', 'pkg install /pkgs/hello-app-1.itpkg',
@@ -170,6 +171,15 @@ Remove-Item $platDisk -ErrorAction SilentlyContinue
     '--send', 'shutdown',
     '--require', 'SANDBOX-DENIED-OK',
     '--require', 'FS-SANDBOX-OK',
+    # V0.8 capability-handle ENFORCEMENT (not just issuance): a forged
+    # generation, an expired handle and a revoked handle are each refused on
+    # the real syscall path, with the precise reason in the audit trail.
+    '--require', 'CAPH-FORGED-DENIED',
+    '--require', 'CAPH-EXPIRED-DENIED',
+    '--require', 'CAPH-REVOKED-DENIED',
+    '--require', 'CAPH-ENFORCEMENT-OK',
+    '--require', 'reason=expired',
+    '--require', 'reason=no_handle',
     '--require', 'ECHOD-SERVED-3', '--require', 'SVC-CLIENT-OK',
     '--require', 'name=crashd state=failed pid=', '--require', 'restarts=3',
     '--require', 'install name=hello-app v=1 result=ok',

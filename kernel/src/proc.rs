@@ -292,7 +292,25 @@ fn spawn_common(path_ptr: u64, path_len: u64, requested: u64) -> u64 {
     // The child inherits the parent's FS sandbox (it can only stay as tight).
     let sandbox = crate::syscall::current_sandbox_for_child();
     match user::load_with(path, child_caps, sandbox) {
-        Ok(child) => {
+        Ok(mut child) => {
+            // V0.8: the child's handles are DELEGATED from the parent's live
+            // handles rather than minted fresh from the intersected bitmask.
+            // The bit intersection above decides what is asked for; the table
+            // decides what can actually be handed over, so a parent whose own
+            // authority was revoked or has expired cannot pass it on, and
+            // amplification is refused by the same code that enforces every
+            // other check.
+            let parent_pid = crate::syscall::CURRENT_PID.load(core::sync::atomic::Ordering::SeqCst);
+            // `load_with` minted a set straight from the bitmask; drop it
+            // before installing the delegated one, so the child never holds
+            // two sets (and the table never leaks the discarded slots).
+            crate::capability::revoke_owner(child.pid);
+            child.handles = crate::capability::delegate_to_child(
+                parent_pid,
+                child.pid,
+                child_caps,
+                crate::interrupts::ticks(),
+            );
             let pid = admit(child);
             crate::audit::allowed("spawn", child_caps, Some(alloc::string::String::from(path)));
             pid

@@ -171,8 +171,7 @@ pub fn launch(fs: &FileSystem, app: &str, launcher_caps: u64) -> Result<u64, Pla
     let sandbox = Arc::new(alloc::vec![format!("/apps/{app}"), String::from("/etc"),]);
     let mut process =
         user::load_from_bytes(parsed.payload).map_err(|_| PlatformError::LaunchFailed)?;
-    process.caps = granted;
-    process.fs_prefixes = Some(sandbox);
+    process.set_authority(granted, Some(sandbox));
     crate::audit::allowed("pkg_launch", granted, Some(format!("{app} v{v}")));
     crate::serial_println!(
         "[ITISYOU:PKG] launch name={app} v={v} caps={granted:#x} manifest_version={}",
