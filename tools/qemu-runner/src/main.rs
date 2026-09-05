@@ -8,7 +8,16 @@
 //!   qemu-runner --image <path> [--uefi --firmware <code.fd>]
 //!               [--expect B010]... [--expect-selftest]
 //!               [--timeout-secs 60] [--label boot-smoke]
+//!               [--connect-timeout-secs 30] [--boot-timeout-secs 75]
+//!               [--stall-timeout-secs N]
 //!               [--artifacts artifacts/qemu] [--qemu <path>]
+//!
+//! Timeout model (deterministic, phase-attributed):
+//!   spawn ─connect-timeout→ serial connected ─boot-timeout→ first guest byte
+//!   ─stall-timeout (per line, optional)→ … ─timeout (absolute)→ end.
+//! Each phase has its own outcome (`LaunchFailure`, `SerialConnectFailure`,
+//! `NoSerialOutput`, `Stalled`, `Timeout`) so a failure names the phase that
+//! broke instead of collapsing into a generic timeout with an empty log.
 
 use kernel_core::marker::{parse_line, Marker};
 use kernel_core::stage::Stage;
@@ -31,6 +40,18 @@ enum Outcome {
     MissingMarkers,
     LaunchFailure,
     UnexpectedExit,
+    /// QEMU stayed alive but never opened the serial connection within
+    /// `--connect-timeout-secs` (a transport/launch problem, never a guest
+    /// problem — the guest cannot have run yet).
+    SerialConnectFailure,
+    /// The serial connection was established but the guest emitted no bytes
+    /// at all before `--boot-timeout-secs` elapsed: firmware/bootloader never
+    /// reached kernel entry. Distinct from `Timeout`, which means the guest
+    /// did run and then failed to finish.
+    NoSerialOutput,
+    /// The guest produced output, then went silent for longer than
+    /// `--stall-timeout-secs` with required evidence still missing.
+    Stalled,
 }
 
 #[derive(Debug, Serialize)]
@@ -56,6 +77,15 @@ struct RunResult {
     panic_message: Option<String>,
     serial_log: String,
     command_line: Vec<String>,
+    /// Milliseconds from spawn until QEMU's serial connection was accepted.
+    connect_ms: Option<u128>,
+    /// Milliseconds from spawn until the guest's FIRST serial byte. The single
+    /// most useful number for spotting boot-path slowdowns before they become
+    /// timeouts (V0.8: an unstripped 26.8 MiB kernel ELF pushed this past the
+    /// leg timeouts and produced empty-serial failures).
+    first_output_ms: Option<u128>,
+    /// Human-readable explanation for non-success outcomes.
+    detail: Option<String>,
 }
 
 struct Options {
@@ -105,11 +135,32 @@ struct Options {
     /// this path: created blank only if missing, never regenerated — so
     /// writes survive across separate QEMU runs (reboot-persistence tests).
     nvme_persist: Option<PathBuf>,
+    /// Hard ceiling on the whole run, measured from spawn.
     timeout: Duration,
+    /// How long QEMU may take to open the serial connection after spawn.
+    /// Exceeding it is a transport failure (`SerialConnectFailure`), never a
+    /// guest verdict, because the guest cannot have produced output yet.
+    connect_timeout: Duration,
+    /// How long the guest may take, measured from the moment the serial
+    /// connection is accepted, to emit its FIRST byte. Exceeding it is
+    /// `NoSerialOutput` — reported immediately instead of burning the full
+    /// `timeout`, so a broken boot path is diagnosable rather than silent.
+    boot_timeout: Duration,
+    /// Maximum silence between serial lines once output has started. `None`
+    /// disables the stall watchdog (long CPU-bound guest phases are legal).
+    stall_timeout: Option<Duration>,
     label: String,
     artifacts: PathBuf,
     qemu: String,
 }
+
+/// Default ceiling for QEMU opening the serial socket after spawn. QEMU
+/// connects during device realize (sub-second in practice); 30 s is generous
+/// enough for a loaded CI host while still failing fast.
+const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+/// Default ceiling from serial-connect to the guest's first byte. A healthy
+/// BIOS boot of a stripped kernel reaches `B010` in <10 s; UEFI in <5 s.
+const DEFAULT_BOOT_TIMEOUT: Duration = Duration::from_secs(75);
 
 /// 16-byte magic written at LBA 0 of the generated NVMe disk; the kernel
 /// asserts these exact bytes after reading block 0 back over NVMe.
@@ -136,6 +187,9 @@ fn parse_args() -> Result<Options, String> {
     let mut nvme = false;
     let mut nvme_persist = None;
     let mut timeout = Duration::from_secs(60);
+    let mut connect_timeout = DEFAULT_CONNECT_TIMEOUT;
+    let mut boot_timeout = DEFAULT_BOOT_TIMEOUT;
+    let mut stall_timeout: Option<Duration> = None;
     let mut label = "run".to_string();
     let mut artifacts = PathBuf::from("artifacts/qemu");
     let mut qemu =
@@ -189,6 +243,27 @@ fn parse_args() -> Result<Options, String> {
                         .map_err(|e| format!("bad timeout: {e}"))?,
                 )
             }
+            "--connect-timeout-secs" => {
+                connect_timeout = Duration::from_secs(
+                    value("--connect-timeout-secs")?
+                        .parse()
+                        .map_err(|e| format!("bad connect-timeout: {e}"))?,
+                )
+            }
+            "--boot-timeout-secs" => {
+                boot_timeout = Duration::from_secs(
+                    value("--boot-timeout-secs")?
+                        .parse()
+                        .map_err(|e| format!("bad boot-timeout: {e}"))?,
+                )
+            }
+            "--stall-timeout-secs" => {
+                stall_timeout = Some(Duration::from_secs(
+                    value("--stall-timeout-secs")?
+                        .parse()
+                        .map_err(|e| format!("bad stall-timeout: {e}"))?,
+                ))
+            }
             "--label" => label = value("--label")?,
             "--artifacts" => artifacts = PathBuf::from(value("--artifacts")?),
             "--qemu" => qemu = value("--qemu")?,
@@ -215,6 +290,12 @@ fn parse_args() -> Result<Options, String> {
         nvme,
         nvme_persist,
         timeout,
+        // Sub-deadlines are only ever narrowing: a leg that sets a short
+        // --timeout-secs must not be given a longer boot/connect budget than
+        // the whole run, or the semantics stop being deterministic.
+        connect_timeout: connect_timeout.min(timeout),
+        boot_timeout: boot_timeout.min(timeout),
+        stall_timeout,
         label,
         artifacts,
         qemu,
@@ -260,15 +341,20 @@ fn main() {
     }
 
     println!(
-        "qemu-runner: label={} outcome={:?} exit={:?} stages={} duration={}ms evidence={}",
+        "qemu-runner: label={} outcome={:?} exit={:?} stages={} duration={}ms connect={:?}ms first-output={:?}ms evidence={}",
         result.label,
         result.outcome,
         result.qemu_exit_code,
         result.stages_seen.len(),
         result.duration_ms,
+        result.connect_ms,
+        result.first_output_ms,
         json_path.display(),
     );
     if !ok {
+        if let Some(detail) = &result.detail {
+            eprintln!("qemu-runner: {detail}");
+        }
         // Surface the serial tail so CI logs are diagnosable without artifacts.
         eprintln!("--- last serial lines ---");
         let log = std::fs::read_to_string(&result.serial_log).unwrap_or_default();
@@ -379,6 +465,78 @@ fn build_command(opts: &Options, serial_port: u16, monitor_port: Option<u16>) ->
     cmd
 }
 
+/// Guarantees the QEMU process is killed and reaped on every exit path —
+/// early return, error, or panic. A leaked QEMU keeps the disk image open on
+/// Windows and poisons the next leg of the matrix, which is exactly the class
+/// of cross-test contamination that makes a harness look "flaky".
+struct ChildGuard(Option<Child>);
+
+impl ChildGuard {
+    fn get(&mut self) -> &mut Child {
+        self.0.as_mut().expect("child already taken from guard")
+    }
+    /// Hand ownership back once the run reaches its own orderly teardown.
+    fn release(mut self) -> Child {
+        self.0.take().expect("child already taken from guard")
+    }
+}
+
+impl Drop for ChildGuard {
+    fn drop(&mut self) {
+        if let Some(child) = self.0.as_mut() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+
+/// Terminal result for a failure detected before the serial-reading loop can
+/// produce any evidence. `detail` is written into the serial log so the
+/// artifact is self-describing rather than an empty file.
+#[allow(clippy::too_many_arguments)]
+fn early_failure(
+    opts: &Options,
+    outcome: Outcome,
+    detail: String,
+    started: Instant,
+    serial_log_path: &std::path::Path,
+    command_line: Vec<String>,
+    connect_ms: Option<u128>,
+    qemu_exit_code: Option<i32>,
+) -> RunResult {
+    let _ = std::fs::write(
+        serial_log_path,
+        format!(
+            "{outcome:?}: {detail}
+"
+        ),
+    );
+    RunResult {
+        outcome,
+        label: opts.label.clone(),
+        image: opts.image.display().to_string(),
+        firmware_mode: if opts.uefi {
+            "uefi".into()
+        } else {
+            "bios".into()
+        },
+        qemu_exit_code,
+        duration_ms: started.elapsed().as_millis(),
+        stages_seen: vec![],
+        missing_stages: opts.expect.iter().map(|s| s.code().to_string()).collect(),
+        missing_required: opts.require.clone(),
+        tests: vec![],
+        selftest_pass: None,
+        selftest_fail: None,
+        panic_message: None,
+        serial_log: serial_log_path.display().to_string(),
+        command_line,
+        connect_ms,
+        first_output_ms: None,
+        detail: Some(detail),
+    }
+}
+
 fn run(opts: &Options) -> RunResult {
     std::fs::create_dir_all(&opts.artifacts).ok();
     let serial_log_path = opts.artifacts.join(format!("{}.serial.log", opts.label));
@@ -410,75 +568,87 @@ fn run(opts: &Options) -> RunResult {
         .collect();
 
     let started = Instant::now();
-    let mut child: Child = match cmd.spawn() {
+    let child: Child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
-            let _ = std::fs::write(&serial_log_path, format!("LAUNCH FAILURE: {e}\n"));
-            return RunResult {
-                outcome: Outcome::LaunchFailure,
-                label: opts.label.clone(),
-                image: opts.image.display().to_string(),
-                firmware_mode: if opts.uefi {
-                    "uefi".into()
-                } else {
-                    "bios".into()
-                },
-                qemu_exit_code: None,
-                duration_ms: started.elapsed().as_millis(),
-                stages_seen: vec![],
-                missing_stages: opts.expect.iter().map(|s| s.code().to_string()).collect(),
-                missing_required: opts.require.clone(),
-                tests: vec![],
-                selftest_pass: None,
-                selftest_fail: None,
-                panic_message: None,
-                serial_log: serial_log_path.display().to_string(),
+            return early_failure(
+                opts,
+                Outcome::LaunchFailure,
+                format!("spawning {}: {e}", opts.qemu),
+                started,
+                &serial_log_path,
                 command_line,
-            };
+                None,
+                None,
+            );
         }
     };
+    let mut guard = ChildGuard(Some(child));
+
+    // Deterministic, non-overlapping deadlines. Each phase owns its own
+    // budget so a failure names the phase that actually failed:
+    //   spawn ──connect_timeout──▶ serial connected ──boot_timeout──▶ first
+    //   byte ──stall_timeout (per line)──▶ … ──timeout (absolute)──▶ end.
+    let overall_deadline = started + opts.timeout;
+    let connect_deadline = (started + opts.connect_timeout).min(overall_deadline);
 
     // Accept QEMU's serial connection (it connects during device realize).
-    let deadline = started + opts.timeout;
-    let serial_stream = match accept_with_deadline(&listener, &mut child, deadline) {
+    let serial_stream = match accept_with_deadline(&listener, guard.get(), connect_deadline) {
         Some(stream) => {
-            // Windows: streams accepted from a nonblocking listener
-            // inherit nonblocking mode — force blocking reads back on,
-            // or the reader thread dies instantly on WouldBlock.
             stream.set_nodelay(true).ok();
-            Some(stream)
+            stream
         }
-        None => None,
-    };
-    let Some(serial_stream) = serial_stream else {
-        let _ = child.kill();
-        let _ = child.wait();
-        let _ = std::fs::write(
-            &serial_log_path,
-            "LAUNCH FAILURE: QEMU never connected to the serial TCP port\n",
-        );
-        return RunResult {
-            outcome: Outcome::LaunchFailure,
-            label: opts.label.clone(),
-            image: opts.image.display().to_string(),
-            firmware_mode: if opts.uefi {
-                "uefi".into()
+        None => {
+            // Distinguish a dead QEMU (launch rejected the command line) from
+            // a live QEMU that never dialled back (transport/port problem).
+            let exit_code = guard.get().try_wait().ok().flatten().and_then(|s| s.code());
+            let stderr_text = drain_stderr(guard.get());
+            let (outcome, why) = match exit_code {
+                Some(code) => (
+                    Outcome::LaunchFailure,
+                    format!("QEMU exited with code {code} before opening the serial connection"),
+                ),
+                None => (
+                    Outcome::SerialConnectFailure,
+                    format!(
+                        "QEMU stayed alive but never connected to 127.0.0.1:{serial_port}                          within {}s",
+                        opts.connect_timeout.as_secs()
+                    ),
+                ),
+            };
+            let detail = if stderr_text.trim().is_empty() {
+                why
             } else {
-                "bios".into()
-            },
-            qemu_exit_code: None,
-            duration_ms: started.elapsed().as_millis(),
-            stages_seen: vec![],
-            missing_stages: opts.expect.iter().map(|s| s.code().to_string()).collect(),
-            missing_required: opts.require.clone(),
-            tests: vec![],
-            selftest_pass: None,
-            selftest_fail: None,
-            panic_message: None,
-            serial_log: serial_log_path.display().to_string(),
-            command_line,
-        };
+                format!(
+                    "{why}
+--- qemu stderr ---
+{stderr_text}"
+                )
+            };
+            return early_failure(
+                opts,
+                outcome,
+                detail,
+                started,
+                &serial_log_path,
+                command_line,
+                None,
+                exit_code,
+            );
+        }
     };
+    let connected_at = Instant::now();
+    let connect_ms = connected_at.duration_since(started).as_millis();
+    // The serial line is established: nothing else may claim this port for the
+    // rest of the run, so stop listening. (Binding :0 already prevents a bind
+    // race; closing prevents a late stray connection being mistaken for QEMU.)
+    drop(listener);
+
+    // First guest byte must arrive within boot_timeout of the connection —
+    // measured from connect, not from spawn, so a slow host spawn cannot eat
+    // the guest's boot budget.
+    let boot_deadline = (connected_at + opts.boot_timeout).min(overall_deadline);
+
     let mut serial_writer = serial_stream.try_clone().expect("cloning serial stream");
 
     // Accept QEMU's monitor connection and spawn the injection thread. It
@@ -487,7 +657,7 @@ fn run(opts: &Options) -> RunResult {
     let (gate_tx, gate_rx) = mpsc::channel::<()>();
     let mut inject_handle = None;
     if let Some(ml) = &monitor_listener {
-        if let Some(monitor_stream) = accept_with_deadline(ml, &mut child, deadline) {
+        if let Some(monitor_stream) = accept_with_deadline(ml, guard.get(), connect_deadline) {
             monitor_stream.set_nodelay(true).ok();
             let cmds = opts.monitor_cmds.clone();
             let delay = Duration::from_millis(opts.inject_delay_ms);
@@ -514,7 +684,7 @@ fn run(opts: &Options) -> RunResult {
             }
         }
     });
-    let stderr = child.stderr.take().expect("stderr piped");
+    let stderr = guard.get().stderr.take().expect("stderr piped");
     let stderr_handle = std::thread::spawn(move || {
         let mut buf = String::new();
         let reader = BufReader::new(stderr);
@@ -531,18 +701,37 @@ fn run(opts: &Options) -> RunResult {
     let mut selftest: Option<(u32, u32)> = None;
     let mut panic_message: Option<String> = None;
     let mut timed_out = false;
+    let mut no_serial_output = false;
+    let mut stalled = false;
     let mut completed_by_markers = false;
     let mut sent_commands = false;
     let mut tripped_gate = false;
+    let mut first_output_at: Option<Instant> = None;
+    let mut last_line_at = connected_at;
     loop {
         let now = Instant::now();
-        if now >= deadline {
+        if now >= overall_deadline {
             timed_out = true;
-            let _ = child.kill();
+            let _ = guard.get().kill();
             break;
         }
-        match rx.recv_timeout(deadline - now) {
+        // The next wake-up is whichever phase deadline bites first. Only one
+        // of the two sub-deadlines is ever armed: the boot deadline until the
+        // guest speaks, the stall deadline afterwards.
+        let phase_deadline = if first_output_at.is_none() {
+            boot_deadline
+        } else {
+            opts.stall_timeout
+                .map(|st| last_line_at + st)
+                .unwrap_or(overall_deadline)
+        };
+        let wake = phase_deadline.min(overall_deadline);
+        match rx.recv_timeout(wake.saturating_duration_since(now)) {
             Ok(line) => {
+                if first_output_at.is_none() {
+                    first_output_at = Some(Instant::now());
+                }
+                last_line_at = Instant::now();
                 if let Some(marker) = parse_line(&line) {
                     match marker {
                         Marker::Stage(stage, _) => {
@@ -585,7 +774,7 @@ fn run(opts: &Options) -> RunResult {
                 if opts.expect_panic && panic_message.is_some() {
                     // Evidence captured; the panicked kernel halts forever,
                     // so end the run here.
-                    let _ = child.kill();
+                    let _ = guard.get().kill();
                     break;
                 }
                 if opts.exit_after_markers
@@ -594,13 +783,20 @@ fn run(opts: &Options) -> RunResult {
                     && opts.expect.iter().all(|s| stages_seen.contains(s))
                 {
                     completed_by_markers = true;
-                    let _ = child.kill();
+                    let _ = guard.get().kill();
                     break;
                 }
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
-                timed_out = true;
-                let _ = child.kill();
+                // Attribute the timeout to the phase that actually expired.
+                if first_output_at.is_none() {
+                    no_serial_output = true;
+                } else if opts.stall_timeout.is_some() && Instant::now() < overall_deadline {
+                    stalled = true;
+                } else {
+                    timed_out = true;
+                }
+                let _ = guard.get().kill();
                 break;
             }
             // Reader thread finished: QEMU closed stdout (exited).
@@ -611,13 +807,14 @@ fn run(opts: &Options) -> RunResult {
     // short grace period for a natural exit (isa-debug-exit still carries
     // the real status), then kill — child.wait must never be unbounded.
     let grace_deadline = Instant::now() + Duration::from_secs(3);
-    while child.try_wait().ok().flatten().is_none() {
+    while guard.get().try_wait().ok().flatten().is_none() {
         if Instant::now() >= grace_deadline {
-            let _ = child.kill();
+            let _ = guard.get().kill();
             break;
         }
         std::thread::sleep(Duration::from_millis(20));
     }
+    let mut child = guard.release();
     // Reap QEMU before joining the reader: that closes QEMU's TCP half even on
     // Windows, so `BufRead::lines` cannot retain a runner process after a
     // timed-out guest. Closing our own write half is also required: otherwise
@@ -640,7 +837,6 @@ fn run(opts: &Options) -> RunResult {
         log_text.push_str("--- qemu stderr ---\n");
         log_text.push_str(&stderr_text);
     }
-    let _ = std::fs::write(&serial_log_path, &log_text);
 
     let missing: Vec<String> = opts
         .expect
@@ -669,7 +865,14 @@ fn run(opts: &Options) -> RunResult {
         }
     }
 
-    let outcome = if opts.expect_panic {
+    // Boot-phase verdicts outrank every content check: with no output at all
+    // there is nothing to interpret, and reporting "missing markers" for a
+    // guest that never spoke hides the real fault (V0.8 boot-race lesson).
+    let outcome = if no_serial_output {
+        Outcome::NoSerialOutput
+    } else if stalled {
+        Outcome::Stalled
+    } else if opts.expect_panic {
         // Negative-path run: the panic IS the expected evidence.
         match (&panic_message, timed_out) {
             (Some(_), _) if missing.is_empty() && missing_required.is_empty() => Outcome::Success,
@@ -692,6 +895,38 @@ fn run(opts: &Options) -> RunResult {
         )
     };
 
+    let detail = match outcome {
+        Outcome::Success => None,
+        Outcome::NoSerialOutput => Some(format!(
+            "serial connected after {connect_ms}ms but the guest emitted no bytes within {}s              (firmware/bootloader never reached kernel entry)",
+            opts.boot_timeout.as_secs()
+        )),
+        Outcome::Stalled => Some(format!(
+            "guest went silent for more than {}s with evidence still missing",
+            opts.stall_timeout.map(|d| d.as_secs()).unwrap_or_default()
+        )),
+        Outcome::Timeout => Some(format!(
+            "guest ran but did not finish within {}s",
+            opts.timeout.as_secs()
+        )),
+        other => Some(format!("{other:?}")),
+    };
+
+    // The serial log is the artifact a human opens first. A failing run must
+    // never leave an empty file: append the harness verdict so the log always
+    // explains itself, even when the guest said nothing at all.
+    if let Some(detail) = &detail {
+        log_text.push_str(
+            "--- harness verdict ---
+",
+        );
+        log_text.push_str(&format!(
+            "{outcome:?}: {detail}
+"
+        ));
+    }
+    let _ = std::fs::write(&serial_log_path, &log_text);
+
     RunResult {
         outcome,
         label: opts.label.clone(),
@@ -712,7 +947,30 @@ fn run(opts: &Options) -> RunResult {
         panic_message,
         serial_log: serial_log_path.display().to_string(),
         command_line,
+        connect_ms: Some(connect_ms),
+        first_output_ms: first_output_at.map(|t| t.duration_since(started).as_millis()),
+        detail,
     }
+}
+
+/// Drain whatever QEMU has already written to stderr without blocking the
+/// caller forever: the pipe is read on a worker thread and abandoned if QEMU
+/// keeps it open. Used only on failure paths, where the text is diagnostic.
+fn drain_stderr(child: &mut Child) -> String {
+    let Some(stderr) = child.stderr.take() else {
+        return String::new();
+    };
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut buf = String::new();
+        let reader = BufReader::new(stderr);
+        for line in reader.lines().map_while(Result::ok) {
+            buf.push_str(&line);
+            buf.push('\n');
+        }
+        let _ = tx.send(buf);
+    });
+    rx.recv_timeout(Duration::from_secs(2)).unwrap_or_default()
 }
 
 /// Accept one connection from a nonblocking listener, bounded by `deadline`
