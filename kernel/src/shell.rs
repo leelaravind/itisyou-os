@@ -122,6 +122,9 @@ fn execute(line: &str) {
         "clear" => crate::serial_print!("\x1b[2J\x1b[H"),
         "run" => cmd_run(args),
         "bg" => cmd_bg(args),
+        "net" => cmd_net(),
+        "ping" => cmd_ping(args),
+        "resolve" => cmd_resolve(args),
         "svc" => cmd_svc(),
         "pkg" => cmd_pkg(args),
         "audit" => cmd_audit(),
@@ -144,7 +147,10 @@ fn execute(line: &str) {
 fn cmd_help() {
     crate::serial_println!(
         "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path> [caps|-] [prefix]  run a Ring 3 ELF (optionally sandboxed)\n  bg <path> [caps]  run a Ring 3 ELF co-scheduled with the background services
-  svc               supervise the on-demand services; show all service state\n  pkg <op> ...      app packages: install/stage/launch/rollback/recover/list\n  audit             show the privileged-action audit trail\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  usbwait           wait for USB HID input (keyboard/mouse)\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU\n  reboot            8042 CPU reset"
+  svc               supervise the on-demand services; show all service state\n  pkg <op> ...      app packages: install/stage/launch/rollback/recover/list\n  net               interface address, counters and bound sockets
+  ping <ip> [n]     ICMP echo the given IPv4 address
+  resolve <name>    DNS A lookup through the configured server
+  audit             show the privileged-action audit trail\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  usbwait           wait for USB HID input (keyboard/mouse)\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU\n  reboot            8042 CPU reset"
     );
 }
 
@@ -326,6 +332,135 @@ fn cmd_bg(args: &[&str]) {
             crate::serial_println!("bg: {path}: timed out after {BG_JOB_MAX_TICKS} ticks");
             return;
         }
+    }
+}
+
+/// `net` — everything an operator needs to tell a working link from a broken
+/// one: the address plan, the driver's frame counters, this stack's per-layer
+/// counters (including what it refused and why), and the bound sockets.
+fn cmd_net() {
+    if !crate::net::is_up() {
+        crate::serial_println!("net: interface down (no NIC bound)");
+        return;
+    }
+    let (ip, mask, gw, dns) = crate::net::address();
+    let mut a = [0u8; 15];
+    let mut b = [0u8; 15];
+    let mut c = [0u8; 15];
+    let mut d = [0u8; 15];
+    let mut m = [0u8; 17];
+    crate::serial_println!(
+        "net: mac={} ip={} mask={} gateway={} dns={}",
+        crate::net::mac().format(&mut m),
+        ip.format(&mut a),
+        mask.format(&mut b),
+        gw.format(&mut c),
+        dns.format(&mut d),
+    );
+    if let Some(stats) = crate::device::e1000::with(|nic| (nic.stats(), nic.link_up())) {
+        let (s, link) = stats;
+        crate::serial_println!(
+            "net: link_up={link} tx_frames={} tx_bytes={} tx_dropped={} rx_frames={} rx_bytes={} rx_dropped={}",
+            s.tx_frames, s.tx_bytes, s.tx_dropped, s.rx_frames, s.rx_bytes, s.rx_dropped,
+        );
+    }
+    let s = crate::net::stats();
+    crate::serial_println!(
+        "net: rx_arp={} rx_ipv4={} rx_icmp={} rx_udp={} rx_malformed={} rx_unwanted={}",
+        s.rx_arp,
+        s.rx_ipv4,
+        s.rx_icmp,
+        s.rx_udp,
+        s.rx_malformed,
+        s.rx_unwanted,
+    );
+    crate::serial_println!(
+        "net: arp_requests={} arp_replies={} icmp_replies={} tx_unresolved={}",
+        s.arp_requests_sent,
+        s.arp_replies_sent,
+        s.icmp_replies_sent,
+        s.tx_unresolved,
+    );
+    crate::net::socket::with_sockets(|rows| {
+        crate::serial_println!("net: sockets={}", rows.len());
+        for r in rows {
+            crate::serial_println!(
+                "  sock {} port={} owner={} queued={} received={} dropped={}",
+                r.index,
+                r.port,
+                r.owner,
+                r.queued,
+                r.received,
+                r.dropped,
+            );
+        }
+    });
+}
+
+/// `ping <ip> [count]` — ICMP echo, reporting each probe individually so a
+/// partial loss is visible rather than averaged away.
+fn cmd_ping(args: &[&str]) {
+    let Some(target) = args.first().and_then(|s| parse_ipv4(s)) else {
+        crate::serial_println!("ping: usage: ping <a.b.c.d> [count]");
+        return;
+    };
+    let count: u16 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(3);
+    if !crate::net::is_up() {
+        crate::serial_println!("ping: interface down");
+        return;
+    }
+    let id = 0x4954; // 'IT'
+    let mut ok = 0u16;
+    let mut addr = [0u8; 15];
+    for seq in 1..=count {
+        if !crate::net::send_ping(target, id, seq, b"itisyou-os-ping") {
+            crate::serial_println!("ping: seq={seq} result=unreachable");
+            continue;
+        }
+        if crate::net::await_ping_reply(id, seq, 2000) {
+            ok += 1;
+            crate::serial_println!("ping: seq={seq} result=reply");
+        } else {
+            crate::serial_println!("ping: seq={seq} result=timeout");
+        }
+    }
+    crate::serial_println!(
+        "PING-SUMMARY target={} sent={count} received={ok}",
+        target.format(&mut addr),
+    );
+}
+
+/// `resolve <name>` — a DNS A lookup, printing the answer or the failure.
+fn cmd_resolve(args: &[&str]) {
+    let Some(name) = args.first() else {
+        crate::serial_println!("resolve: usage: resolve <host.name>");
+        return;
+    };
+    match crate::net::resolve_name(name, 3000) {
+        Some(addr) => {
+            let mut buf = [0u8; 15];
+            crate::serial_println!("RESOLVE-OK name={name} address={}", addr.format(&mut buf));
+        }
+        None => crate::serial_println!("RESOLVE-FAILED name={name}"),
+    }
+}
+
+/// Parse dotted-quad IPv4. Rejects anything that is not exactly four decimal
+/// octets — a partial parse would silently ping a different host.
+fn parse_ipv4(text: &str) -> Option<kernel_core::net::ipv4::Ipv4Addr> {
+    let mut octets = [0u8; 4];
+    let mut n = 0;
+    for part in text.split('.') {
+        if n == 4 {
+            return None;
+        }
+        octets[n] = part.parse().ok()?;
+        n += 1;
+    }
+    if n == 4 {
+        Some(kernel_core::net::ipv4::Ipv4Addr(octets))
+    } else {
+        None
     }
 }
 

@@ -383,7 +383,76 @@ extern "x86-interrupt" fn double_fault_handler(frame: InterruptStackFrame, error
 /// kernel forever — it is a safety net, never the primary bound.
 pub struct Deadline {
     end_tick: u64,
+    /// TSC value at which this deadline expires, or 0 when the TSC has not
+    /// been calibrated yet.
+    end_tsc: u64,
     spins_left: u64,
+}
+
+/// TSC cycles per millisecond, measured once at boot against the PIT. Zero
+/// until [`calibrate_tsc`] runs.
+static TSC_PER_MS: AtomicU64 = AtomicU64::new(0);
+
+/// Read the timestamp counter.
+///
+/// This is the only clock in the kernel that keeps advancing with interrupts
+/// disabled, which is exactly the situation inside a syscall: `SFMASK` clears
+/// IF on entry, so the timer ISR does not run and [`ticks`] is frozen. A
+/// polled wait that trusted the tick count would therefore spin its entire
+/// backstop budget — minutes of a wedged machine — instead of timing out.
+#[inline]
+pub fn tsc() -> u64 {
+    // SAFETY: RDTSC is unprivileged, has no side effects, and is available on
+    // every x86_64 CPU.
+    unsafe { core::arch::x86_64::_rdtsc() }
+}
+
+/// TSC cycles spanning `ms` milliseconds, or a conservative guess when the
+/// counter has not been calibrated. Lets code rate-limit an action without
+/// depending on the timer interrupt, which does not run inside a syscall.
+pub fn cycles_for_ms(ms: u64) -> u64 {
+    let per_ms = TSC_PER_MS.load(Ordering::Relaxed);
+    if per_ms == 0 {
+        // ~1 GHz: too low means retrying sooner than intended, never later,
+        // so an uncalibrated system degrades to "slightly chatty", not "hung".
+        ms.saturating_mul(1_000_000)
+    } else {
+        ms.saturating_mul(per_ms)
+    }
+}
+
+/// Measure the TSC against the PIT. Must run with interrupts enabled, after
+/// the timer is armed; called once during boot.
+///
+/// A wrong calibration is worse than none (deadlines would fire early or
+/// never), so an implausible measurement is discarded and the tick path is
+/// left in charge.
+pub fn calibrate_tsc() {
+    const SAMPLE_MS: u64 = 50;
+    let start_tick = ticks();
+    // Wait for the next tick edge so the sample is not skewed by however far
+    // into the current tick we started.
+    while ticks() == start_tick {
+        core::hint::spin_loop();
+    }
+    let t0 = tsc();
+    let base = ticks();
+    let want = (SAMPLE_MS * TICK_HZ).div_ceil(1000);
+    while ticks() - base < want {
+        core::hint::spin_loop();
+    }
+    let elapsed_ticks = ticks() - base;
+    let cycles = tsc().saturating_sub(t0);
+    let elapsed_ms = elapsed_ticks * 1000 / TICK_HZ;
+    if elapsed_ms == 0 {
+        return;
+    }
+    let per_ms = cycles / elapsed_ms;
+    // Anything outside 10 MHz–100 GHz is a measurement failure, not a CPU.
+    if (10_000..100_000_000).contains(&per_ms) {
+        TSC_PER_MS.store(per_ms, Ordering::SeqCst);
+        crate::serial_println!("[ITISYOU:INFO] tsc_calibrated cycles_per_ms={per_ms}");
+    }
 }
 
 /// Backstop for a stopped/unavailable timer. Large enough that it is never the
@@ -395,8 +464,14 @@ impl Deadline {
     /// PIT's 10 ms granularity) and never zero-length.
     pub fn after_ms(ms: u64) -> Self {
         let ticks_needed = (ms * TICK_HZ).div_ceil(1000).max(1);
+        let per_ms = TSC_PER_MS.load(Ordering::Relaxed);
         Self {
             end_tick: ticks().saturating_add(ticks_needed),
+            end_tsc: if per_ms == 0 {
+                0
+            } else {
+                tsc().saturating_add(per_ms.saturating_mul(ms.max(1)))
+            },
             spins_left: DEADLINE_MAX_SPINS,
         }
     }
@@ -404,7 +479,16 @@ impl Deadline {
     /// True while budget remains; spends one spin of the backstop and issues a
     /// `pause` so the loop is a well-behaved busy-wait.
     pub fn pending(&mut self) -> bool {
-        if ticks() >= self.end_tick || self.spins_left == 0 {
+        // Either clock expiring ends the wait. The TSC is authoritative when
+        // interrupts are off (the tick count cannot advance there); the tick
+        // count still bounds the wait if calibration was skipped.
+        if self.spins_left == 0 {
+            return false;
+        }
+        if self.end_tsc != 0 && tsc() >= self.end_tsc {
+            return false;
+        }
+        if ticks() >= self.end_tick {
             return false;
         }
         self.spins_left -= 1;

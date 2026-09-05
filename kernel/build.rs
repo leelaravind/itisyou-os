@@ -39,6 +39,8 @@ fn main() {
         "tickd",
         "tick-client",
         "flapd",
+        "net-probe",
+        "net-denied",
         "hello-app",
     ] {
         println!(
@@ -125,6 +127,10 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
             "-p",
             "user-flapd",
             "-p",
+            "user-net-probe",
+            "-p",
+            "user-net-denied",
+            "-p",
             "user-hello-app",
         ])
         .arg("--target-dir")
@@ -172,6 +178,8 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
         ("user-tickd", "bin/tickd"),
         ("user-tick-client", "bin/tick-client"),
         ("user-flapd", "bin/flapd"),
+        ("user-net-probe", "bin/net-probe"),
+        ("user-net-denied", "bin/net-denied"),
     ];
     entries.push(("bin/".to_string(), Vec::new(), true));
     for (artifact, dest) in programs {

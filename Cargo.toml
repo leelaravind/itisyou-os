@@ -26,6 +26,8 @@ members = [
     "user/tickd",
     "user/tick-client",
     "user/flapd",
+    "user/net-probe",
+    "user/net-denied",
     "user/hello-app",
 ]
 # The kernel must NEVER share a cargo invocation with host packages: cargo

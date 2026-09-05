@@ -654,6 +654,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "user-net-denied"
+version = "0.7.0-dev"
+dependencies = [
+ "ulib",
+]
+
+[[package]]
+name = "user-net-probe"
+version = "0.7.0-dev"
+dependencies = [
+ "ulib",
+]
+
+[[package]]
 name = "user-parent"
 version = "0.7.0-dev"
 dependencies = [

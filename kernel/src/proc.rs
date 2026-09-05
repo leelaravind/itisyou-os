@@ -174,6 +174,10 @@ fn run_scheduler(stop: impl Fn(usize) -> bool) -> usize {
                 // address space; keep a zombie slot for wait().
                 crate::gfx::compositor::remove_owned(pid);
                 crate::capability::revoke_owner(pid);
+                // A dead program must not leave a UDP port bound: the port
+                // would stay unusable, and its queued datagrams unreadable,
+                // for the rest of the boot.
+                crate::net::socket::close_owner(pid);
                 process.space.teardown();
                 if let Some(s) = table.slots.get_mut(&pid) {
                     s.process = None;
@@ -202,6 +206,7 @@ pub fn reap(pid: u64) {
         if let Some(slot) = table.slots.remove(&pid) {
             if let Some(process) = slot.process {
                 crate::capability::revoke_owner(pid);
+                crate::net::socket::close_owner(pid);
                 process.space.teardown();
             }
         }
@@ -220,6 +225,7 @@ pub fn drain_all() -> usize {
         if let Some(slot) = table.slots.remove(&pid) {
             if let Some(process) = slot.process {
                 crate::capability::revoke_owner(pid);
+                crate::net::socket::close_owner(pid);
                 process.space.teardown();
                 n += 1;
             }
