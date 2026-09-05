@@ -416,3 +416,40 @@ checked handles, owner/resource scope and rights checks, bounded delegation,
 revocation, expiry, and automatic owner teardown revocation are covered by
 four direct host tests. Runtime kernel/QEMU integration remains deliberately
 unstamped until it is exercised at the actual boundary.
+
+### 2026-09-05 - V0.8 long-running services, and pacing that means something
+
+The V0.7 supervisor could only run services to completion, which quietly made
+one thing impossible: a client could never talk to a service, because the
+service was not running while the client was. `bg` fixed that by pumping the
+scheduler until the job ends instead of running it alone, and the shell's idle
+loop — which had been spinning on `spin_loop()` waiting for a serial byte —
+now spends that time giving the daemons CPU. The shell is waiting on a human
+either way.
+
+Two things then had to be defined rather than assumed. First, what failure
+means for a process that is not supposed to finish: `flapd` exits cleanly and
+immediately, and the supervisor must treat that exactly like a crash, restart
+it under the bounded policy, and stop at the ceiling rather than forever.
+Second, how a daemon paces periodic work. `tickd` originally counted its own
+scheduling passes, and the first QEMU run showed why that is meaningless: 243
+of the 397 serial lines were heartbeats, because pass rate measures system
+load, not elapsed time — the same daemon emitted two heartbeats while the
+machine was busy and hundreds per second while it was idle. `SYS_UPTIME` (a
+free-running tick counter, ungated because it conveys no authority) replaced
+the pass count, and the cadence became a flat 2 s: 12 heartbeat lines instead
+of 243.
+
+Two smaller defects surfaced from actually reading the output rather than the
+code. `run_supervised` cleared the whole status table, erasing the live
+background rows on every `svc`; and it counted every row in its report, so a
+failed background daemon showed up as `started=3 failed=2` — arithmetic
+nonsense. Both now scope themselves to the on-demand registry.
+
+The untracked network parsers were wired into `kernel-core` as
+`net::{checksum,eth,ipv4}` — 43 host tests for VLAN tags, fragments, bad
+IHL/TTL/checksum and every truncation boundary — and clippy/fmt cleaned. They
+move no packets, and the docs say so: there is no NIC driver yet.
+
+Local evidence: selftest pass=113 fail=0, 181 host tests, 15/15 QEMU legs
+Success including the new `services-bg-bios` leg.

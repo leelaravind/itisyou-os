@@ -78,7 +78,21 @@
     interrupted update staged on boot 1 survives a REAL reboot as an orphan
     that never activates, and boot 2's recovery scan removes it
     (`update-interrupt`/`update-recovery` legs on one persistent disk).
-15. **Negative cases** (grown alongside subsystems): intentional panic,
+15. **Long-running services suite** (V0.8, `services-bg-bios` leg): `tickd`
+    and `flapd` start at boot with exactly their declared capabilities
+    (`caps=0x2` / `caps=0x0`) and are supervised for the life of the system.
+    The leg asserts all four properties that separate a daemon from V0.7's
+    run-to-completion tasks: still ALIVE later in the boot (heartbeats stamped
+    with real kernel ticks, so the cadence is load-independent); still
+    SERVING, not merely resident (two `bg` clients complete IPC round trips
+    against the same instance — `TICKD-SERVED n=2`, a number a restarted
+    service could not print); a daemon's clean exit treated as a FAULT and
+    restarted under the bounded policy, then `bg_failed ... restarts=3` rather
+    than a restart storm; and the system staying healthy throughout (the
+    on-demand supervisor still reports `started=3 done=2 failed=1 restarts=3`,
+    the `svc` table shows background and on-demand state together, and the
+    shell still accepts commands afterwards).
+16. **Negative cases** (grown alongside subsystems): intentional panic,
     allocator exhaustion, malformed inputs, timeout classification.
 
 The harness gained `--audio`/`--audio-out` (AC97 → WAV capture, with a non-

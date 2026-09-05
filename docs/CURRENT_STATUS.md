@@ -38,15 +38,33 @@
 
 ### V0.8 implementation status
 
-- Implemented and directly host-tested: bounded opaque capability handles with
-  generation checks, owner binding, resource scopes, rights intersection,
-  explicit revocation, expiry, and owner teardown revocation.
-- Capability handles now have a kernel-owned process registry, publication,
-  listing/check ABI, and teardown revocation hooks; `cargo check -p
-  itisyou-kernel` passes. QEMU enforcement evidence is still pending.
-- Userspace services, filesystem writes, signed
-  packages, networking, interrupt modernization, xHCI, persistent audit and
-  hardening are not yet verified. No website claim has been changed.
+- **Capability handles are the enforcement path** (verified): a forged
+  generation, an expired handle and a revoked handle are each refused on the
+  real syscall path, with the reason recorded in the audit trail
+  (`platform-bios`).
+- **Long-running Ring 3 services** (verified, ADR-0014): `tickd`/`flapd` start
+  at boot and are supervised for the life of the system; the shell's idle path
+  gives them CPU instead of spinning; `bg` co-schedules a client with them so
+  an IPC round trip with a live service is possible; a daemon's clean exit
+  counts as a fault and is restarted under the same bounded policy, then
+  marked Failed at the ceiling; `SYS_UPTIME` lets a daemon pace itself in real
+  ticks rather than in load-dependent scheduling passes (`services-bg-bios`).
+  They hold exactly their declared capabilities — persistence buys no
+  authority, and there is still no privileged daemon.
+- **Network protocol layer** (host-tested only): `kernel_core::net::{checksum,
+  eth,ipv4}` parses and builds Ethernet II and IPv4 strictly — 43 host tests
+  covering VLAN tags, fragments, bad IHL/TTL/checksum and every truncation
+  boundary. It moves no packets: there is no NIC driver and no data path yet,
+  so **no networking claim is made**.
+- Local matrix after this slice: selftest **113** / fail **0**; 181 host tests;
+  15/15 QEMU legs Success (`TEST: OK`).
+- Filesystem writes, signed packages, the NIC data path, interrupt
+  modernization, xHCI, persistent audit and hardening are not yet verified.
+- `status/current.json` — the machine-readable source of website truth — is
+  unchanged and still stamped to the verified V0.7 release. The three repo
+  docs the site renders (ARCHITECTURE, TESTING, KNOWN_LIMITATIONS) now
+  describe the verified V0.8 slices and the explicit absence of networking.
+  Nothing has been deployed.
 
 ### Next milestone (V0.8)
 
