@@ -38,8 +38,9 @@ Ring 3 process after a fixed quantum (V0.4), saving its full trap frame; a
 naked timer ISR saves/restores all GPRs and long-jumps to the run-loop on
 preemption. `yield`/`wait` also save context and return to it. The strict ELF64 loader (`kernel-core::elf` + `user.rs`)
 accepts only static ET_EXEC images. Syscalls: write, exit, yield, getpid,
-spawn, wait, msg_send, msg_recv — user buffers validated against the active
-CR3 before any access. `user/ulib` is the Ring 3 ABI side; evidence programs
+uptime, spawn, wait, msg_send, msg_recv — user buffers validated against the
+active CR3 before any access. The first five convey no authority and are
+ungated; everything else is default-deny behind a capability handle. `user/ulib` is the Ring 3 ABI side; evidence programs
 `/bin/{init,gp-test,pf-test,child,parent}` are baked into the initramfs.
 
 ## Devices & storage (V0.3, ADR-0008)
@@ -106,7 +107,12 @@ A per-process **FS sandbox** restricts `fs_read` to normalized-path prefixes
 (traversal-proof, host-tested). **Services** are ordinary Ring 3 processes in
 a static registry (binary + deps + exact caps); the supervisor starts them in
 a deterministic cycle-checked order, contains crashes, applies a bounded
-restart policy, and emits `[ITISYOU:SVC]` diagnostics. **Applications** ship
+restart policy, and emits `[ITISYOU:SVC]` diagnostics. Since V0.8 a second
+set of services is **persistent** (ADR-0014): started at boot, given CPU by
+the shell's idle path rather than run to completion, and supervised for the
+life of the system, where a daemon's clean exit counts as a failure. `bg`
+co-schedules a client with them so an IPC round trip with a live service is
+possible. **Applications** ship
 as ITPKG packages (strict manifest + ELF + SHA-256, verified at install and
 re-verified at launch) into a persistent version-numbered store where every
 install/update/rollback/recovery transition is one crash-atomic ITFS
@@ -126,7 +132,8 @@ the kernel.
   (boots, runs in-kernel checks, exits QEMU with a deterministic status).
 - **`crates/kernel-core`** — pure logic with zero I/O: boot-stage contract,
   serial-marker grammar, and (as subsystems land) memory-map normalization,
-  path handling, parsers. Compiled unchanged into both the kernel and host
+  path handling, parsers — including `net::{checksum,eth,ipv4}`, the
+  host-tested protocol layer that a future NIC driver will sit under. Compiled unchanged into both the kernel and host
   tools, unit-tested on the host.
 - **`tools/image-builder`** — host tool; turns kernel ELFs into bootable
   BIOS/UEFI disk images (pure Rust) + SHA-256 manifest.

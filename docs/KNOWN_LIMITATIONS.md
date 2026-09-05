@@ -9,14 +9,21 @@ Updated continuously; last update: 2026-09-03 (V0.7 release evidence closeout).
   write confinement is moot until one exists. Packages are
   **integrity-verified (SHA-256), not signed** — authenticity needs key
   provisioning and a root of trust (deferred, ADR-0012). The audit ring is
-  in-memory (64 records; serial markers are the durable evidence). Services
-  are oneshot/bounded programs supervised to terminal states — there are no
-  long-running background services while the shell polls serial, and no
-  userspace init. Kernel-image updates are out of scope (the OS does not own
+  in-memory (64 records; serial markers are the durable evidence). Kernel-image updates are out of scope (the OS does not own
   its boot media in QEMU); the app store's staged/commit/rollback is the
   designed mechanism. ITFS `remove` does not reclaim data blocks (no
   free-block reuse — space leaks by design for crash-atomicity simplicity).
 
+- Services (V0.8): persistent background daemons exist and are supervised
+  (ADR-0014), but they run only while the shell is idle at the prompt or a
+  `bg` job is pumping — a long-running foreground command (`desktop`, a long
+  `run`) starves them for its duration. There is still no userspace `init`,
+  no service priorities or fairness beyond round-robin, and the background
+  registry is a static array (no runtime start/stop of a named service).
+- Networking (V0.8): protocol parsing/building only
+  (`kernel_core::net::{checksum,eth,ipv4}`, host-tested). There is **no NIC
+  driver and no data path** — nothing is sent or received, and no ARP, ICMP,
+  UDP or TCP exists. The e1000 is enumerated by the PCI scan and left alone.
 - QEMU is the only supported execution environment. Physical hardware boot
   is intentionally out of scope and untested.
 - Scheduling (V0.4): **preemptive**, round-robin, no priorities; the quantum

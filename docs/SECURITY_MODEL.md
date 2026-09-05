@@ -56,6 +56,15 @@ only through narrow, deterministic, auditable paths).
   spawn delegation intersects with the parent's authority and cannot amplify.
 - Platform services are ordinary Ring 3 processes with declared capabilities,
   deterministic dependency ordering, bounded restart, and audited transitions.
+  This holds for the V0.8 persistent services too: living for the life of the
+  system buys a daemon no authority (`tickd` runs IPC-only, `flapd` with
+  none), and a daemon that stops serving — even by exiting cleanly — is
+  restarted under the same bounded policy and then left Failed rather than
+  restarted forever.
+- A syscall is ungated only when it conveys no authority: `write`, `exit`,
+  `yield`, `getpid` and (V0.8) `uptime`, a free-running tick counter with no
+  wall clock and nothing about any other process. Everything else is
+  default-deny behind a capability handle.
 - Applications launch only from validated manifests and packages; filesystem
   visibility is normalized and prefix-confined.
 - Updates use integrity-verified packages and crash-atomic staging/rollback;
@@ -66,4 +75,7 @@ only through narrow, deterministic, auditable paths).
 `subject → capability → object → permitted operation → constraints →
 provenance` is the V0.7 platform contract. The current implementation uses
 static process bit capabilities and path prefixes. Per-resource handles,
-revocation, signed package authenticity, and network policy remain V0.8 work.
+revocation, and enforcement at the syscall boundary have since landed in V0.8
+(forged, expired and revoked handles are each refused on the real syscall
+path, with the reason audited). Signed package authenticity and network
+policy remain open; there is no network data path to police yet.
