@@ -127,15 +127,12 @@ impl Driver for UhciDriver {
         // Global reset the controller, then host-controller reset.
         unsafe {
             wr16(io, USBCMD, CMD_GRESET);
-            spin(50_000);
+            // UHCI 2.1.1: global reset must be asserted for at least 10 ms.
+            crate::interrupts::delay_ms(20);
             wr16(io, USBCMD, 0);
             wr16(io, USBCMD, CMD_HCRESET);
-            for _ in 0..100_000 {
-                if rd16(io, USBCMD) & CMD_HCRESET == 0 {
-                    break;
-                }
-                core::hint::spin_loop();
-            }
+            let mut deadline = crate::interrupts::Deadline::after_ms(100);
+            while rd16(io, USBCMD) & CMD_HCRESET != 0 && deadline.pending() {}
             // Disable all interrupts (we poll), clear status.
             wr16(io, USBINTR, 0);
             wr16(io, USBSTS, 0xFFFF);
@@ -206,17 +203,15 @@ impl Uhci {
             unsafe {
                 // Assert reset for ~50 ms, then clear and enable.
                 wr16(io, port, PORT_PR);
-                spin(500_000);
+                // USB 2.0 7.1.7.5: drive reset for at least 10 ms, then allow
+                // the device its 10 ms recovery time before addressing it.
+                crate::interrupts::delay_ms(50);
                 wr16(io, port, sc & !PORT_PR);
-                spin(50_000);
+                crate::interrupts::delay_ms(10);
                 // Enable the port; clear connect/enable change (write-1-clear).
                 wr16(io, port, PORT_PE | PORT_CSC | PORT_PEC);
-                for _ in 0..100_000 {
-                    if rd16(io, port) & PORT_PE != 0 {
-                        break;
-                    }
-                    core::hint::spin_loop();
-                }
+                let mut deadline = crate::interrupts::Deadline::after_ms(100);
+                while rd16(io, port) & PORT_PE == 0 && deadline.pending() {}
             }
             serial_println!(
                 "[ITISYOU:INFO] uhci port_reset port={:#x} low_speed={low_speed}",
@@ -247,7 +242,8 @@ impl Uhci {
         // SET_ADDRESS(1).
         self.control_out(0, 0x00, 0x05, 1, 0, &[])?;
         self.address = 1;
-        spin(50_000);
+        // USB 2.0 9.2.6.3: a device has 2 ms to commit a new address.
+        crate::interrupts::delay_ms(10);
 
         // GET_DESCRIPTOR(configuration): first 9 bytes for wTotalLength.
         let mut cfg_head = [0u8; 9];
@@ -429,7 +425,11 @@ impl Uhci {
         unsafe { wr32_dma(self.work.virt + OFF_QH + 4, first_td) };
         // The frame list already points every frame at the QH; poll the last
         // (STATUS) TD — walk the chain until an active/error TD is found.
-        for _ in 0..500_000u32 {
+        // Real-time bound: a control transfer through QEMU's UHCI model
+        // completes in well under a millisecond when the host is idle, but an
+        // iteration count collapses to microseconds of guest time under load.
+        let mut deadline = crate::interrupts::Deadline::after_ms(1000);
+        loop {
             let mut all_done = true;
             let mut err = false;
             // Up to 3 TDs (setup, data, status).
@@ -458,7 +458,9 @@ impl Uhci {
                 }
                 return Ok(());
             }
-            core::hint::spin_loop();
+            if !deadline.pending() {
+                break;
+            }
         }
         Err("transfer timeout")
     }
@@ -495,7 +497,11 @@ impl Uhci {
             );
         }
         // Poll briefly; a boot report either arrives or the TD NAKs/inactivates.
-        for _ in 0..200_000u32 {
+        // Bounded in real time so a loaded host cannot silently shorten the
+        // window to nothing (and so a wedged controller cannot stall the
+        // desktop loop).
+        let mut deadline = crate::interrupts::Deadline::after_ms(20);
+        loop {
             let cs = unsafe { rd32_dma(base + 4) };
             if cs & TD_ACTIVE == 0 {
                 // ActLen field (bits 0-10): received length is actlen+1, or 0.
@@ -516,7 +522,9 @@ impl Uhci {
                 }
                 return got;
             }
-            core::hint::spin_loop();
+            if !deadline.pending() {
+                break;
+            }
         }
         // Still active → cancel by clearing active; no data this poll.
         unsafe { wr32_dma(base + 4, 0) };
@@ -577,10 +585,4 @@ unsafe fn wr32_dma(virt: u64, v: u32) {
 }
 unsafe fn rd32_dma(virt: u64) -> u32 {
     (virt as *const u32).read_volatile()
-}
-
-fn spin(n: u32) {
-    for _ in 0..n {
-        core::hint::spin_loop();
-    }
 }

@@ -33,9 +33,17 @@ fn main() -> Result<()> {
         .context("resolving workspace root")?;
 
     // Build the kernel in its own cargo invocation (see Cargo.toml note).
+    // `strip=debuginfo`: the BIOS bootloader stages read the ENTIRE kernel
+    // ELF off disk through real-mode INT 13h calls before the kernel prints
+    // its first byte, so DWARF sections are paid for in boot wall-clock on
+    // every QEMU leg. Nothing at runtime consumes them (no unwinding, no
+    // symbolication — panic=abort), so stripping is behaviour-preserving and
+    // keeps first-serial-output well inside the harness deadlines.
     let status = Command::new("cargo")
         .args(["build", "-p", "itisyou-kernel"])
         .current_dir(&root)
+        .env("RUSTFLAGS", "-C strip=debuginfo")
+        .env_remove("CARGO_ENCODED_RUSTFLAGS")
         .status()
         .context("running cargo build for the kernel")?;
     if !status.success() {

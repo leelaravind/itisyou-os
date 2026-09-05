@@ -3,6 +3,9 @@ name = "qemu-runner"
 version.workspace = true
 edition.workspace = true
 description = "Deterministic QEMU boot/test harness: launches images, asserts serial markers, classifies failures, writes JSON evidence"
+# `src/bin/stub-qemu.rs` is a test-only fake QEMU (see tests/harness_startup.rs);
+# name the real binary so `cargo run -p qemu-runner` stays unambiguous.
+default-run = "qemu-runner"
 
 [dependencies]
 kernel-core = { path = "../../crates/kernel-core" }

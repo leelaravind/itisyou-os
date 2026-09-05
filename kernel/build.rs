@@ -123,9 +123,18 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
         .current_dir(workspace)
         // x86_64-unknown-none defaults to PIE (ET_DYN); the V0.2 loader
         // deliberately accepts only static ET_EXEC images.
+        //
+        // `strip=debuginfo`: every one of these ELFs is embedded verbatim in
+        // the initramfs, which is embedded in the kernel image. Unstripped
+        // debug builds are ~775 KiB each (~17 MiB total) — that bloat is read
+        // off disk one BIOS INT 13h call at a time by the bootloader's real-
+        // mode stages, which pushed first-serial-output past the QEMU test
+        // timeouts (V0.8 boot-race root cause). The kernel's ELF loader only
+        // consumes program headers and PT_LOAD contents, so DWARF sections are
+        // dead weight at runtime; stripping them changes no behaviour.
         .env(
             "RUSTFLAGS",
-            "-C relocation-model=static -C link-arg=--no-pie",
+            "-C relocation-model=static -C link-arg=--no-pie -C strip=debuginfo",
         )
         .env_remove("CARGO_ENCODED_RUSTFLAGS")
         .status()

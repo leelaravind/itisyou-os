@@ -368,3 +368,55 @@ extern "x86-interrupt" fn double_fault_handler(frame: InterruptStackFrame, error
         frame.instruction_pointer.as_u64()
     );
 }
+
+/// A wall-clock deadline built on the 100 Hz PIT tick counter.
+///
+/// Counting spin-loop iterations is NOT a timeout: it measures host CPU speed
+/// and emulator throughput, not elapsed time, so the same code "times out"
+/// after 3 ms on an idle host and never reaches the device's answer on a
+/// loaded one. That is exactly how the V0.8 UHCI enumeration became
+/// intermittent (`uhci enumerate_failed err=transfer timeout` under load while
+/// the identical image passed when the machine was quiet). Device drivers must
+/// bound their waits in real time instead.
+///
+/// A spin budget backs the tick check so a stopped timer can never wedge the
+/// kernel forever — it is a safety net, never the primary bound.
+pub struct Deadline {
+    end_tick: u64,
+    spins_left: u64,
+}
+
+/// Backstop for a stopped/unavailable timer. Large enough that it is never the
+/// binding constraint while the PIT is running.
+const DEADLINE_MAX_SPINS: u64 = 400_000_000;
+
+impl Deadline {
+    /// A deadline `ms` milliseconds from now, rounded up to whole ticks (the
+    /// PIT's 10 ms granularity) and never zero-length.
+    pub fn after_ms(ms: u64) -> Self {
+        let ticks_needed = (ms * TICK_HZ).div_ceil(1000).max(1);
+        Self {
+            end_tick: ticks().saturating_add(ticks_needed),
+            spins_left: DEADLINE_MAX_SPINS,
+        }
+    }
+
+    /// True while budget remains; spends one spin of the backstop and issues a
+    /// `pause` so the loop is a well-behaved busy-wait.
+    pub fn pending(&mut self) -> bool {
+        if ticks() >= self.end_tick || self.spins_left == 0 {
+            return false;
+        }
+        self.spins_left -= 1;
+        core::hint::spin_loop();
+        true
+    }
+}
+
+/// Busy-wait for at least `ms` milliseconds of real time. Used for the fixed
+/// settle delays hardware specifications state in milliseconds (USB port
+/// reset/recovery), which an iteration count cannot express.
+pub fn delay_ms(ms: u64) {
+    let mut deadline = Deadline::after_ms(ms);
+    while deadline.pending() {}
+}
