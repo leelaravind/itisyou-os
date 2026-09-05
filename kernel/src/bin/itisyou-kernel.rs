@@ -14,6 +14,13 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     kernel::init_subsystems(boot_info);
     kernel::serial_println!("[ITISYOU:MODE] interactive");
 
+    // V0.8: bring up the persistent Ring 3 services before handing the console
+    // to the shell. They are started here rather than in `init_subsystems` so
+    // the selftest binary keeps a quiescent, deterministic process table —
+    // background daemons would otherwise be scheduled in the middle of the
+    // scheduler and userspace tests.
+    kernel::services::start_background();
+
     kernel::bootstage::emit(Stage::B130ShellRunning);
     // All V0.1 hard-target boot stages are up: acceptance marker.
     kernel::bootstage::emit(Stage::B150Acceptance);

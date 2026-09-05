@@ -22,6 +22,7 @@ pub const SYS_CAP_LIST: u64 = 15;
 pub const SYS_CAP_CHECK: u64 = 16;
 pub const SYS_CAP_REVOKE: u64 = 17;
 pub const SYS_CAP_RESTRICT: u64 = 18;
+pub const SYS_UPTIME: u64 = 19;
 
 pub const ERR_NOSYS: u64 = u64::MAX;
 pub const ERR_FAULT: u64 = u64::MAX - 1;
@@ -84,6 +85,13 @@ pub fn getpid() -> u64 {
 
 pub fn yield_now() -> u64 {
     raw_syscall(SYS_YIELD, 0, 0, 0)
+}
+
+/// Monotonic ticks since boot. Lets a long-running service pace itself in
+/// real time instead of by scheduling passes, whose rate depends entirely on
+/// how busy the rest of the system is.
+pub fn uptime_ticks() -> u64 {
+    raw_syscall(SYS_UPTIME, 0, 0, 0)
 }
 
 /// Spawn a child from an initramfs path. Returns child pid or ERR_*.

@@ -23,6 +23,9 @@ members = [
     "user/echo-svc",
     "user/crashy-svc",
     "user/svc-client",
+    "user/tickd",
+    "user/tick-client",
+    "user/flapd",
     "user/hello-app",
 ]
 # The kernel must NEVER share a cargo invocation with host packages: cargo
