@@ -15,6 +15,7 @@ pub mod manifest;
 pub mod marker;
 pub mod memmap;
 pub mod mouse;
+pub mod net;
 pub mod path;
 pub mod pci;
 pub mod pkg;
