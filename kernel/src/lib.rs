@@ -10,6 +10,7 @@
 
 extern crate alloc;
 
+pub mod apic;
 pub mod audit;
 pub mod bootstage;
 pub mod capability;
@@ -222,6 +223,47 @@ pub fn init_subsystems(boot_info: &'static mut BootInfo) {
         }
     );
     bootstage::emit(Stage::B200NetworkReady);
+
+    // B210: interrupt modernization. The local APIC comes up alongside the
+    // PIC — not instead of it — and MSI is armed on the NIC so a real packet
+    // can prove message-signalled delivery. Line-based IRQs stay on the
+    // verified PIC path; see ADR-0017.
+    if apic::init() {
+        apic::ioapic_probe(
+            interrupts::KEYBOARD_VECTOR - interrupts::PIC_1_OFFSET,
+            interrupts::VECTOR_IOAPIC_PROBE,
+        );
+        let armed = device::with_devices(|devices| {
+            devices
+                .iter()
+                .find(|d| d.driver == Some("e1000"))
+                .map(|d| apic::enable_msi(d, interrupts::VECTOR_MSI))
+                .unwrap_or(false)
+        });
+        if armed {
+            device::e1000::with(|nic| nic.enable_interrupts());
+        }
+        // The 82540EM this machine model provides exposes no MSI capability,
+        // so `nic_msi=false` is the expected state here rather than a failure.
+        // Message-signalled delivery is proved on the NVMe controller's MSI-X
+        // instead (`irq` command); saying which device carries the proof beats
+        // a bare "MSI supported".
+        let msix_capable = device::with_devices(|devices| {
+            devices
+                .iter()
+                .filter(|d| d.has_cap(kernel_core::pci::CapabilityId::MsiX))
+                .count()
+        });
+        serial_println!(
+            "[ITISYOU:IRQ] apic_ready nic_msi={armed} msix_capable_devices={msix_capable}"
+        );
+    }
+    bootstage::emit(Stage::B210ApicReady);
+
+    // Provenance spans reboots: if a durable trail is present, verify it and
+    // continue its hash chain. A missing trail is a first boot, not a fault,
+    // and a tampered one is reported rather than quietly replaced.
+    audit::recover();
 }
 
 /// Enumerate PCI, find the NVMe controller, and initialize it. Used by the
@@ -251,6 +293,19 @@ pub fn with_persistent_store<R>(f: impl FnOnce(&mut fs_disk::FileSystem) -> R) -
         )) => fs_disk::FileSystem::format(&nvme).ok()?,
         Err(_) => return None,
     };
+    Some(f(&mut fs))
+}
+
+/// Mount the persistent store WITHOUT ever formatting it, and run `f`.
+///
+/// Boot-time readers must use this. `with_persistent_store` formats a blank
+/// disk on first use, which is right for an explicit write and wrong for a
+/// passive read: a guest attached to a disposable test disk that is not an
+/// ITFS volume would have it reformatted just by booting, destroying whatever
+/// the disk was actually for.
+pub fn with_mounted_store<R>(f: impl FnOnce(&mut fs_disk::FileSystem) -> R) -> Option<R> {
+    let nvme = open_nvme()?;
+    let mut fs = fs_disk::FileSystem::mount(&nvme).ok()?;
     Some(f(&mut fs))
 }
 

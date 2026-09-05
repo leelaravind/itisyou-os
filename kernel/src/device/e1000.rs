@@ -39,6 +39,7 @@ const DEVICE_82574L: u16 = 0x10D3;
 const REG_CTRL: u64 = 0x0000;
 const REG_STATUS: u64 = 0x0008;
 const REG_ICR: u64 = 0x00C0;
+const REG_IMS: u64 = 0x00D0;
 const REG_IMC: u64 = 0x00D8;
 const REG_RCTL: u64 = 0x0100;
 const REG_TCTL: u64 = 0x0400;
@@ -181,6 +182,26 @@ impl E1000 {
 
     pub fn stats(&self) -> Stats {
         self.stats
+    }
+
+    /// Unmask the interrupt causes used to prove MSI delivery.
+    ///
+    /// Link-status-change and receive-timer are enough: both are raised by
+    /// traffic the tests already generate, so nothing artificial has to be
+    /// manufactured to make an interrupt happen.
+    pub fn enable_interrupts(&self) {
+        const ICR_LSC: u32 = 1 << 2;
+        const ICR_RXT0: u32 = 1 << 7;
+        self.write32(REG_IMS, ICR_LSC | ICR_RXT0);
+    }
+
+    /// Read and clear the interrupt cause register.
+    ///
+    /// Called from the polling path rather than from the handler: the handler
+    /// deliberately touches no device state (ADR-0017), and an uncleared cause
+    /// would stop the card raising the next message.
+    pub fn clear_interrupt_cause(&self) -> u32 {
+        self.read32(REG_ICR)
     }
 
     /// Is the link reported up? `STATUS.LU` is set by the emulated PHY as soon

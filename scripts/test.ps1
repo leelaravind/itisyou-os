@@ -162,6 +162,12 @@ Remove-Item $platDisk -ErrorAction SilentlyContinue
     '--send', 'svc',
     '--send', 'pkg install /pkgs/hello-app-1.itpkg',
     '--send', 'pkg install /pkgs/hello-app-bad.itpkg',
+    # V0.8 authenticity fixtures. Each is INTACT — correct digest, valid
+    # manifest — so only the trust check can refuse them, and each fails
+    # for its own reason.
+    '--send', 'pkg install /pkgs/hello-app-unsigned.itpkg',
+    '--send', 'pkg install /pkgs/hello-app-untrusted.itpkg',
+    '--send', 'pkg install /pkgs/hello-app-forged.itpkg',
     '--send', 'pkg launch hello-app',
     '--send', 'pkg install /pkgs/hello-app-2.itpkg',
     '--send', 'pkg rollback hello-app',
@@ -184,6 +190,13 @@ Remove-Item $platDisk -ErrorAction SilentlyContinue
     '--require', 'name=crashd state=failed pid=', '--require', 'restarts=3',
     '--require', 'install name=hello-app v=1 result=ok',
     '--require', 'verify result=refused reason=DigestMismatch',
+    # Signed install and launch, then the three authenticity refusals.
+    '--require', 'signature result=ok signer=',
+    '--require', 'signature result=refused reason=unsigned',
+    '--require', 'signature result=refused reason=untrusted_signer',
+    '--require', 'signature result=refused reason=bad_signature',
+    '--require', 'action=pkg_verify_signature cap=0x0 result=denied',
+    '--require', 'action=pkg_launch_signature',
     '--require', 'HELLO-APP-OK',
     '--require', 'rollback name=hello-app from=v2 to=v1 result=ok',
     '--require', 'result=denied',
@@ -299,6 +312,32 @@ Write-Output '=== QEMU networking: e1000 + ARP/IPv4/ICMP/UDP/DNS (BIOS) ==='
     '--require', 'rx_malformed=3 rx_unwanted=2',
     '--timeout-secs', '240', '--label', 'net-bios')
 
+Write-Output '=== QEMU interrupt modernization: APIC + I/O APIC + MSI-X (BIOS) ==='
+# The local APIC comes up ALONGSIDE the legacy PIC, which keeps serving the
+# timer and PS/2 input; the leg asserts both, so "the APIC works" can never be
+# read as "the verified V0.7 path was replaced".
+#
+# Two of the three claims are delivery, not configuration:
+#   * a one-shot local-APIC timer interrupt arrives on vector 0x41;
+#   * a real NVMe block read's completion raises MSI-X on vector 0x42.
+# The third, the I/O APIC, is programmed and read back but left MASKED - line
+# IRQs stay on the PIC. The assertion says `masked=true` so the evidence
+# cannot be mistaken for line-based delivery through the I/O APIC.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--net', '--nvme',
+    '--expect', 'B190', '--expect', 'B200', '--expect', 'B210',
+    '--send', 'irq',
+    '--send', 'shutdown',
+    '--require', 'lapic_ready id=0',
+    '--require', 'ioapic id=0',
+    '--require', 'irq=1 vector=0x43 readback=ok masked=true',
+    '--require', 'legacy PIC path, still primary',
+    '--require', 'irq: apic_timer delivered=true count=1 vector=0x41',
+    '--require', 'msix_enabled dev=00:04.0 vector=0x42',
+    '--require', 'irq: msix armed=true block_read=true delivered=true',
+    '--require', 'spurious=0',
+    '--timeout-secs', '240', '--label', 'irq-bios')
+
 Write-Output '=== QEMU userspace filesystem writes (BIOS, two boots) ==='
 # V0.8 capability-scoped Ring 3 writes to the persistent ITFS store. Boot 1
 # walks the whole contract and boot 2 (a fresh guest, same disk) proves the
@@ -356,6 +395,53 @@ Remove-Item $fsDisk -ErrorAction SilentlyContinue
     '--require', 'FSUSER-VERIFIED bytes=38',
     '--timeout-secs', '240', '--label', 'fs-write-persist')
 Remove-Item $fsDisk -ErrorAction SilentlyContinue
+
+Write-Output '=== QEMU persistent audit trail (BIOS, three boots) ==='
+# Provenance has to outlive the process that produced it, and it has to be
+# possible to tell an edited trail from an intact one. Records are chained -
+# each hash covers the previous one - so altering, deleting, reordering or
+# inserting a record changes the head.
+#
+# Boot 1 does privileged work and persists the trail. Boot 2 is a FRESH guest
+# on the same disk: it recovers the trail, recomputes the chain and reports
+# `verified` with the same head boot 1 wrote. Boot 3 overwrites the stored
+# trail with a forged header and must report `TAMPERED` - the negative case
+# matters more than the positive one, because a verifier that never fails is
+# not a verifier.
+$auditDisk = Join-Path $env:ITISYOU_SCRATCH 'itisyou-audit-test.img'
+Remove-Item $auditDisk -ErrorAction SilentlyContinue
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $auditDisk,
+    '--expect', 'B210',
+    '--send', 'pkg install /pkgs/hello-app-1.itpkg',
+    '--send', 'run /bin/fs-writer fs_read,fs_write',
+    '--send', 'audit',
+    '--send', 'audit save',
+    '--send', 'shutdown',
+    '--require', 'trail_recovered status=absent',
+    '--require', 'audit: chain boot=0',
+    '--require', 'trail_saved records=',
+    '--timeout-secs', '240', '--label', 'audit-persist-write')
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $auditDisk,
+    '--expect', 'B210',
+    '--send', 'audit',
+    '--send', 'shutdown',
+    # A fresh guest recomputes the chain over the recovered records and gets
+    # the head the previous boot wrote.
+    '--require', 'trail_recovered status=verified records=',
+    '--require', 'audit: chain boot=1',
+    '--timeout-secs', '240', '--label', 'audit-persist-verify')
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $auditDisk,
+    '--expect', 'B210',
+    '--send', 'store put audit.log itisyou-audit v1 boot=0 count=1 head=0000000000000000000000000000000000000000000000000000000000000000',
+    '--send', 'audit verify',
+    '--send', 'shutdown',
+    '--require', 'trail_recovered status=verified',
+    '--require', 'trail_recovered status=TAMPERED',
+    '--timeout-secs', '240', '--label', 'audit-persist-tamper')
+Remove-Item $auditDisk -ErrorAction SilentlyContinue
 
 Write-Output '=== QEMU interrupted update -> recovery (BIOS, two boots) ==='
 # Boot 1 installs v1 and STAGES v2 without committing (a simulated crash mid-

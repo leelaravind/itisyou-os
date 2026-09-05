@@ -52,6 +52,10 @@ pub enum Stage {
     /// (V0.8). Emitted even when no NIC is attached, carrying `nic=absent`, so
     /// "no network" is an observed state rather than a missing marker.
     B200NetworkReady,
+    /// Interrupt modernization (V0.8): local APIC enabled, I/O APIC mapped and
+    /// programmed, MSI armed on the NIC. The legacy PIC path stays live and
+    /// keeps serving the timer and PS/2 input.
+    B210ApicReady,
 }
 
 impl Stage {
@@ -79,6 +83,7 @@ impl Stage {
             Stage::B180DesktopReady => "B180",
             Stage::B190DeviceModelReady => "B190",
             Stage::B200NetworkReady => "B200",
+            Stage::B210ApicReady => "B210",
         }
     }
 
@@ -106,6 +111,7 @@ impl Stage {
             Stage::B180DesktopReady => "PS/2 input online + desktop composited",
             Stage::B190DeviceModelReady => "device model built — PCI/BAR/caps + drivers",
             Stage::B200NetworkReady => "network interface up — NIC bound + IPv4 stack polling",
+            Stage::B210ApicReady => "interrupt modernization — local APIC + I/O APIC + MSI",
         }
     }
 
@@ -116,7 +122,7 @@ impl Stage {
 }
 
 /// Every stage in canonical order.
-pub const ALL_STAGES: [Stage; 21] = [
+pub const ALL_STAGES: [Stage; 22] = [
     Stage::B000FirmwareHandoff,
     Stage::B010KernelEntry,
     Stage::B020SerialReady,
@@ -138,6 +144,7 @@ pub const ALL_STAGES: [Stage; 21] = [
     Stage::B180DesktopReady,
     Stage::B190DeviceModelReady,
     Stage::B200NetworkReady,
+    Stage::B210ApicReady,
 ];
 
 #[cfg(test)]

@@ -278,13 +278,20 @@ impl Nvme {
             let q = unsafe { &*self.queues.get() };
             (q.io.cq.phys, q.io.sq.phys)
         };
-        // Create I/O Completion Queue (opcode 0x05), qid 1, contiguous, no IRQ.
+        // Create I/O Completion Queue (opcode 0x05), qid 1, contiguous.
+        //
+        // Interrupts are ENABLED on this queue (IEN, bit 1) with interrupt
+        // vector 0, so a completion raises MSI-X entry 0 when the platform has
+        // armed it. The driver still polls for completions — the interrupt is
+        // evidence that message-signalled delivery works, not the mechanism
+        // the data path depends on (ADR-0017). With MSI-X unarmed the
+        // controller has nowhere to send the message and nothing changes.
         let mut cmd = [0u32; 16];
         cmd[0] = 0x05 | (0x02 << 16);
         cmd[6] = io_cq_phys as u32;
         cmd[7] = (io_cq_phys >> 32) as u32;
         cmd[10] = ((QDEPTH as u32 - 1) << 16) | 1; // qsize | qid
-        cmd[11] = 1; // physically contiguous, interrupts disabled
+        cmd[11] = 1 | (1 << 1); // physically contiguous | interrupts enabled
         let status = self.submit(true, &cmd);
         if status != 0 {
             return Err(NvmeError::AdminFailed { status });

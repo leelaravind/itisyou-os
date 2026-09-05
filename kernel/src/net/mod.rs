@@ -446,6 +446,10 @@ pub fn await_ping_reply(id: u16, seq: u16, timeout_ms: u64) -> bool {
 pub fn poll() -> usize {
     let mut processed = 0;
     let mut buf = [0u8; MAX_FRAME];
+    // Clear whatever the card has raised. The MSI handler counts messages and
+    // touches no device state, so this is where the cause register is retired
+    // — without it the card would raise one message and then go quiet.
+    e1000::with(|nic| nic.clear_interrupt_cause());
     loop {
         let Some(Some(n)) = e1000::with(|nic| nic.receive(&mut buf)) else {
             return processed;

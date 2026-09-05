@@ -25,6 +25,20 @@ pub const TIMER_VECTOR: u8 = PIC_1_OFFSET; // IRQ0
 pub const KEYBOARD_VECTOR: u8 = PIC_1_OFFSET + 1; // IRQ1
 pub const MOUSE_VECTOR: u8 = PIC_2_OFFSET + 4; // IRQ12
 
+// APIC-delivered vectors (V0.8). They sit well above the PIC's 32..47 window
+// so the two controllers can coexist: nothing here displaces a legacy line,
+// and a vector collision would be a silent misdelivery rather than an error.
+/// Local APIC timer, used to prove APIC delivery.
+pub const VECTOR_APIC_TIMER: u8 = 0x41;
+/// Message-signalled interrupts from the NIC.
+pub const VECTOR_MSI: u8 = 0x42;
+/// I/O APIC redirection target used for the programming round-trip. The entry
+/// stays masked, so nothing is delivered on it.
+pub const VECTOR_IOAPIC_PROBE: u8 = 0x43;
+/// Spurious-interrupt vector. The APIC raises these as normal behaviour; what
+/// would be a fault is having no handler installed for one.
+pub const VECTOR_SPURIOUS: u8 = 0xFF;
+
 /// Timer frequency: PIT programmed to ~100 Hz (divisor 11932 of 1.193182 MHz).
 pub const TICK_HZ: u64 = 100;
 const PIT_DIVISOR: u16 = 11932;
@@ -87,8 +101,35 @@ static IDT: Lazy<InterruptDescriptorTable> = Lazy::new(|| {
     }
     idt[KEYBOARD_VECTOR].set_handler_fn(keyboard_handler);
     idt[MOUSE_VECTOR].set_handler_fn(mouse_handler);
+    idt[VECTOR_APIC_TIMER].set_handler_fn(apic_timer_handler);
+    idt[VECTOR_MSI].set_handler_fn(msi_handler);
+    idt[VECTOR_SPURIOUS].set_handler_fn(spurious_handler);
     idt
 });
+
+/// Local APIC timer. Counts and acknowledges; the test reads the counter.
+extern "x86-interrupt" fn apic_timer_handler(_frame: InterruptStackFrame) {
+    crate::apic::TIMER_COUNT.fetch_add(1, Ordering::SeqCst);
+    crate::apic::eoi();
+}
+
+/// A message-signalled interrupt from a PCI device.
+///
+/// It deliberately does no device work: the network receive path stays polled
+/// (ADR-0015), so this handler exists to prove the message was delivered, not
+/// to become a second, interrupt-driven data path with its own locking rules.
+/// The device's own interrupt cause register is cleared by the polling side.
+extern "x86-interrupt" fn msi_handler(_frame: InterruptStackFrame) {
+    crate::apic::MSI_COUNT.fetch_add(1, Ordering::SeqCst);
+    crate::apic::eoi();
+}
+
+/// Spurious interrupt. No EOI: the architecture specifies that a spurious
+/// vector does not set the in-service bit, so acknowledging it would retire
+/// some *other* interrupt.
+extern "x86-interrupt" fn spurious_handler(_frame: InterruptStackFrame) {
+    crate::apic::SPURIOUS_COUNT.fetch_add(1, Ordering::SeqCst);
+}
 
 /// Install GDT + IDT (B080). Interrupts stay disabled until [`enable_timer`].
 pub fn init_descriptors() {

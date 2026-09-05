@@ -31,6 +31,11 @@ use kernel_core::update::{self, StoreState};
 pub enum PlatformError {
     /// Package failed parsing/digest/manifest verification.
     BadPackage,
+    /// The package is intact but not vouched for by a trusted key: unsigned,
+    /// signed by a stranger, or carrying a signature that does not verify.
+    /// Distinct from `BadPackage` because the operator response is different —
+    /// one is a damaged file, the other is a provenance decision.
+    UntrustedPackage,
     Storage,
     NotInstalled,
     /// Rollback with no previous committed version.
@@ -61,6 +66,71 @@ pub fn apps(fs: &FileSystem) -> Vec<String> {
     names
 }
 
+/// The package-signing keys this system trusts.
+///
+/// Compiled in rather than stored on disk: a trust root that lives in the
+/// mutable store could be replaced by whatever it is supposed to be
+/// protecting, which is not a root at all.
+///
+/// The single entry is the DEVELOPMENT key (see `kernel/build.rs`), whose
+/// seed is published in the source tree. That is a deliberate, documented
+/// property of a pre-alpha build: the mechanism is real and enforced, and the
+/// key it currently anchors is not a secret. Shipping this to real users
+/// requires provisioning a key that never enters the source tree.
+pub static TRUSTED_KEYS: &[[u8; kernel_core::ed25519::PUBLIC_KEY_LEN]] = &[DEV_PUBLIC_KEY];
+
+/// Public key of the development signer.
+///
+/// DERIVED at build time from the same seed `build.rs` signs the fixtures
+/// with, rather than transcribed here. A hand-copied key is a constant that
+/// can silently drift from the one actually signing, and the failure mode —
+/// every package refused as `untrusted_signer` — looks exactly like a working
+/// trust check doing its job.
+const DEV_PUBLIC_KEY: [u8; kernel_core::ed25519::PUBLIC_KEY_LEN] =
+    *include_bytes!(concat!(env!("OUT_DIR"), "/dev_signing_public_key.bin"));
+
+/// Check a parsed package against [`TRUSTED_KEYS`], reporting the precise
+/// reason on refusal.
+///
+/// Integrity (`pkg::parse`) has already passed by the time this runs, so a
+/// failure here is always about WHO vouched for the bytes, never about
+/// whether they are intact. Keeping the two apart is what lets the audit trail
+/// say `unsigned` versus `untrusted_signer` versus `bad_signature` — three
+/// very different operational situations.
+fn require_trusted(parsed: &pkg::Package<'_>, action: &'static str) -> Result<(), PlatformError> {
+    match pkg::verify_trust(parsed, TRUSTED_KEYS) {
+        Ok(()) => {
+            let signer = short_key(&parsed.signature.map(|s| s.public_key).unwrap_or_default());
+            crate::serial_println!("[ITISYOU:PKG] signature result=ok signer={signer}");
+            // A SUCCESSFUL verification is recorded too, not just a refusal.
+            // Provenance is the point of the audit trail: "this app ran, and
+            // its signature was checked against this key" is the record an
+            // operator needs afterwards, and it cannot be reconstructed from
+            // denials alone.
+            crate::audit::allowed(action, 0, Some(format!("signer={signer}")));
+            Ok(())
+        }
+        Err(e) => {
+            crate::serial_println!(
+                "[ITISYOU:PKG] signature result=refused reason={} action={action}",
+                e.name()
+            );
+            crate::audit::denied(action, 0);
+            Err(PlatformError::UntrustedPackage)
+        }
+    }
+}
+
+/// First four bytes of a key, hex — enough to tell signers apart in a log
+/// without printing a full key on every line.
+fn short_key(key: &[u8; kernel_core::ed25519::PUBLIC_KEY_LEN]) -> String {
+    let mut s = String::new();
+    for b in &key[..4] {
+        s.push_str(&format!("{b:02x}"));
+    }
+    s
+}
+
 /// Verify a package and STAGE it (write `.pkg` without the commit marker).
 /// Returns (app name, assigned store version). Used by `install` and by the
 /// interrupted-update simulation.
@@ -70,6 +140,9 @@ pub fn stage(fs: &mut FileSystem, pkg_bytes: &[u8]) -> Result<(String, u32), Pla
         crate::audit::denied("pkg_verify", 0);
         PlatformError::BadPackage
     })?;
+    // Authenticity, after integrity: an unsigned, foreign or forged package
+    // never reaches the store, so no later step has to re-decide the question.
+    require_trusted(&parsed, "pkg_verify_signature")?;
     let app = parsed.manifest.name.to_string();
     let st = state(fs, &app);
     let next = st
@@ -167,6 +240,10 @@ pub fn launch(fs: &FileSystem, app: &str, launcher_caps: u64) -> Result<u64, Pla
         crate::audit::denied("pkg_launch_verify", 0);
         PlatformError::BadPackage
     })?;
+    // Re-checked at launch as well as install: the store is mutable, so a
+    // package that was trustworthy when installed is not automatically
+    // trustworthy when run.
+    require_trusted(&parsed, "pkg_launch_signature")?;
     let granted = caps::delegate(launcher_caps, parsed.manifest.caps);
     let sandbox = Arc::new(alloc::vec![format!("/apps/{app}"), String::from("/etc"),]);
     let mut process =
