@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "packet_id": "W0-01",
+  "packet_name": "Freeze normative inputs",
+  "created_at_utc": "2026-09-05T23:08:56Z",
+  "packet_state": "STARTED",
+  "outcome": null,
+  "acceptance_authority": "Owner",
+  "repository": "leelaravind/itisyou-os",
+  "branch": "w0-01-freeze-normative-inputs",
+  "base_commit": "84d6b24b11036297173004ea972a1a05ba24da88",
+  "authority_chain": {
+    "architecture_source": "SPEC v0.3.1 FINAL/FROZEN",
+    "architecture_baseline": "Architecture Baseline v1.0",
+    "implementation_plan": "Implementation Plan v1.1"
+  },
+  "accepted_artifacts": [
+    {
+      "name": "AI_First_OS_Architecture_Baseline_v1.0.docx",
+      "role": "normative architecture baseline",
+      "sha256": "a08e0454c3022097021c941273dc91581b37702888efffaa89ef5d00c38f8324",
+      "baseline_errata": [
+        "Appendix B Auditor egress = none",
+        "Appendix B L2.5 egress = none; L2.5 has no network egress"
+      ],
+      "repository_target": "docs/normative/AI_First_OS_Architecture_Baseline_v1.0.docx",
+      "repository_presence": "PENDING_BINARY_IMPORT"
+    },
+    {
+      "name": "AI_First_OS_Detailed_Implementation_Plan_v1.1.docx",
+      "role": "execution plan derived exclusively from Baseline v1.0",
+      "sha256": "f2bd50ac8767e1d96fc692143ef73620a8f890319da96e6c13cab10c6be739bd",
+      "owner_gate": "PASS after dependency defect correction",
+      "dependency_erratum": {
+        "W2-07": "depends on W1-14, not W2-06",
+        "W2-16": "depends on W2-06 and W2-15",
+        "W2-17": "depends on W1-09, W2-06 and W2-16",
+        "W2-23": "depends on W2-06 and W2-22"
+      },
+      "repository_target": "docs/normative/AI_First_OS_Detailed_Implementation_Plan_v1.1.docx",
+      "repository_presence": "PENDING_BINARY_IMPORT"
+    }
+  ],
+  "historical_boundary": {
+    "rule": "Architecture and implementation material from the repository state at or before base_commit is historical/non-authoritative unless explicitly revalidated against Baseline v1.0. Historical material must not fill gaps or supply unstated defaults.",
+    "do_not_patch_into_current_authority": true
+  },
+  "w0_01_exit_condition": "The two accepted DOCX artifacts are present at their repository_target paths with exact SHA-256 matches, historical authority is marked read-only/non-authoritative, and the owner accepts the evidence bundle.",
+  "next_packet": "W0-02",
+  "next_packet_authorized": false
+}
