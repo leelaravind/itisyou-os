@@ -37,7 +37,16 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
   foreground command (`desktop`, a long `run`) starves the background services
   for its duration. (V0.10: userspace init and an always-on scheduler.)
 - Process model: spawn/wait/exit with a single blocking waiter per child; no
-  program arguments, no fork/exec, no process groups, no signals.
+  fork/exec, no process groups, no signals. Program arguments (V0.10) are
+  bounded and deliberately narrow: at most 16 arguments and 512 bytes, each
+  argument printable ASCII without spaces (no quoting, no UTF-8, no empty
+  arguments); no environment variables. From the console a line is still
+  capped at 256 bytes and 24 tokens, so the 512-byte limit is reachable only
+  through `spawn_args`. Pre-existing and unchanged: under the console's
+  foreground `run` a program runs alone, so its `wait` returns 0 at once
+  (the blocked program is simply resumed) and a spawned child runs only later,
+  when the console idles — a program that spawns and waits must be started
+  with `bg`, which is what the `args-bios` leg does.
 - IPC: bounded kernel message channels (4 channels, ≤256 B, ≤8 queued),
   non-blocking, addressed by integer id. No shared-memory or synchronous
   rendezvous IPC.

@@ -17,6 +17,8 @@
 //! | 16 |cap_check| handle, kind, scope   | 0 if valid, else ERR_PERM      |
 //! |17|cap_revoke | kind                  | 0, or ERR_PERM / ERR_INVAL     |
 //! |18|cap_restrict| kind, rights, ttl    | 0, or ERR_PERM / ERR_INVAL     |
+//! | 35 | args    | buf_ptr, buf_len      | block length, or ERR_2BIG/FAULT|
+//! |36|spawn_args| path_ptr, path_len, req | child pid, or ERR_*           |
 //!
 //! Capability enforcement (V0.8): every syscall past the basic runtime
 //! (write/exit/yield/getpid) resolves the caller's handle for the resource
@@ -99,6 +101,16 @@ pub const SYS_TCP_STATE: u64 = 33;
 /// Passive open on a local port (the scoped resource). The descriptor waits
 /// in LISTEN and becomes the connection when a peer's SYN arrives.
 pub const SYS_TCP_LISTEN: u64 = 34;
+/// Copy the caller's OWN argument block (V0.10, `kernel_core::progargs`
+/// encoding) into a user buffer. Like `getpid` and `uptime` it needs no
+/// capability: the block was chosen by whoever launched this process and
+/// handed to it, so reading it back conveys no authority and reveals nothing
+/// about any other process.
+pub const SYS_ARGS: u64 = 35;
+/// `spawn_caps` plus an argument block for the child (V0.10). Same Process
+/// capability gate and the same delegation rule as `spawn_caps`; the block is
+/// validated by the same code as the console's `run … -- args`.
+pub const SYS_SPAWN_ARGS: u64 = 36;
 
 pub const ERR_NOSYS: u64 = u64::MAX;
 pub const ERR_FAULT: u64 = u64::MAX - 1;
@@ -189,6 +201,14 @@ pub fn set_current_sandbox(
     prefixes: Option<alloc::sync::Arc<alloc::vec::Vec<alloc::string::String>>>,
 ) {
     *CURRENT_SANDBOX.lock() = prefixes;
+}
+
+/// The running process's argument block (V0.10), published for the quantum
+/// the same way as its handles and sandbox. `None` between quanta.
+static CURRENT_ARGS: spin::Mutex<Option<crate::user::Args>> = spin::Mutex::new(None);
+
+pub fn set_current_args(args: Option<crate::user::Args>) {
+    *CURRENT_ARGS.lock() = args;
 }
 
 fn current_sandbox() -> Option<alloc::sync::Arc<alloc::vec::Vec<alloc::string::String>>> {
@@ -365,12 +385,21 @@ extern "C" fn syscall_dispatch(a1: u64, a2: u64, a3: u64, nr: u64) -> u64 {
         }
         SYS_GETPID => CURRENT_PID.load(Ordering::SeqCst),
         SYS_UPTIME => crate::interrupts::ticks(),
+        // No capability: a process reading its own arguments (see SYS_ARGS).
+        SYS_ARGS => sys_args(a1, a2),
         SYS_SPAWN => match require_any(CapabilityKind::Process, rights::USE, "spawn") {
             Ok(()) => crate::proc::sys_spawn(a1, a2),
             Err(e) => e,
         },
         SYS_SPAWN_CAPS => match require_any(CapabilityKind::Process, rights::USE, "spawn_caps") {
             Ok(()) => crate::proc::sys_spawn_caps(a1, a2, a3),
+            Err(e) => e,
+        },
+        // The capability gate comes first, exactly as for spawn_caps: a
+        // process without the Process capability learns nothing about
+        // whether its argument block would have been accepted.
+        SYS_SPAWN_ARGS => match require_any(CapabilityKind::Process, rights::USE, "spawn_args") {
+            Ok(()) => crate::proc::sys_spawn_args(a1, a2, a3),
             Err(e) => e,
         },
         SYS_WAIT => match require_any(CapabilityKind::Process, rights::USE, "wait") {
@@ -468,6 +497,30 @@ extern "C" fn syscall_dispatch(a1: u64, a2: u64, a3: u64, nr: u64) -> u64 {
             NOSYS_COUNT.fetch_add(1, Ordering::SeqCst);
             ERR_NOSYS
         }
+    }
+}
+
+/// args(buf_ptr, buf_len): copy the caller's argument block (V0.10).
+///
+/// Returns the block length (0 for a process launched without arguments).
+/// All-or-nothing: if `buf_len` is smaller than the block the call returns
+/// `ERR_2BIG` and writes NOTHING — a truncated block could end mid-argument
+/// and be misread as a shorter, different argument list. A caller that wants
+/// the whole block can always pass `progargs::MAX_BLOCK` (512) bytes. The copy
+/// goes through `copy_to_user`, so the buffer is validated against the active
+/// address space and written inside the declared SMAP window.
+fn sys_args(buf_ptr: u64, buf_len: u64) -> u64 {
+    let Some(args) = CURRENT_ARGS.lock().clone() else {
+        // Only reachable if the syscall layer ran with no process published.
+        return ERR_INVAL;
+    };
+    let block = args.bytes();
+    if block.len() as u64 > buf_len {
+        return ERR_2BIG;
+    }
+    match copy_to_user(buf_ptr, block) {
+        Ok(n) => n,
+        Err(e) => e,
     }
 }
 

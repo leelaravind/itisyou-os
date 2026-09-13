@@ -276,7 +276,7 @@ fn wake_waiters(table: &mut Table, child: u64, status: u64) {
 /// parent's capabilities and FS sandbox exactly (V0.7) — spawning can never
 /// amplify authority.
 pub fn sys_spawn(path_ptr: u64, path_len: u64) -> u64 {
-    spawn_common(path_ptr, path_len, u64::MAX)
+    spawn_common(path_ptr, path_len, u64::MAX, user::Args::empty(), "spawn")
 }
 
 /// spawn_caps(path_ptr, path_len, requested) — like spawn, but the child
@@ -284,10 +284,69 @@ pub fn sys_spawn(path_ptr: u64, path_len: u64) -> u64 {
 /// than the parent holds silently yields only the intersection — a child can
 /// NEVER hold what its parent lacked).
 pub fn sys_spawn_caps(path_ptr: u64, path_len: u64, requested: u64) -> u64 {
-    spawn_common(path_ptr, path_len, requested)
+    spawn_common(path_ptr, path_len, requested, user::Args::empty(), "spawn")
 }
 
-fn spawn_common(path_ptr: u64, path_len: u64, requested: u64) -> u64 {
+/// Size of the `spawn_args` request: `[requested:8, args_ptr:8, args_len:8]`.
+const SPAWN_ARGS_REQ: u64 = 24;
+
+/// spawn_args(path_ptr, path_len, req_ptr) — `spawn_caps` plus an argument
+/// block for the child (V0.10). `req` is `[requested:8, args_ptr:8,
+/// args_len:8]`, little-endian; the syscall ABI has three argument registers,
+/// so the extra operands travel in memory like `fs_read`'s request.
+///
+/// Delegation is exactly `spawn_caps`'s (the Process capability was checked
+/// by the dispatcher). The block is refused BEFORE anything is loaded, with
+/// the same validator the console uses: more than 16 arguments or more than
+/// 512 bytes is `ERR_2BIG` (POSIX's "argument list too long"); an empty
+/// argument, a space or non-printable byte, or a missing terminator is
+/// `ERR_INVAL`. A block longer than 512 bytes is refused without being copied
+/// at all.
+pub fn sys_spawn_args(path_ptr: u64, path_len: u64, req_ptr: u64) -> u64 {
+    use kernel_core::progargs::{ArgError, MAX_BLOCK};
+    let req = match crate::syscall::copy_from_user(req_ptr, SPAWN_ARGS_REQ, SPAWN_ARGS_REQ) {
+        Ok(r) => r,
+        Err(e) => return e,
+    };
+    let word = |i: usize| u64::from_le_bytes(req[i * 8..i * 8 + 8].try_into().unwrap_or([0; 8]));
+    let (requested, args_ptr, args_len) = (word(0), word(1), word(2));
+    let block = match crate::syscall::copy_from_user(args_ptr, args_len, MAX_BLOCK as u64) {
+        Ok(b) => b,
+        Err(e) => {
+            if e == ERR_2BIG {
+                crate::serial_println!(
+                    "[ITISYOU:INFO] spawn_args refused reason={} len={args_len}",
+                    ArgError::TooLong.name()
+                );
+            }
+            return e;
+        }
+    };
+    let args = match user::Args::new(&block) {
+        Ok(a) => a,
+        Err(err) => {
+            crate::serial_println!(
+                "[ITISYOU:INFO] spawn_args refused reason={} len={args_len}",
+                err.name()
+            );
+            return match err {
+                ArgError::TooMany | ArgError::TooLong => ERR_2BIG,
+                ArgError::Empty | ArgError::BadByte | ArgError::Unterminated => {
+                    crate::syscall::ERR_INVAL
+                }
+            };
+        }
+    };
+    spawn_common(path_ptr, path_len, requested, args, "spawn_args")
+}
+
+fn spawn_common(
+    path_ptr: u64,
+    path_len: u64,
+    requested: u64,
+    args: user::Args,
+    action: &'static str,
+) -> u64 {
     let bytes = match crate::syscall::copy_from_user(path_ptr, path_len, SPAWN_PATH_MAX) {
         Ok(b) => b,
         Err(e) => return e,
@@ -320,8 +379,15 @@ fn spawn_common(path_ptr: u64, path_len: u64, requested: u64) -> u64 {
                 child_caps,
                 crate::interrupts::ticks(),
             );
+            let argc = args.count();
+            child.args = args;
             let pid = admit(child);
-            crate::audit::allowed("spawn", child_caps, Some(alloc::string::String::from(path)));
+            let detail = if action == "spawn" {
+                alloc::string::String::from(path)
+            } else {
+                alloc::format!("{path} argc={argc}")
+            };
+            crate::audit::allowed(action, child_caps, Some(detail));
             pid
         }
         Err(_) => ERR_NOENT,
