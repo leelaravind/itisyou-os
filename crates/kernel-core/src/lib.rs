@@ -13,6 +13,7 @@ pub mod audit_chain;
 pub mod bitmap;
 pub mod capability;
 pub mod caps;
+pub mod cosched;
 pub mod ed25519;
 pub mod elf;
 pub mod font;
