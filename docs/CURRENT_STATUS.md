@@ -28,10 +28,10 @@ offline root, certified signing keys limited by name scope and release-epoch
 window, a signed revocation list (ADR-0021); Ring 3 TCP listen; and guard
 pages under the kernel's static stacks (HARD09-001). Every V0.9 feature is
 verified locally — last full gate `7367b89`: VERIFY OK, 36/36 QEMU legs, 366
-host tests. The release (CI, tag, new download) is pending: GitHub Actions is
-refusing to start jobs on this account for a billing reason. The website
-(deployed 13:36, `b0c4d05`) shows V0.9 as in development with that evidence;
-the download is still `v0.8.1`.
+host tests. Released as v0.9.0: release commit `f06673e`, CI run
+`34760629701` green (all four jobs), tag on the stamp commit `997dbb4` (CI
+`34761869462` green); production `1ba155b6` serves the v0.9.0 images and keeps
+v0.8.1 downloadable.
 
 ## V0.10 (started on a branch)
 

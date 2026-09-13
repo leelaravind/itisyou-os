@@ -139,9 +139,8 @@ a fix for broadcast UDP checksums, and audit anchoring against an off-disk
 witness, IPv6 foundations (client and responder paths), and TCP streams from
 Ring 3 verified against the host's own TCP stack with loss injected, and the
 package-signing key hierarchy (offline root, scoped certificates, signed
-revocation). Every V0.9 feature row is verified; what remains is the release
-itself (CI green on the release commit, website, download, tag). Status per
-row in `docs/REQUIREMENTS.md`.
+revocation). Released as v0.9.0 on 2026-09-13: release commit `f06673e`, CI run
+`34760629701`; per-row evidence in `docs/REQUIREMENTS.md`.
 
 - **TCP** with a connection state machine (active and passive open, orderly
   close, reset), a retransmission timer with backoff, and a receive window;
