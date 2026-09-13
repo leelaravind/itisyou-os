@@ -36,6 +36,8 @@ pub enum ProcState {
     Sleeping {
         until: u64,
     },
+    /// Waiting for a console line (V0.10, `console_read`).
+    ConsoleWait,
     Exited(u64),
     Faulted {
         vector: u8,
@@ -390,6 +392,8 @@ fn finish(
 /// about the exit.
 pub fn release_owned(pid: u64) {
     crate::console_out::flush_owner(pid);
+    // The console's input returns to the kernel if this process had it.
+    crate::console::release(pid);
     crate::gfx::compositor::remove_owned(pid);
     crate::capability::revoke_owner(pid);
     // A dead program must not leave a UDP port bound or a TCP connection
@@ -588,6 +592,27 @@ fn wake_due_sleepers(table: &mut Table, now: u64) -> bool {
         }
     }
     still
+}
+
+/// `console_read` found no line: the caller waits for one (V0.10).
+pub fn block_on_console(pid: u64) {
+    if let Some(s) = TABLE.lock().as_mut().and_then(|t| t.slots.get_mut(&pid)) {
+        s.state = ProcState::ConsoleWait;
+    }
+}
+
+/// A console line is ready for `pid`: make it runnable if it was waiting.
+pub fn wake_console(pid: u64) {
+    let mut guard = TABLE.lock();
+    let Some(table) = guard.as_mut() else {
+        return;
+    };
+    if let Some(s) = table.slots.get_mut(&pid) {
+        if s.state == ProcState::ConsoleWait {
+            s.state = ProcState::Runnable;
+            table.runq.push_back(pid);
+        }
+    }
 }
 
 /// What the console's `kill` did.

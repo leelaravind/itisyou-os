@@ -1,0 +1,18 @@
+cargo-features = ["per-package-target"]
+
+[package]
+name = "user-sh"
+version.workspace = true
+edition.workspace = true
+forced-target = "x86_64-unknown-none"
+description = "/bin/sh: the Ring 3 shell (V0.10)."
+
+[dependencies]
+ulib = { path = "../ulib" }
+kernel-core = { path = "../../crates/kernel-core" }
+
+[[bin]]
+name = "user-sh"
+path = "src/main.rs"
+test = false
+bench = false

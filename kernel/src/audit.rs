@@ -306,6 +306,13 @@ pub fn denied_capability(
     );
 }
 
+/// Record a denial with a short reason (V0.10), for refusals that are not
+/// capability checks — e.g. `console_read` by a process that does not own
+/// the console's input.
+pub fn denied_reason(action: &'static str, cap: u64, reason: &'static str) {
+    push(action, cap, false, Some(alloc::format!("reason={reason}")));
+}
+
 /// Record a permitted privileged action (with optional short detail).
 pub fn allowed(action: &'static str, cap: u64, detail: Option<String>) {
     push(action, cap, true, detail);

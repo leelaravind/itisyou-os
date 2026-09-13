@@ -83,6 +83,15 @@ pub fn write(pid: u64, bytes: &[u8]) {
 }
 
 /// Flush `pid`'s partial line (a newline is appended) and release its slot.
+/// Emit `pid`'s partial line without a newline (V0.10): the prompt a
+/// program shows before it reads a line. Markers are neutralized as always.
+pub fn flush_prompt(pid: u64) {
+    let mut slots = OUT.lock();
+    for slot in slots.iter_mut().filter(|s| s.used && s.pid == pid) {
+        slot.buf.flush_partial(emit);
+    }
+}
+
 pub fn flush_owner(pid: u64) {
     let mut slots = OUT.lock();
     for slot in slots.iter_mut().filter(|s| s.used && s.pid == pid) {

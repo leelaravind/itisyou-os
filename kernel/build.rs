@@ -58,6 +58,7 @@ fn main() {
         "uaccess-probe",
         "proc-probe",
         "sysinit",
+        "sh",
     ] {
         println!(
             "cargo::rerun-if-changed={}",
@@ -182,6 +183,8 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
             "user-proc-probe",
             "-p",
             "user-sysinit",
+            "-p",
+            "user-sh",
         ])
         .arg("--target-dir")
         .arg(&target_dir)
@@ -244,6 +247,7 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
         ("user-uaccess-probe", "bin/uaccess-probe"),
         ("user-proc-probe", "bin/proc-probe"),
         ("user-sysinit", "sbin/init"),
+        ("user-sh", "bin/sh"),
     ];
     entries.push(("bin/".to_string(), Vec::new(), true));
     entries.push(("sbin/".to_string(), Vec::new(), true));
