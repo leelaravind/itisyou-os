@@ -95,7 +95,6 @@ export const MILESTONES: Milestone[] = [
     id: 'V0.8',
     name: 'Networking, Authenticity & Hardening',
     status: 'verified',
-    current: true,
     summary:
       'The first milestone whose inputs come from somewhere other than this machine. An e1000 driver with polled descriptor rings; ARP, IPv4, ICMP echo (answered as well as sent), UDP and DNS; Ring 3 sockets behind a capability scoped to a port. Packages are now authenticated as well as integrity-checked: Ed25519 signatures over a context, the declared lengths and the content digest, against a compiled-in trust root - an unsigned package, one signed by a stranger and one with a forged signature are three DIFFERENT refusals. Userspace can write to the persistent store under the write right and its sandbox, with an overwrite that is one crash-atomic commit. The local APIC, I/O APIC and MSI-X are up with real delivery evidence, xHCI enumerates and reads HID input, the audit trail is hash-chained and survives reboots, and SMEP/SMAP/UMIP now enforce kernel/user separation in the CPU rather than only in the page tables. NOT delivered, and said so: TCP, IPv6 and DHCP. v0.8.1 closed the release out: its kernel now names the version the tag does, and the build fails if the two ever drift again.',
     components: [
@@ -107,7 +106,8 @@ export const MILESTONES: Milestone[] = [
   {
     id: 'V0.9',
     name: 'Transport, Interrupt Cutover & Trust',
-    status: 'planned',
+    status: 'in-development',
+    current: true,
     summary:
       'TCP with a connection state machine, a retransmission timer and a receive window, verified against a real host TCP stack with loss injected; a DHCP client and IPv6 foundations (NDP, SLAAC, ICMPv6); ACPI table discovery and the I/O APIC cutover that retires the 8259 PIC, plus ACPI power-off; a package-signing key hierarchy with rotation and revocation whose private keys never enter the source tree; and anchoring the audit head outside the audited disk.',
     components: ['TCP, DHCP, IPv6 foundations', 'ACPI + I/O APIC cutover, PIC retired', 'Signing-key hierarchy; audit anchoring'],

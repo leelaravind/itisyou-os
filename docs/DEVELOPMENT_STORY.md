@@ -661,3 +661,47 @@ before the tag rather than left as the release — and the download page says so
 instead of swapping the file silently. A new CI job builds every image from two
 clean checkouts in different directories and fails on any difference, so the
 property is now checked on every push rather than asserted once.
+
+---
+
+## 2026-09-13 — Session 4, continued: V0.9 begins (interrupt cutover, power-off, DHCP)
+
+**Starting state.** `v0.8.1` tagged on `6c5415c`; working version `0.9.0-dev`.
+
+**ACPI first, because the cutover depends on it.** V0.8 could only program a
+masked I/O APIC entry at the architectural address; it did not know that QEMU
+delivers the PIT's IRQ0 on GSI 2. `kernel_core::acpi` parses the RSDP, the
+RSDT/XSDT, the MADT and the FADT, and finds `\_S5_` in the DSDT by pattern —
+refusing zero-length MADT entries (an infinite loop for a naive walker), tables
+whose lengths or checksums lie, and any `\_S5_` it would have to guess at. The
+BIOS and UEFI firmware present genuinely different tables (ACPI 1.0/RSDT/PM1a
+`0x604` versus 2.0/XSDT/`0xb004`), so both paths are exercised.
+
+**The cutover worked the first time — and was wrong.** Timer, keyboard and mouse
+moved to the I/O APIC with their old vectors, both PICs and LINT0 masked, every
+leg green. But the new `irq` delivery proof counted 41 ticks in 200 ms where
+100 Hz gives 20, so the cutover now measures the tick rate on both sides of
+itself: `before=10 after=20`. QEMU's edge-triggered I/O APIC was delivering the
+PIT's mode-3 square wave twice per period. Nothing functional failed — every
+quantum and every deadline would simply have been half as long. The PIT now
+runs in mode 2 (rate generator, one edge per period; what Linux uses):
+`before=10 after=10 rate_preserved=true`. The lesson: an interrupt path is not
+verified by "the machine still boots"; it is verified by counting.
+
+**The adversarial half of the proof.** With the timer's I/O APIC entry masked
+the tick count must stop dead (`masked_ticks=0`) and resume when unmasked — the
+only way to show nothing else is still delivering the timer.
+
+**Power-off is real now.** `poweroff` writes `SLP_TYP|SLP_EN` to the FADT's PM1
+control block, enabling ACPI mode through `SMI_CMD` first where firmware has not
+(SeaBIOS hands over in legacy mode, OVMF in ACPI mode — both paths seen).
+
+**DHCP exposed a V0.8 bug.** Against QEMU's own DHCP server the client sent
+DISCOVERs and received five ~590-byte replies, all counted `rx_malformed`. The
+IPv4 layer was handing the UDP layer the host's *own* address as the checksum
+pseudo-header's destination instead of the destination in the header, so every
+broadcast datagram failed its checksum. V0.8's harness peer only ever sent
+unicast, so the bug was invisible. Fixed; the DHCP leg is the regression test.
+That leg runs QEMU's DHCP server on 10.0.9.0/24 — not the guest's static plan —
+so the gateway is unreachable before the lease and reachable after, and the
+address can only have come from DHCP.

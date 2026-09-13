@@ -1,12 +1,12 @@
 {
-  "version": "0.8.1",
+  "version": "0.9.0-dev",
   "maturity": "pre-alpha",
   "architecture": "x86_64",
   "environment": "QEMU",
-  "milestone": "V0.8 \u2014 Networking, Authenticity & Hardening (v0.8.1 release-integrity closeout)",
-  "commit": "bf32b5337d9503b47bb4cece7d5436a0b1804cca",
-  "lastVerifiedAt": "2026-09-13T09:56:20Z",
-  "verification": "verified",
+  "milestone": "V0.9 \u2014 Transport, Interrupt Cutover & Trust",
+  "commit": null,
+  "lastVerifiedAt": null,
+  "verification": "in-development",
   "modules": [
     {
       "id": "boot",
@@ -40,7 +40,7 @@
     },
     {
       "id": "interrupts",
-      "name": "GDT/IDT, exceptions, PIC/PIT timer",
+      "name": "GDT/IDT, exceptions, PIT timer (via I/O APIC)",
       "status": "verified"
     },
     {
@@ -226,12 +226,12 @@
     {
       "id": "net-tcp",
       "name": "TCP",
-      "status": "planned"
+      "status": "in-development"
     },
     {
       "id": "net-dhcp",
-      "name": "DHCP and IPv6",
-      "status": "planned"
+      "name": "DHCP client (lease applied, verified against QEMU)",
+      "status": "verified"
     },
     {
       "id": "fs-write",
@@ -250,7 +250,7 @@
     },
     {
       "id": "irq-apic",
-      "name": "Local APIC, I/O APIC and MSI-X delivery",
+      "name": "Local APIC + I/O APIC line routing (8259 PIC retired) + MSI-X",
       "status": "verified"
     },
     {
@@ -266,6 +266,31 @@
     {
       "id": "pkg-signing",
       "name": "Ed25519 package signatures + trusted-key verification",
+      "status": "verified"
+    },
+    {
+      "id": "acpi",
+      "name": "ACPI discovery (RSDP/XSDT/MADT/FADT, validated)",
+      "status": "verified"
+    },
+    {
+      "id": "power-s5",
+      "name": "ACPI S5 soft power-off",
+      "status": "verified"
+    },
+    {
+      "id": "net-ipv6",
+      "name": "IPv6 foundations (NDP, SLAAC, ICMPv6)",
+      "status": "planned"
+    },
+    {
+      "id": "pkg-keys",
+      "name": "Signing-key hierarchy (rotation, revocation, off-tree keys)",
+      "status": "planned"
+    },
+    {
+      "id": "release-artifact",
+      "name": "Reproducible, checksummed public boot images",
       "status": "verified"
     }
   ]

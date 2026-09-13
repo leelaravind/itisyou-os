@@ -72,7 +72,7 @@ Write-Output '=== QEMU shell interaction (BIOS) ==='
     '--send', 'panic-test', '--send', 'shutdown',
     # The running kernel must name the version the release claims
     # (Cargo workspace version == status/current.json; check-consistency.mjs).
-    '--require', 'itisyou-os 0.8.1',
+    '--require', 'itisyou-os 0.9.0-dev',
     '--require', 'task 0: kmain',
     '--require', 'RING3-DONE',
     '--require', 'run: /bin/init: Exit(0)',
@@ -346,6 +346,31 @@ Write-Output '=== QEMU networking: e1000 + ARP/IPv4/ICMP/UDP/DNS (BIOS) ==='
     '--require', 'rx_malformed=3 rx_unwanted=2',
     '--timeout-secs', '240', '--label', 'net-bios')
 
+Write-Output '=== QEMU DHCP against QEMU user-mode networking (BIOS) ==='
+# QEMU's DHCP server is an independent implementation, and it is told to serve
+# 10.0.9.0/24 - NOT the guest's static 10.0.2.15/24 plan. So the gateway is
+# unreachable until the lease is applied (the first ping must fail), and
+# 10.0.9.50 can only come from the lease. The reply is a broadcast, which also
+# guards the V0.9 fix for broadcast UDP (V0.8 checksummed every broadcast
+# against the host's own address and dropped it as malformed).
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--net-user', '--net-user-extra', 'net=10.0.9.0/24,dhcpstart=10.0.9.50',
+    '--expect', 'B200',
+    '--send', 'ping 10.0.9.2 1',
+    '--send', 'dhcp',
+    '--send', 'net',
+    '--send', 'ping 10.0.9.2 2',
+    '--send', 'shutdown',
+    '--require', 'PING-SUMMARY target=10.0.9.2 sent=1 received=0',
+    '--require', 'dhcp_offer ip=10.0.9.50 server=10.0.9.2',
+    '--require', 'dhcp_lease ip=10.0.9.50 mask=255.255.255.0 router=10.0.9.2 dns=10.0.9.3 server=10.0.9.2 lease_secs=86400',
+    '--require', 'DHCP-OK ip=10.0.9.50',
+    '--require', 'net: mac=52:54:00:12:34:56 ip=10.0.9.50 mask=255.255.255.0 gateway=10.0.9.2',
+    '--require', 'PING-SUMMARY target=10.0.9.2 sent=2 received=2',
+    '--require', 'action=dhcp_lease cap=0x0 result=ok',
+    '--forbid', 'DHCP-FAILED',
+    '--timeout-secs', '180', '--label', 'net-dhcp-bios')
+
 Write-Output '=== QEMU hardening: SMEP/SMAP/UMIP, W^X, stack guard (BIOS) ==='
 # Every leg in this matrix already runs on a CPU that advertises SMEP, SMAP and
 # UMIP (see the runner's -cpu line), so the whole suite passing is itself
@@ -386,31 +411,69 @@ Write-Output '=== QEMU hardening: SMEP/SMAP/UMIP, W^X, stack guard (BIOS) ==='
     '--forbid', 'STACKGUARD-LEAK',
     '--timeout-secs', '240', '--label', 'harden-bios')
 
-Write-Output '=== QEMU interrupt modernization: APIC + I/O APIC + MSI-X (BIOS) ==='
-# The local APIC comes up ALONGSIDE the legacy PIC, which keeps serving the
-# timer and PS/2 input; the leg asserts both, so "the APIC works" can never be
-# read as "the verified V0.7 path was replaced".
-#
-# Two of the three claims are delivery, not configuration:
-#   * a one-shot local-APIC timer interrupt arrives on vector 0x41;
-#   * a real NVMe block read's completion raises MSI-X on vector 0x42.
-# The third, the I/O APIC, is programmed and read back but left MASKED - line
-# IRQs stay on the PIC. The assertion says `masked=true` so the evidence
-# cannot be mistaken for line-based delivery through the I/O APIC.
+Write-Output '=== QEMU interrupt routing: ACPI MADT + I/O APIC cutover + MSI-X (BIOS) ==='
+# V0.9: the timer, PS/2 keyboard and mouse run through the I/O APIC on the
+# routes the ACPI MADT declares (QEMU: IRQ0 -> GSI 2), and the 8259s plus the
+# local APIC's LINT0 are masked. Every OTHER leg in this matrix already runs
+# on the new path; this one asserts the path is what it claims to be:
+#   * the routes read back from the I/O APIC, the PIC masks read back 0xff/0xff;
+#   * the timer's tick rate is the same before and after the cutover (a line
+#     delivered twice would double every quantum - which is exactly what PIT
+#     mode 3 did through this path before the fix);
+#   * adversarially: with the timer's I/O APIC entry masked the tick count
+#     stops dead, and it moves again when unmasked - so nothing else is
+#     delivering the timer;
+#   * a one-shot local-APIC timer interrupt, and MSI-X raised by a real NVMe
+#     block read's completion, still arrive.
 & $runner @('--image', 'target/images/itisyou-kernel-bios.img',
     '--net', '--nvme',
     '--expect', 'B190', '--expect', 'B200', '--expect', 'B210',
+    '--send', 'acpi',
     '--send', 'irq',
     '--send', 'shutdown',
+    '--require', '[ITISYOU:ACPI] rsdp_revision=0 root=RSDT',
+    '--require', 'madt=ok fadt=ok s5=ok',
+    '--require', 'irq0_gsi=2',
     '--require', 'lapic_ready id=0',
-    '--require', 'ioapic id=0',
-    '--require', 'irq=1 vector=0x43 readback=ok masked=true',
-    '--require', 'legacy PIC path, still primary',
+    '--require', 'ioapic id=0 base=0xfec00000 source=madt',
+    '--require', 'ioapic_route isa=0 gsi=2 vector=0x20 trigger=edge polarity=high masked=false readback=ok',
+    '--require', 'ioapic_route isa=1 gsi=1 vector=0x21',
+    '--require', 'ioapic_route isa=12 gsi=12 vector=0x2c',
+    '--require', 'pic_retired masks=0xff/0xff lint0=masked legacy_lines=ioapic',
+    '--require', 'rate_preserved=true',
+    '--require', 'irq: legacy_lines=ioapic pic_masks=0xff/0xff',
+    '--require', 'masked_ticks=0',
+    '--require', 'result=ioapic_only',
+    '--forbid', 'result=FAILED',
+    '--forbid', 'rate_preserved=false',
     '--require', 'irq: apic_timer delivered=true count=1 vector=0x41',
     '--require', 'msix_enabled dev=00:04.0 vector=0x42',
     '--require', 'irq: msix armed=true block_read=true delivered=true',
     '--require', 'spurious=0',
     '--timeout-secs', '240', '--label', 'irq-bios')
+
+Write-Output '=== QEMU ACPI S5 power-off (BIOS + UEFI) ==='
+# `poweroff` writes SLP_TYP|SLP_EN to the PM1 control block the FADT names,
+# with SLP_TYP from the DSDT's \_S5_ - not QEMU's test-exit device, which is
+# what `shutdown` uses. Success is QEMU exiting on its own after the request;
+# if the machine were still running 500 ms later the kernel prints
+# `poweroff: failed`, which is forbidden. BIOS (ACPI 1.0, RSDT, PIIX4 at
+# 0x604) and UEFI (ACPI 2.0, XSDT, 0xb004) exercise two different table sets.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B210',
+    '--send', 'poweroff',
+    '--require', '[ITISYOU:POWER] s5 request pm1a_cnt=0x604 slp_typ=0',
+    '--forbid', 'poweroff: failed',
+    '--timeout-secs', '120', '--label', 'acpi-poweroff-bios')
+if (Test-Path 'target/images/itisyou-kernel-uefi.img') {
+    & $runner @('--image', 'target/images/itisyou-kernel-uefi.img', '--uefi',
+        '--expect', 'B210',
+        '--send', 'poweroff',
+        '--require', 'root=XSDT',
+        '--require', '[ITISYOU:POWER] s5 request pm1a_cnt=0xb004 slp_typ=0',
+        '--forbid', 'poweroff: failed',
+        '--timeout-secs', '120', '--label', 'acpi-poweroff-uefi')
+}
 
 Write-Output '=== QEMU userspace filesystem writes (BIOS, two boots) ==='
 # V0.8 capability-scoped Ring 3 writes to the persistent ITFS store. Boot 1

@@ -16,15 +16,17 @@
 //!   is the interesting claim — MSI needs the local APIC to be enabled, the
 //!   message address to encode the right destination, and bus mastering to
 //!   work, so a delivered MSI exercises the whole chain.
-//! * The **I/O APIC** is discovered, mapped, and a redirection entry is
-//!   programmed and read back. Line-based IRQs stay on the PIC: rerouting the
-//!   timer or the keyboard would put a verified V0.7 path at risk for no gain
-//!   this milestone needs. `docs/KNOWN_LIMITATIONS.md` says so plainly rather
-//!   than letting "IOAPIC support" imply more than was done.
+//! * The **I/O APIC** (V0.9) now carries the line-based IRQs. Its address and
+//!   the GSI each ISA IRQ arrives on come from the ACPI MADT (QEMU routes the
+//!   PIT's IRQ0 to GSI 2), the timer, keyboard and mouse keep their vectors,
+//!   and both 8259s plus the local APIC's LINT0 (the virtual-wire input the PIC
+//!   used) are masked — so the legacy path cannot deliver even by accident.
+//!   V0.8 only programmed and read back one masked entry; see ADR-0019.
 
 use crate::memory::paging;
 use crate::serial_println;
 use core::sync::atomic::{AtomicU64, Ordering};
+use kernel_core::acpi::Madt;
 use kernel_core::pci::Bar;
 use spin::Mutex;
 use x86_64::registers::model_specific::Msr;
@@ -40,6 +42,7 @@ const LAPIC_VERSION: u64 = 0x030;
 const LAPIC_EOI: u64 = 0x0B0;
 const LAPIC_SVR: u64 = 0x0F0;
 const LAPIC_LVT_TIMER: u64 = 0x320;
+const LAPIC_LVT_LINT0: u64 = 0x350;
 const LAPIC_TIMER_INIT: u64 = 0x380;
 const LAPIC_TIMER_CURRENT: u64 = 0x390;
 const LAPIC_TIMER_DIVIDE: u64 = 0x3E0;
@@ -49,11 +52,12 @@ const SVR_ENABLE: u32 = 1 << 8;
 /// LVT bit 16 masks the entry.
 const LVT_MASKED: u32 = 1 << 16;
 
-/// The I/O APIC's architectural address on every PC-class machine QEMU
-/// emulates. Discovering it through ACPI would be the general answer; this
-/// kernel already takes the RSDP from the bootloader and does not yet parse
-/// the MADT, so the fixed address is used and the assumption is stated.
+/// The I/O APIC's architectural address, used only when ACPI supplied no MADT
+/// (V0.9 reads the real address from the MADT and says which one it used).
 const IOAPIC_BASE_PHYS: u64 = 0xFEC0_0000;
+/// Redirection-entry bits.
+const REDIR_ACTIVE_LOW: u32 = 1 << 13;
+const REDIR_LEVEL: u32 = 1 << 15;
 const IOAPIC_REGSEL: u64 = 0x00;
 const IOAPIC_WIN: u64 = 0x10;
 const IOAPIC_REG_ID: u32 = 0x00;
@@ -71,10 +75,18 @@ const MSI_ADDRESS_BASE: u32 = 0xFEE0_0000;
 struct Apic {
     lapic: u64,
     ioapic: Option<u64>,
+    /// First GSI this I/O APIC serves, and how many redirection entries it has.
+    gsi_base: u32,
+    entries: u32,
     apic_id: u8,
 }
 
 static APIC: Mutex<Option<Apic>> = Mutex::new(None);
+
+/// The local APIC's mapped base, published for the EOI path. Interrupt
+/// handlers must never take the `APIC` lock: the code they interrupted may
+/// hold it, and on one CPU that is a deadlock.
+static LAPIC_BASE: AtomicU64 = AtomicU64::new(0);
 
 /// Interrupts delivered through the local APIC timer.
 pub static TIMER_COUNT: AtomicU64 = AtomicU64::new(0);
@@ -100,8 +112,9 @@ fn write_lapic(base: u64, offset: u64, value: u32) {
 /// below that priority, so the symptom is "interrupts stopped", which is why
 /// the counters below exist.
 pub fn eoi() {
-    if let Some(apic) = APIC.lock().as_ref() {
-        write_lapic(apic.lapic, LAPIC_EOI, 0);
+    let base = LAPIC_BASE.load(Ordering::Relaxed);
+    if base != 0 {
+        write_lapic(base, LAPIC_EOI, 0);
     }
 }
 
@@ -146,14 +159,34 @@ pub fn init() -> bool {
     let apic_id = (read_lapic(lapic, LAPIC_ID) >> 24) as u8;
     let version = read_lapic(lapic, LAPIC_VERSION);
 
-    let ioapic = paging::map_mmio(IOAPIC_BASE_PHYS, 0x1000).ok();
-    if ioapic.is_none() {
-        serial_println!("[ITISYOU:IRQ] ioapic map_failed");
+    // Where the I/O APIC is: the MADT's word when ACPI gave one, the
+    // architectural address otherwise — and the log says which.
+    let madt_ioapic = crate::acpi::madt().and_then(|m| m.ioapics.iter().flatten().next().copied());
+    let (ioapic_phys, gsi_base, source) = match madt_ioapic {
+        Some(a) => (a.address as u64, a.gsi_base, "madt"),
+        None => (IOAPIC_BASE_PHYS, 0, "architectural"),
+    };
+    let ioapic = paging::map_mmio(ioapic_phys, 0x1000).ok();
+    let entries = match ioapic {
+        Some(base) => ((ioapic_read(base, IOAPIC_REG_VERSION) >> 16) & 0xFF) + 1,
+        None => {
+            serial_println!("[ITISYOU:IRQ] ioapic map_failed phys={ioapic_phys:#x}");
+            0
+        }
+    };
+    if let Some(base) = ioapic {
+        serial_println!(
+            "[ITISYOU:IRQ] ioapic id={} base={ioapic_phys:#x} source={source} gsi_base={gsi_base} entries={entries}",
+            (ioapic_read(base, IOAPIC_REG_ID) >> 24) & 0x0F,
+        );
     }
 
+    LAPIC_BASE.store(lapic, Ordering::SeqCst);
     *APIC.lock() = Some(Apic {
         lapic,
         ioapic,
+        gsi_base,
+        entries,
         apic_id,
     });
     serial_println!(
@@ -181,43 +214,199 @@ fn ioapic_write(base: u64, reg: u32, value: u32) {
     }
 }
 
-/// Report the I/O APIC's identity and program one redirection entry, reading
-/// it back to prove the register window really works.
+/// The vector a legacy ISA IRQ has always used (the PIC's remapped window), so
+/// the cutover changes the controller, not the IDT.
+fn isa_vector(irq: u8) -> u8 {
+    if irq < 8 {
+        crate::interrupts::PIC_1_OFFSET + irq
+    } else {
+        crate::interrupts::PIC_2_OFFSET + (irq - 8)
+    }
+}
+
+/// Redirection-register index for a GSI on this I/O APIC, if it serves it.
+fn redir_reg(apic: &Apic, gsi: u32) -> Option<u32> {
+    let rel = gsi.checked_sub(apic.gsi_base)?;
+    (rel < apic.entries).then_some(IOAPIC_REG_REDIR_BASE + 2 * rel)
+}
+
+/// Read one redirection entry (low, high) for a GSI.
+pub fn ioapic_entry(gsi: u32) -> Option<(u32, u32)> {
+    let guard = APIC.lock();
+    let apic = guard.as_ref()?;
+    let base = apic.ioapic?;
+    let reg = redir_reg(apic, gsi)?;
+    Some((ioapic_read(base, reg), ioapic_read(base, reg + 1)))
+}
+
+/// Move the timer (IRQ0), PS/2 keyboard (IRQ1) and PS/2 mouse (IRQ12) from
+/// the 8259s to the I/O APIC, using the MADT's routes, then retire the PIC.
 ///
-/// The entry is left MASKED: the line it describes is still served by the PIC,
-/// and two controllers delivering the same IRQ would be worse than one.
-pub fn ioapic_probe(irq: u8, vector: u8) -> bool {
+/// Each line keeps its vector, so the IDT does not change; each keeps the mask
+/// state it had on the PIC, so a line nobody enabled does not start firing.
+/// Everything happens with interrupts disabled and in this order — arm the new
+/// routes, mask the PICs and LINT0, flip the EOI target — so no interrupt is
+/// ever acknowledged on the wrong controller. Returns false, changing nothing,
+/// when there is no MADT or no mapped I/O APIC to route through.
+pub fn cutover_legacy_irqs() -> bool {
+    let Some(madt) = crate::acpi::madt() else {
+        serial_println!("[ITISYOU:IRQ] cutover skipped reason=no_madt legacy_lines=pic");
+        return false;
+    };
+    // The tick rate must be the same on both sides of the cutover: a line
+    // delivered twice (or not at all) would silently double (or stall) every
+    // scheduler quantum and every deadline. Measured on the TSC, which does not
+    // depend on either controller.
+    let before = ticks_over_ms(100);
+    let done = x86_64::instructions::interrupts::without_interrupts(|| cutover_locked(&madt));
+    let after = ticks_over_ms(100);
+    // One tick of slack either way for where the 100 ms window starts.
+    let preserved = before > 0 && after.abs_diff(before) <= 1;
+    serial_println!(
+        "[ITISYOU:IRQ] timer_rate ticks_per_100ms before={before} after={after} controller={} rate_preserved={preserved}",
+        if done { "ioapic" } else { "pic" }
+    );
+    done
+}
+
+/// Timer ticks counted over `ms` milliseconds of TSC time (interrupts on).
+fn ticks_over_ms(ms: u64) -> u64 {
+    let start = crate::interrupts::tsc();
+    let budget = crate::interrupts::cycles_for_ms(ms);
+    let t0 = crate::interrupts::ticks();
+    while crate::interrupts::tsc().wrapping_sub(start) < budget {
+        core::hint::spin_loop();
+    }
+    crate::interrupts::ticks() - t0
+}
+
+fn cutover_locked(madt: &Madt) -> bool {
+    let (pic1, pic2) = crate::interrupts::pic_masks();
     let guard = APIC.lock();
     let Some(apic) = guard.as_ref() else {
         return false;
     };
     let Some(base) = apic.ioapic else {
+        serial_println!("[ITISYOU:IRQ] cutover skipped reason=no_ioapic legacy_lines=pic");
         return false;
     };
-    let id = (ioapic_read(base, IOAPIC_REG_ID) >> 24) & 0x0F;
-    let version = ioapic_read(base, IOAPIC_REG_VERSION);
-    let max_redirection = (version >> 16) & 0xFF;
-    if irq as u32 > max_redirection {
-        serial_println!("[ITISYOU:IRQ] ioapic irq={irq} out_of_range max={max_redirection}");
+    let mut ok = true;
+    for irq in [0u8, 1, 12] {
+        let route = madt.isa_route(irq);
+        let Some(reg) = redir_reg(apic, route.gsi) else {
+            serial_println!(
+                "[ITISYOU:IRQ] ioapic_route isa={irq} gsi={} out_of_range",
+                route.gsi
+            );
+            ok = false;
+            continue;
+        };
+        let was_masked = if irq < 8 {
+            pic1 & (1 << irq) != 0
+        } else {
+            pic2 & (1 << (irq - 8)) != 0
+        };
+        let vector = isa_vector(irq);
+        let low = vector as u32
+            | if route.active_low {
+                REDIR_ACTIVE_LOW
+            } else {
+                0
+            }
+            | if route.level { REDIR_LEVEL } else { 0 }
+            | if was_masked { LVT_MASKED } else { 0 };
+        let high = (apic.apic_id as u32) << 24;
+        ioapic_write(base, reg + 1, high);
+        ioapic_write(base, reg, low);
+        let readback = ioapic_read(base, reg) == low && ioapic_read(base, reg + 1) == high;
+        ok &= readback;
+        serial_println!(
+            "[ITISYOU:IRQ] ioapic_route isa={irq} gsi={} vector={vector:#x} trigger={} polarity={} masked={was_masked} readback={}",
+            route.gsi,
+            if route.level { "level" } else { "edge" },
+            if route.active_low { "low" } else { "high" },
+            if readback { "ok" } else { "mismatch" },
+        );
+    }
+    if !ok {
+        // A route that did not read back is not trusted with the timer: every
+        // entry written above is masked again and the PIC stays in charge.
+        for irq in [0u8, 1, 12] {
+            if let Some(reg) = redir_reg(apic, madt.isa_route(irq).gsi) {
+                ioapic_write(base, reg, LVT_MASKED);
+            }
+        }
+        serial_println!("[ITISYOU:IRQ] cutover aborted legacy_lines=pic");
         return false;
     }
-    let reg = IOAPIC_REG_REDIR_BASE + 2 * irq as u32;
-    // Fixed delivery, physical destination, active high, edge triggered,
-    // masked. The destination goes in the high dword's top byte.
-    let low = vector as u32 | LVT_MASKED;
-    let high = (apic.apic_id as u32) << 24;
-    ioapic_write(base, reg + 1, high);
-    ioapic_write(base, reg, low);
-    let read_low = ioapic_read(base, reg);
-    let read_high = ioapic_read(base, reg + 1);
-    let ok = read_low == low && read_high == high;
+    // Retire the legacy path: both 8259s fully masked, and the local APIC's
+    // LINT0 (the virtual-wire input they reached the CPU through) masked too.
+    crate::interrupts::retire_pic();
+    let lint0 = read_lapic(apic.lapic, LAPIC_LVT_LINT0);
+    write_lapic(apic.lapic, LAPIC_LVT_LINT0, lint0 | LVT_MASKED);
+    drop(guard);
+    let (m1, m2) = crate::interrupts::pic_masks();
     serial_println!(
-        "[ITISYOU:IRQ] ioapic id={id} version={:#x} max_redirection={max_redirection} \
-irq={irq} vector={vector:#x} readback={} masked=true",
-        version & 0xFF,
-        if ok { "ok" } else { "mismatch" },
+        "[ITISYOU:IRQ] pic_retired masks={m1:#04x}/{m2:#04x} lint0=masked legacy_lines=ioapic"
     );
-    ok
+    true
+}
+
+/// Mask or unmask the I/O APIC line carrying ISA `irq` (after the cutover).
+pub fn set_isa_line_masked(irq: u8, masked: bool) {
+    let Some(madt) = crate::acpi::madt() else {
+        return;
+    };
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        let guard = APIC.lock();
+        let Some(apic) = guard.as_ref() else {
+            return;
+        };
+        let (Some(base), Some(reg)) = (apic.ioapic, redir_reg(apic, madt.isa_route(irq).gsi))
+        else {
+            return;
+        };
+        let low = ioapic_read(base, reg);
+        ioapic_write(
+            base,
+            reg,
+            if masked {
+                low | LVT_MASKED
+            } else {
+                low & !LVT_MASKED
+            },
+        );
+    });
+}
+
+/// Prove the timer really arrives through the I/O APIC: with its redirection
+/// entry masked the tick count must stand still, and it must move again once
+/// unmasked. Returns (ticks while masked, ticks after unmasking) over `ms`
+/// milliseconds each, measured on the TSC (which does not depend on the timer).
+pub fn prove_timer_route(ms: u64) -> Option<(u64, u64)> {
+    if !crate::interrupts::legacy_via_ioapic() {
+        return None;
+    }
+    let wait = |ms: u64| {
+        let start = crate::interrupts::tsc();
+        let budget = crate::interrupts::cycles_for_ms(ms);
+        while crate::interrupts::tsc().wrapping_sub(start) < budget {
+            core::hint::spin_loop();
+        }
+    };
+    set_isa_line_masked(0, true);
+    // Let an interrupt that was already in flight when the mask landed be
+    // counted before the measurement starts, so it cannot be mistaken for a
+    // delivery that bypassed the mask.
+    wait(20);
+    let before = crate::interrupts::ticks();
+    wait(ms);
+    let masked_ticks = crate::interrupts::ticks() - before;
+    set_isa_line_masked(0, false);
+    let resumed = crate::interrupts::ticks();
+    wait(ms);
+    let unmasked_ticks = crate::interrupts::ticks() - resumed;
+    Some((masked_ticks, unmasked_ticks))
 }
 
 /// Fire one local-APIC timer interrupt on [`crate::interrupts::VECTOR_APIC_TIMER`]
