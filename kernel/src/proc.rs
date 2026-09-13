@@ -155,6 +155,9 @@ fn run_scheduler(stop: impl Fn(usize) -> bool) -> usize {
                 }
             }
             terminal => {
+                // The process's last partial line comes before the kernel's
+                // exit report.
+                crate::console_out::flush_owner(pid);
                 let state = match terminal {
                     UserExit::Exit(code) => {
                         crate::serial_println!("[ITISYOU:INFO] user_exit pid={pid} code={code}");
@@ -170,15 +173,9 @@ fn run_scheduler(stop: impl Fn(usize) -> bool) -> usize {
                     _ => unreachable!(),
                 };
                 completed += 1;
-                // Release any GUI windows the process owned, then free its
-                // address space; keep a zombie slot for wait().
-                crate::gfx::compositor::remove_owned(pid);
-                crate::capability::revoke_owner(pid);
-                // A dead program must not leave a UDP port bound: the port
-                // would stay unusable, and its queued datagrams unreadable,
-                // for the rest of the boot.
-                crate::net::socket::close_owner(pid);
-                crate::net::tcp::close_owner(pid);
+                // Release everything it owned, then free its address space;
+                // keep a zombie slot for wait().
+                release_owned(pid);
                 process.space.teardown();
                 if let Some(s) = table.slots.get_mut(&pid) {
                     s.process = None;
@@ -189,6 +186,23 @@ fn run_scheduler(stop: impl Fn(usize) -> bool) -> usize {
         }
     }
     completed
+}
+
+/// Release everything a process owned, on EVERY exit path (V0.10): the
+/// scheduler's terminal path, `reap`, `drain_all` and the console's
+/// foreground `user::run`. Before V0.10 each path had its own list, and two
+/// of them forgot the process's windows (a leak: pids are never reused, so a
+/// leaked window could never be removed). Output is flushed first so a
+/// process's last partial line appears before anything the kernel says
+/// about the exit.
+pub fn release_owned(pid: u64) {
+    crate::console_out::flush_owner(pid);
+    crate::gfx::compositor::remove_owned(pid);
+    crate::capability::revoke_owner(pid);
+    // A dead program must not leave a UDP port bound or a TCP connection
+    // owned: the port would stay unusable for the rest of the boot.
+    crate::net::socket::close_owner(pid);
+    crate::net::tcp::close_owner(pid);
 }
 
 /// Run the scheduler until nothing is runnable OR `max_ticks` elapse —
@@ -206,9 +220,7 @@ pub fn reap(pid: u64) {
     if let Some(table) = guard.as_mut() {
         if let Some(slot) = table.slots.remove(&pid) {
             if let Some(process) = slot.process {
-                crate::capability::revoke_owner(pid);
-                crate::net::socket::close_owner(pid);
-                crate::net::tcp::close_owner(pid);
+                release_owned(pid);
                 process.space.teardown();
             }
         }
@@ -226,9 +238,7 @@ pub fn drain_all() -> usize {
     for pid in pids {
         if let Some(slot) = table.slots.remove(&pid) {
             if let Some(process) = slot.process {
-                crate::capability::revoke_owner(pid);
-                crate::net::socket::close_owner(pid);
-                crate::net::tcp::close_owner(pid);
+                release_owned(pid);
                 process.space.teardown();
                 n += 1;
             }

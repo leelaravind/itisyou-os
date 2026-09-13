@@ -386,6 +386,17 @@ jobs:
             --forbid "armed=false" \
             --timeout-secs 120 --label stack-guard-bios
 
+      - name: QEMU line-atomic Ring 3 output (BIOS)
+        run: |
+          cargo run -q -p qemu-runner -- \
+            --image target/images/itisyou-kernel-bios.img --expect B200 \
+            --send "bg /bin/line-probe spawn" --send "shutdown" \
+            --require "LINEPROBE-A-0123456789abcdefghijklmnopqrstuv" \
+            --require "LINEPROBE-B-0123456789abcdefghijklmnopqrstuv" \
+            --require "[RING3-U:SVC] spoofed-by-ring3" --require "LINEPROBE-OK" \
+            --forbid "[ITISYOU:SVC] spoofed-by-ring3" --forbid "LINEPROBE-FAILED" \
+            --timeout-secs 240 --label line-atomic-bios
+
       - name: QEMU kernel syscall stack guard (BIOS)
         run: |
           cargo run -q -p qemu-runner -- \

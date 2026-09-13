@@ -39,6 +39,7 @@ members = [
     "user/hello-app",
     "user/args-probe",
     "user/flags-probe",
+    "user/line-probe",
 ]
 # The kernel must NEVER share a cargo invocation with host packages: cargo
 # resolves features once per invocation across all compile targets, so a

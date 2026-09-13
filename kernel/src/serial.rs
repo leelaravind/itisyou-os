@@ -63,8 +63,9 @@ macro_rules! serial_print {
 #[macro_export]
 macro_rules! serial_println {
     () => { $crate::serial_print!("\n") };
-    ($($arg:tt)*) => {{
-        $crate::serial::write_fmt(core::format_args!($($arg)*));
-        $crate::serial_print!("\n");
-    }};
+    // One locked write for the text AND its newline, so nothing (an IRQ
+    // handler's message, another line) can land between them (V0.10).
+    ($($arg:tt)*) => {
+        $crate::serial::write_fmt(core::format_args!("{}\n", core::format_args!($($arg)*)))
+    };
 }
