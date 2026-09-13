@@ -155,6 +155,15 @@ extern "C" fn _start() -> ! {
         );
         exit(11)
     }
+    // A zero-length request is valid with ANY pointer, NULL included: the
+    // kernel must answer it without forming a slice from the pointer. V0.9's
+    // copy_to_user did form one, so `cap_list(NULL, 0)` — ungated, callable
+    // by any program — panicked the debug kernel.
+    if ulib::raw_syscall(ulib::SYS_CAP_LIST, 0, 0, 0) != 0 {
+        write("CAPH-NULL-LIST-WRONG\n");
+        exit(12)
+    }
+    write("CAPH-NULL-LIST-OK\n");
     write(
         "CAPH-ENFORCEMENT-OK
 ",
