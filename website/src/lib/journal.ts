@@ -20,6 +20,19 @@ export interface JournalEntry {
 export const JOURNAL: JournalEntry[] = [
   {
     date: '2026-09-13',
+    time: '23:40',
+    session: 'Session 5 — V0.11',
+    title: 'Three audit-trail defects since v0.8.0 — found reviewing V0.11, fixed on the V0.11 branch',
+    what:
+      'A saved audit trail reads as TAMPERED once any boot after the first has saved it (AUDIT11-001); a program holding fs_write can rewrite the trail or delete a package’s commit marker (SEC11-001); and a file name with a line break in it makes the kernel print a line that reads as a kernel marker (AUDIT11-002). v0.10.0 and every release since v0.8.0 have all three; the limitations and security pages now say so.',
+    detail:
+      'V0.11 puts a proposing agent on top of the audit trail, so its design was reviewed first, including what the trail itself holds up to. On the published v0.10.0 image a trail saved in boot 1 verified in boot 2, and the same trail saved again by boot 2 was TAMPERED in boot 3 — the save stored only the current boot’s 64-record ring under a head covering every record ever made. The old legs had only ever saved once, in the first boot. The fix stores the newest 128 records with the head the first of them extends, keeps recovered records, makes audit verify read-only, makes the trail and the package store kernel-owned, and escapes every kernel echo of program- or disk-chosen text; each fix has a control showing the failure with it switched off. v0.10.0 stays as released.',
+    evidence:
+      'v0.10.0 BIOS image d8416a58…: boot 1 trail_saved records=5 · boot 2 verified, trail_saved records=2 · boot 3 trail_recovered status=TAMPERED records=2 · requirements AUDIT11-001, AUDIT11-002, SEC11-001',
+    status: 'implemented',
+  },
+  {
+    date: '2026-09-13',
     time: '22:10',
     session: 'Session 4 — V0.10 release',
     title: 'v0.10.0: V0.10 — Userspace System is released',

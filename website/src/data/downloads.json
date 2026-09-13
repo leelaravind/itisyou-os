@@ -6,7 +6,7 @@
   "builtBy": "GitHub Actions run 34782271250 (ubuntu-24.04, pinned nightly-2026-08-01)",
   "builtAt": "2026-09-13T20:58:16Z",
   "reproducibility": "Bit-for-bit reproducible from source: the same CI run built every image twice more from two clean checkouts in two different directories, with no shared cache, and got identical digests (job \"Reproducible boot images\"). image-builder removes the sources of non-determinism found in v0.8.1 — random GPT GUIDs, and the link time and CodeView GUID the linker stamps into the embedded UEFI loader. A Windows host builds different bytes, because Rust embeds the build host's source paths in panic locations; the published files are the Linux CI build.",
-  "notice": "v0.9.0 and v0.8.1 remain available at /downloads/v0.9.0/ and /downloads/v0.8.1/, each with its own SHA256SUMS.txt. v0.9.0 has a denial of service fixed here (SEC10-001): any program could panic its kernel through cap_list.",
+  "notice": "v0.9.0 and v0.8.1 remain available at /downloads/v0.9.0/ and /downloads/v0.8.1/, each with its own SHA256SUMS.txt. v0.9.0 has a denial of service fixed here (SEC10-001): any program could panic its kernel through cap_list. Found after this release, in v0.10.0 and every release since v0.8.0, and fixed on the V0.11 branch: a saved audit trail reads as TAMPERED once a later boot has saved it (AUDIT11-001); a program holding fs_write can rewrite the audit trail or a package's commit marker (SEC11-001); a file name with a line break in it makes the kernel print a forged marker line (AUDIT11-002).",
   "bootTests": [
     {
       "label": "QEMU matrix (40 CI steps; 50 legs in the local gate)",

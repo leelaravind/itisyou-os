@@ -61,6 +61,8 @@ export const RELEASES: Release[] = [
       'The Ring 3 shell has builtins and run — no pipes, redirection, job control or environment; administration stays on the kernel console.',
       'Desktop: one Ring 3 app per desktop session; click-to-focus without drag, resize or close.',
       'TCP is IPv4 only; no congestion control beyond an in-flight cap. The boot image itself is not authenticated.',
+      'Found after the release (AUDIT11-001): a saved audit trail verifies only if it was saved once, in the first boot, before the in-memory ring dropped a record; saved by a later boot, or after audit verify, it reads as TAMPERED on the next boot although untouched. Fixed on the V0.11 branch.',
+      'Found after the release (SEC11-001, AUDIT11-002): a program holding fs_write can rewrite the audit trail or delete a package’s commit marker through the filesystem syscalls, and a file name with a line break in it makes the kernel print a line that reads as a kernel marker. Fixed on the V0.11 branch.',
       'One CPU; software rendering only; no suspend/resume.',
     ],
   },
@@ -82,6 +84,7 @@ export const RELEASES: Release[] = [
       'Filesystem: ≤ 12 files, no directories, no space reuse.',
       'The boot image itself is not authenticated; no real package is signed by the release key yet.',
       'Found after the release (SEC10-001): any program can panic the kernel by pointing cap_list at its own read-only memory — the kernel checks that a user buffer is mapped, not that the program may write it. Fixed in v0.10.0.',
+      'Found after v0.10.0 (AUDIT11-001, SEC11-001, AUDIT11-002), present since v0.8.0: a saved audit trail reads as TAMPERED once a later boot has saved it; programs holding fs_write can rewrite the trail or a package’s commit marker; and file names with line breaks let the kernel print forged marker lines. Fixed on the V0.11 branch.',
       'One CPU; software rendering only; no suspend/resume.',
     ],
     archive: {
@@ -120,6 +123,7 @@ export const RELEASES: Release[] = [
       'No userspace init; the console is part of the kernel.',
       'Filesystem: ≤ 12 files, no directories, no space reuse.',
       'Package trust root is a published development key.',
+      'Found after v0.10.0 (AUDIT11-001, SEC11-001, AUDIT11-002), present since v0.8.0: a saved audit trail reads as TAMPERED once a later boot has saved it; programs holding fs_write can rewrite the trail or a package’s commit marker; and file names with line breaks let the kernel print forged marker lines. Fixed on the V0.11 branch.',
       'One CPU; software rendering only; no power management.',
     ],
     archive: {

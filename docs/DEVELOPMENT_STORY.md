@@ -1032,3 +1032,25 @@ site linked them — with a new check that the published image really starts
 `/sbin/init` as pid 1 — and the site was read page by page for anything still
 describing V0.9: the home page's layer model and the platform page's service
 model were, and were corrected before production.
+
+**The audit trail, reviewed against the programs it will record.** V0.11 puts
+a proposing agent on top of the audit trail, so the V0.11 design went through
+a security review before any agent code, and the review asked what the trail
+itself would hold up to. Three defects came back, each present since V0.8.
+The first was a verifier that cried wolf: `audit save` wrote only the current
+boot's 64-record ring, under a head that covered every record ever made, and
+recovery verified from the start of time — so on the published v0.10.0 image
+a trail saved in the first boot verified, but the same trail saved again by
+the second boot was `TAMPERED` on the third, though nobody had touched the
+disk, and the first boot's records were gone from it. A mid-boot `audit
+verify` did the same by re-running boot recovery. The old legs had only ever
+saved once, in the first boot, with a handful of records: the one case that
+worked. The second was that the trail was just a file: any program holding
+`fs_write` could replace it, or delete an application's commit marker and
+roll the application back. The third was that the kernel echoed file names
+and file contents a program had chosen straight onto the console, so a name
+with a line break in it printed a line of its own that read as a kernel
+marker — the very thing V0.10 had stopped programs from printing directly.
+All three are fixed on the V0.11 branch, each shown first on the released
+image or on the fixed kernel with the fix switched off; v0.10.0 is disclosed
+here and stays as released.

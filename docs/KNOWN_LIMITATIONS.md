@@ -135,8 +135,10 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
   the package store (`<app>.<v>.pkg`/`.ok`), refused since V0.11 (SEC11-001;
   v0.10.0 and earlier let such a program replace the audit trail, or delete
   a package's commit marker to roll it back). There is no per-program
-  directory beyond the path-prefix sandbox, and names with control
-  characters are refused (AUDIT11-002).
+  directory beyond the path-prefix sandbox. Names with control characters
+  are refused, and every kernel echo of a name or of file contents is one
+  escaped line (AUDIT11-002; v0.10.0 and earlier echoed them raw, so a
+  program's file name could print a line that read as a kernel marker).
 - SMEP, SMAP and UMIP are enabled when the CPU advertises them (the harness's
   CPU model does); W^X for user segments, a guard page below the user stack, and
   user-pointer validation are always on — since V0.10 the validation also
