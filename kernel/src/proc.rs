@@ -105,10 +105,50 @@ pub fn run_until_pid_exits(target: u64, max_ticks: u64) -> Option<ProcState> {
     state_of(target)
 }
 
+/// Set while a run-loop is running processes. The Ring 3 transition state is
+/// single-slot, so a second run-loop (a safe point reached from inside a
+/// slice, say) would corrupt it: it is refused outright (V0.10, R3).
+static RUNLOOP_ACTIVE: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+pub fn runloop_active() -> bool {
+    RUNLOOP_ACTIVE.load(core::sync::atomic::Ordering::SeqCst)
+}
+
+/// Clears [`RUNLOOP_ACTIVE`] however the run-loop returns.
+struct RunLoopGuard;
+
+impl Drop for RunLoopGuard {
+    fn drop(&mut self) {
+        RUNLOOP_ACTIVE.store(false, core::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// One bounded background slice (V0.10): run processes until `max_quanta`
+/// quanta, `max_ticks` ticks or `max_ms` of wall time (TSC — it keeps
+/// counting while interrupts are masked), whichever comes first. The bounds
+/// are checked between quanta, so a slice overruns by at most one quantum.
+/// Returns the quanta it ran.
+pub fn run_slice(max_ticks: u64, max_quanta: u32, max_ms: u64) -> u32 {
+    let start_q = crate::sched::quanta_total();
+    let tick_deadline = crate::interrupts::ticks() + max_ticks;
+    let tsc_deadline = crate::interrupts::tsc() + crate::interrupts::cycles_for_ms(max_ms);
+    run_scheduler(|_| {
+        crate::sched::quanta_total() - start_q >= max_quanta as u64
+            || crate::interrupts::ticks() >= tick_deadline
+            || crate::interrupts::tsc() >= tsc_deadline
+    });
+    (crate::sched::quanta_total() - start_q) as u32
+}
+
 /// Core scheduler loop. Runs each runnable process for one quantum (until it
 /// yields, is preempted, blocks, exits, or faults), updating state. Stops
 /// when the run queue drains or `stop(completed)` returns true.
 fn run_scheduler(stop: impl Fn(usize) -> bool) -> usize {
+    assert!(
+        !RUNLOOP_ACTIVE.swap(true, core::sync::atomic::Ordering::SeqCst),
+        "run-loop re-entered"
+    );
+    let _active = RunLoopGuard;
     let mut completed = 0;
     loop {
         if stop(completed) {
@@ -132,9 +172,11 @@ fn run_scheduler(stop: impl Fn(usize) -> bool) -> usize {
             }
         };
         let Some((pid, mut process, first)) = taken else {
+            crate::sched::note_runq_empty();
             break;
         };
 
+        crate::sched::note_quantum(pid);
         sched::set_current(pid);
         let outcome = user::run_quantum(&mut process, first);
         sched::set_current(0);

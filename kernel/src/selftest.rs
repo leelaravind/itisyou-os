@@ -55,6 +55,7 @@ pub fn run_all(suite: &mut Suite) {
     };
     suite.check("task_window_in_process_space", window_shared);
     sync_tests(suite);
+    sched_tests(suite);
     pmm_tests(suite);
     paging_tests(suite);
     heap_tests(suite);
@@ -69,6 +70,69 @@ pub fn run_all(suite: &mut Suite) {
     security_tests(suite);
     capability_handle_tests(suite);
     suite.check("sync_depth_zero_at_end", crate::sync::depth() == 0);
+    suite.check(
+        "sched_runloop_clear_at_rest",
+        !crate::proc::runloop_active() && crate::sched::no_sched_depth() == 0,
+    );
+}
+
+/// V0.10 (SCHED10-001): the scheduling core is built and measured but, in
+/// this image, never enabled — every process step the other checks count
+/// must stay deterministic.
+fn sched_tests(suite: &mut Suite) {
+    use crate::{proc, sched, user};
+
+    // Disabled: a busy or idle safe point never slices.
+    let slices = sched::slices_total();
+    let inert = !sched::enabled() && !sched::safe_point() && !sched::idle_point();
+    suite.check(
+        "sched_safe_point_inert_when_disabled",
+        inert && sched::slices_total() == slices,
+    );
+
+    // Non-schedulable regions nest.
+    let base = sched::no_sched_depth();
+    let nests = {
+        let _a = sched::NoSched::new();
+        let one = sched::no_sched_depth() == base + 1;
+        let two = {
+            let _b = sched::NoSched::new();
+            sched::no_sched_depth() == base + 2
+        };
+        one && two && sched::no_sched_depth() == base + 1
+    };
+    suite.check(
+        "sched_nosched_nests",
+        nests && sched::no_sched_depth() == base,
+    );
+
+    // A slice is bounded by each of its caps alone. An infinite spinner
+    // (every quantum ends by preemption, 1-2 ticks) gets exactly the quanta
+    // it is allowed when only the quantum cap binds...
+    match user::load("/bin/spin-forever") {
+        Ok(spinner) => {
+            let pid = proc::admit(spinner);
+            let ran = proc::run_slice(1000, 3, 5000);
+            let alive = matches!(proc::state_of(pid), Some(proc::ProcState::Runnable));
+            suite.check(
+                "proc_run_slice_quanta_capped",
+                ran == 3 && alive && !proc::runloop_active(),
+            );
+            // ...and a handful when only the wall-time cap binds (the other
+            // caps would allow hundreds).
+            let ran = proc::run_slice(1000, 1000, kernel_core::cosched::SLICE_MAX_MS);
+            let alive = matches!(proc::state_of(pid), Some(proc::ProcState::Runnable));
+            suite.check(
+                "proc_run_slice_time_capped",
+                (1..=4).contains(&ran) && alive && !proc::runloop_active(),
+            );
+        }
+        Err(_) => {
+            suite.check("proc_run_slice_quanta_capped", false);
+            suite.check("proc_run_slice_time_capped", false);
+        }
+    }
+    proc::drain_all();
 }
 
 /// V0.10 (SYNC10-001): the lock count follows nesting and returns to zero.
@@ -705,6 +769,14 @@ fn storage_tests(suite: &mut Suite) {
                 // verification, install/update/rollback atomicity, recovery,
                 // and manifest-capability launches.
                 platform_tests(suite, &nvme);
+
+                // V0.10 (R7): while the store is open, not even a job wait
+                // (which ignores enable/pause) may slice.
+                suite.check(
+                    "nvme_handle_blocks_slices",
+                    crate::sched::no_sched_depth() >= 1 && !crate::sched::console_wait_step(0),
+                );
+                crate::sched::clear_job();
             }
             Err(e) => {
                 crate::serial_println!("[ITISYOU:INFO] nvme_init_failed err={e:?}");
@@ -721,6 +793,11 @@ fn storage_tests(suite: &mut Suite) {
             suite.check("nvme_out_of_range_rejected", false);
         }
     }
+    // Closing the store released its token.
+    suite.check(
+        "nvme_close_releases_nosched",
+        crate::sched::no_sched_depth() == 0,
+    );
 }
 
 /// V0.7: the application platform lifecycle over a real block device —

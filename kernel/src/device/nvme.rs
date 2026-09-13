@@ -75,6 +75,10 @@ pub struct Nvme {
     data: Dma,
     blocks: u64,
     lba_bytes: u64,
+    /// While the controller is open nothing may be co-scheduled (V0.10, R7):
+    /// the store is single-owner. Declared last, so the controller is
+    /// disabled (Drop) before the token is released.
+    _no_sched: crate::sched::NoSched,
 }
 
 struct Queues {
@@ -156,6 +160,7 @@ impl Nvme {
 
     /// Initialize the controller from a PCI device.
     pub fn init(dev: &PciDevice) -> Result<Nvme, NvmeError> {
+        let no_sched = crate::sched::NoSched::new();
         // BAR0 (+BAR1 for the high dword of a 64-bit BAR).
         let bar0 = dev.read_config(0x10);
         let (base_lo, is_mmio, is_64) = decode_bar(bar0);
@@ -197,6 +202,7 @@ impl Nvme {
             data: Dma::alloc()?,
             blocks: 0,
             lba_bytes: BLOCK_SIZE as u64,
+            _no_sched: no_sched,
         };
 
         let cap = nvme.mmio_read64(REG_CAP);

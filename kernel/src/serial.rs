@@ -12,6 +12,27 @@ pub const COM1_PORT: u16 = 0x3F8;
 
 static SERIAL1: Mutex<Option<SerialPort>> = Mutex::new(None);
 
+/// Whether the last byte written was a newline (V0.10): a scheduling safe
+/// point does not slice while the console is mid-line, so Ring 3 output
+/// never lands inside a line the kernel is still printing.
+static AT_LINE_START: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(true);
+
+pub fn at_line_start() -> bool {
+    AT_LINE_START.load(core::sync::atomic::Ordering::Relaxed)
+}
+
+/// Forwards to the port and records the line position.
+struct Tracked<'a>(&'a mut SerialPort);
+
+impl fmt::Write for Tracked<'_> {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        if let Some(last) = s.as_bytes().last() {
+            AT_LINE_START.store(*last == b'\n', core::sync::atomic::Ordering::Relaxed);
+        }
+        self.0.write_str(s)
+    }
+}
+
 /// Initialize COM1. Idempotent; later calls re-init the port harmlessly.
 pub fn init() {
     // SAFETY: 0x3F8 is the standard COM1 I/O port on the QEMU pc/q35
@@ -29,7 +50,7 @@ pub fn write_fmt(args: fmt::Arguments) {
     use fmt::Write;
     x86_64::instructions::interrupts::without_interrupts(|| {
         if let Some(port) = SERIAL1.lock().as_mut() {
-            let _ = port.write_fmt(args);
+            let _ = Tracked(port).write_fmt(args);
         }
     });
 }
