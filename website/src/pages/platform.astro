@@ -5,7 +5,7 @@ import StatusTag from '../components/StatusTag.astro';
 import { status } from '../lib/status';
 
 const description =
-  'The ITISYOU OS system platform (V0.7-V0.9): capability-based permissions with default deny, supervised system services, a managed application model with Ed25519-signed packages trusted through an offline-root key hierarchy, atomic updates with rollback and recovery, capability-scoped userspace filesystem writes, port-scoped network access, and a hash-chained audit trail that survives reboots — every claim backed by QEMU test evidence.';
+  'The ITISYOU OS system platform (V0.7-V0.10): capability-based permissions with default deny, system services started by a userspace init and supervised, a managed application model with Ed25519-signed packages trusted through an offline-root key hierarchy, atomic updates with rollback and recovery, capability-scoped userspace filesystem writes, port-scoped network access, and a hash-chained audit trail that survives reboots — every claim backed by QEMU test evidence.';
 
 /** Capability table — mirrors kernel_core::caps (the enforced source). */
 const caps = [
@@ -139,6 +139,14 @@ const evidence = [
           in a deterministic, cycle-checked dependency order, contains crashes, and applies a bounded restart policy
           (3 restarts, then Failed — no restart storms). The <span class="font-mono text-mono-data">svc</span> command
           shows the real state table.
+        </p>
+        <p class="text-body-base text-meta-bright">
+          Since v0.10.0 the persistent services are started by <span class="font-mono text-mono-data">/sbin/init</span>
+          — pid 1, an ordinary Ring 3 program with fixed authority — from
+          <span class="font-mono text-mono-data">/etc/init.conf</span>, each with exactly the capabilities the file gives
+          it. Init reports every start, restart and failure to the kernel, which checks that the process is init's own
+          child and prints the capabilities from its own record; if init dies, the kernel ends its services and starts
+          a new init.
         </p>
       </div>
       <div class="md:col-span-8">

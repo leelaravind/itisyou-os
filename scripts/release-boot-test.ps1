@@ -26,8 +26,10 @@ function Leg([string[]]$legArgs) {
 }
 
 $console = @('--expect', 'B010', '--expect', 'B020', '--expect', 'B030', '--expect', 'B150',
-    '--send', 'version', '--send', 'cat /etc/version', '--send', 'help', '--send', 'shutdown',
+    '--send', 'version', '--send', 'cat /etc/version', '--send', 'help', '--send', 'ps', '--send', 'shutdown',
     '--require', "itisyou-os $Version", '--require', 'shutting down (QEMU exit)',
+    # Since v0.10.0 the userspace init runs as pid 1 on every boot.
+    '--require', 'pid=1 ppid=0 path=/sbin/init', '--require', 'path=/bin/tickd state=',
     '--timeout-secs', '120')
 
 Write-Output "=== release ${Version}: UEFI boot to the console ==="

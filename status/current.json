@@ -3,10 +3,10 @@
   "maturity": "pre-alpha",
   "architecture": "x86_64",
   "environment": "QEMU",
-  "milestone": "V0.10 — Userspace System",
-  "commit": null,
-  "lastVerifiedAt": null,
-  "verification": "in-development",
+  "milestone": "V0.10 — Userspace System (v0.10.0)",
+  "commit": "c936bc78379bbeb379f4f3b90186242c3aee4fb7",
+  "lastVerifiedAt": "2026-09-13T21:06:36Z",
+  "verification": "verified",
   "modules": [
     {
       "id": "boot",

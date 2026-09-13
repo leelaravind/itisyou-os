@@ -137,9 +137,11 @@ const cellStatus = (id: string) => status.modules.find((m) => m.id === id)?.stat
           <h2 id="layer-user" class="font-sans text-headline-md text-ink mb-2">Userspace</h2>
           <p class="text-meta-bright text-sm mb-4">
             Ring 3 execution with a validated syscall ABI (V0.2): real ELF64 programs, user pointers checked before
-            any kernel dereference (in v0.9.0 for being mapped only — a kernel write into a program’s read-only pages
-            still panics the kernel; fixed in V0.10), no user mapping of kernel pages, faults contained to the process. Since V0.3–V0.4,
-            concurrent, preemptively scheduled processes, each in its own address space.
+            any kernel dereference (since V0.10 for being user-accessible and, when the kernel writes, writable by the
+            program — v0.9.0 checked only that they were mapped), no user mapping of kernel pages, faults contained to the
+            process. Since V0.3–V0.4, concurrent, preemptively scheduled processes, each in its own address space; since
+            V0.10 a process tree, background slices at audited safe points, /sbin/init as pid 1, a Ring 3 shell and desktop
+            apps with routed input.
           </p>
           <StatusTag status={cellStatus('ring3')} />
         </section>
@@ -193,14 +195,13 @@ const cellStatus = (id: string) => status.modules.find((m) => m.id === id)?.stat
     <section class="mb-8 panel p-gutter" aria-labelledby="next-title">
       <h2 id="next-title" class="font-sans text-headline-md text-ink mb-4">Planned next boundaries</h2>
       <p class="text-body-base text-meta-bright mb-4 max-w-3xl">
-        V0.9 is released as v0.9.0. Next is V0.10 — Userspace System. Work on it has started on a separate branch,
-        where program arguments, filesystem space reclamation and guard pages for kernel task stacks are verified; none
-        of it is on the main branch or in any release yet, and the rest is planned. Each item lands with host tests and
-        QEMU evidence before it is claimed:
+        V0.10 is released as v0.10.0. Next is V0.11 — AI-Native System Layer, planned: every piece runs as an ordinary
+        Ring 3 service under the capability, audit and approval paths that already exist — an agent gets no entry
+        point a program does not have. Each item lands with host tests and QEMU evidence before it is claimed:
       </p>
       <ul class="flex flex-wrap items-center gap-x-3 gap-y-2 font-mono text-mono-data list-none">
         {
-          ['userspace init', 'always-on scheduler', 'program arguments', 'Ring 3 shell', 'filesystem space reclamation', 'desktop applications with focus'].map(
+          ['local inference service', 'read-only system knowledge', 'diagnostic agent', 'actions with preview + approval', 'provenance + audit', 'verification + rollback'].map(
             (step, i, arr) => (
               <li class="flex items-center gap-3">
                 <span class="text-meta-bright">{step}</span>

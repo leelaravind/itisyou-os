@@ -1018,3 +1018,17 @@ found a denial of service in every release so far: the kernel's copy into a
 user buffer checked only that the page was mapped, so a program pointing a
 capability-free call at its own code made the kernel fault in Ring 0. It was
 disclosed for v0.9.0 the same evening and fixed on the branch.
+
+**v0.10.0.** The branch was brought up to date with `main`, closed out
+(architecture, security and threat model, the non-schedulable regions
+measured rather than estimated) and given its release commit, which passed
+the whole local gate — 50 QEMU legs, 456 host tests. GitHub still refused to
+run jobs on the private repository, so, as for v0.9.0, the whole history was
+scanned first and the repository made public for the release runs. The V0.10
+legs had never run on GitHub's Linux runners; they passed there on the first
+try, with the reproducibility job rebuilding both images from two clean
+checkouts to the same digests. The CI-built bytes were boot-tested before the
+site linked them — with a new check that the published image really starts
+`/sbin/init` as pid 1 — and the site was read page by page for anything still
+describing V0.9: the home page's layer model and the platform page's service
+model were, and were corrected before production.

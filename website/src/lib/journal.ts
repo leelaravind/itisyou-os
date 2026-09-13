@@ -20,6 +20,19 @@ export interface JournalEntry {
 export const JOURNAL: JournalEntry[] = [
   {
     date: '2026-09-13',
+    time: '22:10',
+    session: 'Session 4 — V0.10 release',
+    title: 'v0.10.0: V0.10 — Userspace System is released',
+    what:
+      'The release commit c936bc7 names version 0.10.0, and its CI run 34782271250 — the release gate — is green: the full QEMU matrix (40 QEMU steps on Linux), the reproducible-image job, the website and the secret scan. The UEFI and BIOS boot images are built by that run and published with their SHA-256 on /download; v0.9.0 and v0.8.1 stay downloadable.',
+    detail:
+      'V0.10 was built one audited step at a time — counted locks, line-atomic output and flag hygiene first, then the scheduling core built and measured but switched off, then always-on slices, the process tree, the supervisor report, /sbin/init, the Ring 3 shell and desktop focus — each step gated by the whole local matrix and each claim shown against a negative control. The repository was made public for the CI run and private again afterwards, as for v0.9.0.',
+    evidence:
+      'release commit c936bc7 · workspace version 0.10.0 · CI run 34782271250 green (ubuntu-24.04) — builds and boot-tests the published images · SHA-256 on /download',
+    status: 'implemented',
+  },
+  {
+    date: '2026-09-13',
     time: '20:05',
     session: 'Session 4 — V0.10',
     title: 'A denial of service in every release so far — found, shown and fixed on the V0.10 branch',

@@ -45,6 +45,26 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    tag: 'v0.10.0',
+    commit: 'c936bc7',
+    date: '2026-09-13',
+    milestone: 'V0.10 — Userspace System',
+    ciRun: '34782271250',
+    summary:
+      'A userspace system on top of V0.9. Background programs keep running while the console is busy: bounded slices at audited safe points, with the kernel still non-preemptible. A process tree: only a parent collects its child, wait_nohang, sleep, orphans handed on, ps and kill. /sbin/init as pid 1 starts and supervises the services named in /etc/init.conf, reports them to a kernel-checked service table, and is restarted by the kernel if it dies. Program arguments, a Ring 3 shell that borrows the console’s input, filesystem space reclamation, and Ring 3 applications on the live desktop with click-to-focus and keys routed to the focused window. Fixed on the way: a denial of service in every earlier release (the kernel wrote through user pages the program could not write), guard pages for the syscall and kernel-task stacks, a mouse-packet framing bug, an interrupt-unsafe input queue, and a gui_present that checked existence instead of ownership. UEFI and BIOS boot images built by the release CI run on Linux, published with SHA-256.',
+    download: '/download',
+    contents:
+      'V0.10 — Userspace System, on top of everything in V0.9 (TCP from Ring 3, DHCP, IPv6 foundations, the I/O APIC cutover, ACPI power-off, an offline-root package-signing hierarchy, audit anchoring): always-on co-scheduling at audited safe points (sched reports what the background got); a process tree with parent-only wait, wait_nohang, sleep, orphans, ps and kill; /sbin/init as pid 1 from /etc/init.conf, restarted by the kernel; a kernel-checked supervisor report (svc_report); program arguments; a Ring 3 shell (rsh at the console); ITFS space reclamation; Ring 3 desktop apps (desktop /bin/gui-echo) with click-to-focus and routed input; line-atomic Ring 3 output with unforgeable kernel markers; DF/AC cleared on every kernel entry; guard pages under the RSP0, double-fault, syscall and kernel-task stacks; user buffers the kernel writes must be writable by the program.',
+    limitations: [
+      'The kernel is not preemptible: background programs run in bounded slices at audited points, and wait while a syscall or a storage, irq or xhciwait command runs (measured up to 5 s for xhciwait).',
+      '/etc/init.conf is part of the boot image: no persistent configuration, no reload.',
+      'The Ring 3 shell has builtins and run — no pipes, redirection, job control or environment; administration stays on the kernel console.',
+      'Desktop: one Ring 3 app per desktop session; click-to-focus without drag, resize or close.',
+      'TCP is IPv4 only; no congestion control beyond an in-flight cap. The boot image itself is not authenticated.',
+      'One CPU; software rendering only; no suspend/resume.',
+    ],
+  },
+  {
     tag: 'v0.9.0',
     commit: 'f06673e',
     date: '2026-09-13',
@@ -52,7 +72,7 @@ export const RELEASES: Release[] = [
     ciRun: '34760629701',
     summary:
       'TCP from Ring 3 (connect and listen, with retransmission verified against the host’s own TCP stack), a DHCP client and IPv6 foundations; ACPI table discovery, the I/O APIC cutover that retires the 8259 PIC, and ACPI S5 power-off; a package-signing key hierarchy under an offline root, with scoped certificates and signed revocation; audit anchoring off the disk; guard pages under the kernel’s Ring 3 interrupt (RSP0) and double-fault stacks (not yet the syscall stack); and a fix for a kernel panic any program could trigger with a null pointer and a zero length. UEFI and BIOS boot images built by the release CI run on Linux, published with SHA-256.',
-    download: '/download',
+    download: '/download#v0.9.0',
     contents:
       'V0.9 — Transport, Interrupt Cutover & Trust, on top of everything in V0.8: Ring 3 processes in per-process address spaces with preemptive scheduling, capability handles enforced at the syscall boundary, a persistent crash-consistent filesystem on NVMe, a compositor with PS/2 and USB input, AC97 audio, an IPv4 stack (ARP/ICMP/UDP/DNS) with capability-scoped sockets, Ed25519-signed packages with atomic update and rollback, a hash-chained audit trail, SMEP/SMAP/UMIP. New in this release: TCP from Ring 3 (connect and listen, with retransmission), a DHCP client (the console’s dhcp command), IPv6 foundations (link-local and SLAAC addresses, neighbour discovery, ICMPv6 echo), the I/O APIC cutover with the 8259 PIC retired, ACPI S5 power-off (poweroff), packages trusted through an offline-root key hierarchy with scoped certificates and signed revocation, audit anchoring off the disk, and guard pages under the kernel’s Ring 3 interrupt (RSP0) and double-fault stacks (not yet the syscall stack).',
     limitations: [
@@ -61,9 +81,28 @@ export const RELEASES: Release[] = [
       'No userspace init; the console is part of the kernel.',
       'Filesystem: ≤ 12 files, no directories, no space reuse.',
       'The boot image itself is not authenticated; no real package is signed by the release key yet.',
-      'Found after the release (SEC10-001): any program can panic the kernel by pointing cap_list at its own read-only memory — the kernel checks that a user buffer is mapped, not that the program may write it. Fixed on the V0.10 branch.',
+      'Found after the release (SEC10-001): any program can panic the kernel by pointing cap_list at its own read-only memory — the kernel checks that a user buffer is mapped, not that the program may write it. Fixed in v0.10.0.',
       'One CPU; software rendering only; no suspend/resume.',
     ],
+    archive: {
+      builtBy: 'GitHub Actions run 34760629701 (ubuntu-24.04), commit f06673e00f27c3e5ef3df756a452969464d2b558',
+      files: [
+        {
+          file: 'itisyou-os-0.9.0-x86_64-uefi.img',
+          firmware: 'UEFI (OVMF)',
+          bytes: 4259840,
+          sha256: '3d252547926ba497559d7419e2d77803c2af69148cec45ba5a83d6cdddfc443e',
+        },
+        {
+          file: 'itisyou-os-0.9.0-x86_64-bios.img',
+          firmware: 'BIOS (SeaBIOS)',
+          bytes: 5735424,
+          sha256: 'eb3ceb46782b9d04cd40dc61aecce12a8cdbc4ed089b556675f1623c01dd8232',
+        },
+      ],
+      notice:
+        'v0.9.0 has a denial of service found after its release and fixed in v0.10.0 (SEC10-001): any program could panic its kernel by pointing cap_list at its own read-only memory.',
+    },
   },
   {
     tag: 'v0.8.1',

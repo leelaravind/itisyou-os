@@ -1,15 +1,15 @@
-# Current status — v0.9.0 released (V0.9 — Transport, Interrupt Cutover & Trust)
+# Current status — v0.10.0 released (V0.10 — Userspace System)
 
 **Timestamp:** 2026-09-13 (Europe/London)
 **Branch:** `main` · **Repository:** `E:\Project\itisyou-os`
-**Latest release:** `v0.9.0` — V0.9 Transport, Interrupt Cutover & Trust.
-Release commit `f06673e` (CI run `34760629701`, all jobs green, images
-reproduced bit-for-bit by the run's two clean builds); download live at
+**Latest release:** `v0.10.0` — V0.10 Userspace System. Release commit
+`c936bc7` (CI run `34782271250`, all jobs green, images reproduced
+bit-for-bit by the run's two clean builds); download live at
 https://os.itisyou.app/download (UEFI
-`3d252547926ba497559d7419e2d77803c2af69148cec45ba5a83d6cdddfc443e`, BIOS
-`eb3ceb46782b9d04cd40dc61aecce12a8cdbc4ed089b556675f1623c01dd8232`). The
-previous release `v0.8.1` stays downloadable.
-**Next:** V0.10 — Userspace System (started on branch `v0.10/integration`).
+`f98f5cbe89dc295699f75231bc71766eb6c129a60baa41d028f5ac0f315da792`, BIOS
+`d8416a58f367d835a6755662d8d9322b0ba042d7362179030f0a0ea24f44f098`). The
+earlier releases `v0.9.0` and `v0.8.1` stay downloadable.
+**Next:** V0.11 — AI-Native System Layer.
 
 ## V0.9 (released as v0.9.0)
 
@@ -33,7 +33,12 @@ host tests. Released as v0.9.0: release commit `f06673e`, CI run
 `34761869462` green); production `1ba155b6` serves the v0.9.0 images and keeps
 v0.8.1 downloadable.
 
-## V0.10 (implemented on a branch; release pending CI)
+## V0.10 (released as v0.10.0)
+
+Released 2026-09-13: release commit `c936bc7` on `main` (fast-forwarded from
+`v0.10/integration`), CI run `34782271250` green, images boot-tested byte for
+byte, production `239a2140` serving them. Evidence: `docs/REQUIREMENTS.md`
+§ V0.10 (REG-V010, CI-V010, WEB10-001).
 
 Update 2026-09-13 evening: every V0.10 roadmap item is implemented and
 verified on `v0.10/integration` (last full gate `11e9fb5`: VERIFY OK, 50/50

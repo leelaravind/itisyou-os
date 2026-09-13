@@ -1,6 +1,15 @@
 # Deployment — os.itisyou.app
 
-**Latest deploy:** 2026-09-13 20:07, disclosure of SEC10-001 (any program can
+**Latest release:** v0.10.0 (2026-09-13) — release commit `c936bc7`, CI run
+`34782271250`; staging `bed566ad-39ee-4c34-a695-0429cd6e2f0b`, production
+`239a2140-e685-4595-bd9f-089c78f4e60b`; images under `/downloads/v0.10.0/`
+(staged from the CI artifact after `release-boot-test.ps1`), v0.9.0 and v0.8.1
+kept under their own paths (copied in by hand after `sha256sum -c` against
+their live SHA256SUMS). Verified after deploy on both: `downloads.mjs verify`,
+a direct digest check of both archives, `browser-verify.mjs` (26 page loads,
+0 console errors, 0 failed requests).
+
+**Earlier deploy:** 2026-09-13 20:07, disclosure of SEC10-001 (any program can
 panic the v0.9.0 kernel through `cap_list` into its own read-only memory;
 fixed on the V0.10 branch) — staging `52ee44d7-cde6-43c3-91d5-cd1d35611329`,
 production `d6275adf-7be2-4e68-8404-48fe5dafbbb8`; `downloads.mjs verify`
@@ -10,7 +19,7 @@ on both. The v0.9.0 images were staged from the bytes verified after the
 17:20 deploy, the v0.8.1 archive from its release directory after
 `sha256sum -c` against the live SHA256SUMS.
 
-**Earlier deploy:** 2026-09-13 17:20, commit `ff1af2c` (the V0.9 stack-guard
+**Before that:** 2026-09-13 17:20, commit `ff1af2c` (the V0.9 stack-guard
 claim corrected) — production `b2106044…`, browser-verified.
 
 **Previous deploy:** 2026-09-13 16:16, commit `42399b9` (stale /docs pages and
@@ -18,7 +27,7 @@ the home layer diagram corrected) — staging `e0080833-7475-47af-ba1a-e628d1cef
 production `169d50f9-28c7-49a5-81a1-be15e5c7d408`; browser-verify and downloads
 verify repeated (v0.9.0 byte-exact, v0.8.1 archive byte-exact).
 
-**Before that:** 2026-09-13 15:25, commit `8fafda5` (four overstated claims
+**Earlier still:** 2026-09-13 15:25, commit `8fafda5` (four overstated claims
 corrected after adversarial review) — staging `dbc396a6-eca5-4f14-8b9f-68dd8730fe5b`,
 production `cf7a7a97-b55a-4b45-885f-74e3e1f00caf`; downloads and browser
 verification repeated (v0.9.0 byte-exact, v0.8.1 archive byte-exact).

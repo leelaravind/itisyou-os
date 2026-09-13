@@ -121,7 +121,6 @@ export const MILESTONES: Milestone[] = [
     id: 'V0.9',
     name: 'Transport, Interrupt Cutover & Trust',
     status: 'verified',
-    current: true,
     summary:
       'Released as v0.9.0. TCP from Ring 3: a host-tested RFC 9293 state machine with a retransmission timer and a receive window; programs connect and listen (one connection per listen) under a network capability scoped to the port; verified against the host operating system’s own TCP stack, including two deliberately dropped segments recovered by retransmission. A DHCP client, and IPv6 foundations: link-local and SLAAC addresses, neighbour discovery, ICMPv6 echo in both directions. ACPI table discovery and the I/O APIC cutover that retires the 8259 PIC, plus ACPI S5 power-off. A package-signing key hierarchy: only an offline root is compiled in, signing keys are trusted through root-signed certificates limited by package-name scope and a release-epoch validity window, a root-signed revocation list retires them, and the private keys stay outside the source tree. The audit head anchored with a witness off the audited disk, and guard pages under the kernel’s Ring 3 interrupt stack (RSP0) and double-fault stack, so an overflow of either faults instead of silently corrupting kernel data (not yet under the separate syscall stack — the one the TCP bug overflowed; found after the release, fix planned for V0.10). Also fixed on the way: a program’s sockets and connections are released on every exit path, broadcast UDP is checksummed against its real destination, and a zero-length copy never touches the user pointer — before that fix any program could panic the kernel with cap_list(NULL, 0). Stated limits: no TCP over IPv6 and no IPv6 sockets, no TCP congestion control beyond an in-flight cap, ACPI tables without an AML interpreter, and no guard pages yet for the syscall stack or heap-allocated kernel task stacks.',
     components: [
@@ -133,10 +132,11 @@ export const MILESTONES: Milestone[] = [
   {
     id: 'V0.10',
     name: 'Userspace System',
-    status: 'planned',
+    status: 'verified',
+    current: true,
     summary:
-      'Inserted by the 2026-09-13 roadmap amendment because the AI layer depends on it: a userspace init as the first process starting services from configuration, an always-on scheduler so services never starve behind the console, program arguments, a Ring 3 shell, filesystem space reclamation, and persistent Ring 3 applications on the live desktop with focus and input routing. Work has started on a separate branch, where program arguments, ITFS space reclamation and guard pages for kernel task stacks are verified; none of it is on the main branch or in any release yet.',
-    components: ['Userspace init + always-on scheduler', 'Ring 3 shell, program arguments', 'Desktop applications; filesystem reclamation'],
+      'Released as v0.10.0. Background programs keep running whatever the console is doing: bounded slices at audited safe points (the kernel stays non-preemptible), measured per command. A process tree — only a parent collects its child, non-blocking wait_nohang, sleep, orphans handed on, ps and kill. /sbin/init runs as pid 1, starts and supervises the services named in /etc/init.conf with exactly the capabilities the file gives them, reports them through a kernel-checked record, and is restarted by the kernel if it dies. Program arguments, a Ring 3 shell that borrows the console’s input, filesystem space reclamation, and persistent Ring 3 applications on the live desktop with click-to-focus and keys routed to the focused window. Found and fixed on the way, each shown against a negative control: a denial of service in every earlier release (the kernel wrote through user pages the program could not write), the syscall stack V0.9 left unguarded, Ring 3 DF/AC flags reaching kernel code, a mouse-packet framing bug, and an interrupt-unsafe input queue. Stated limits: no kernel preemption (non-schedulable regions are measured and listed), configuration only in the boot image, a shell without pipes or job control, one app per desktop session.',
+    components: ['Always-on scheduler + process tree', '/sbin/init from /etc/init.conf', 'Ring 3 shell; desktop apps with focus'],
   },
   {
     id: 'V0.11',

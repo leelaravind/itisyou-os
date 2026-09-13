@@ -1,40 +1,40 @@
 {
-  "tag": "v0.9.0",
-  "version": "0.9.0",
+  "tag": "v0.10.0",
+  "version": "0.10.0",
   "published": true,
-  "commit": "f06673e00f27c3e5ef3df756a452969464d2b558",
-  "builtBy": "GitHub Actions run 34760629701 (ubuntu-24.04, pinned nightly-2026-08-01)",
-  "builtAt": "2026-09-13T13:45:28Z",
+  "commit": "c936bc78379bbeb379f4f3b90186242c3aee4fb7",
+  "builtBy": "GitHub Actions run 34782271250 (ubuntu-24.04, pinned nightly-2026-08-01)",
+  "builtAt": "2026-09-13T20:58:16Z",
   "reproducibility": "Bit-for-bit reproducible from source: the same CI run built every image twice more from two clean checkouts in two different directories, with no shared cache, and got identical digests (job \"Reproducible boot images\"). image-builder removes the sources of non-determinism found in v0.8.1 — random GPT GUIDs, and the link time and CodeView GUID the linker stamps into the embedded UEFI loader. A Windows host builds different bytes, because Rust embeds the build host's source paths in panic locations; the published files are the Linux CI build.",
-  "notice": "v0.8.1 remains available at /downloads/v0.8.1/ with its own SHA256SUMS.txt. V0.10 work (program arguments, filesystem space reclamation, kernel task-stack guard pages) is NOT in these images — it exists only on the v0.10/integration branch.",
+  "notice": "v0.9.0 and v0.8.1 remain available at /downloads/v0.9.0/ and /downloads/v0.8.1/, each with its own SHA256SUMS.txt. v0.9.0 has a denial of service fixed here (SEC10-001): any program could panic its kernel through cap_list.",
   "bootTests": [
     {
-      "label": "Full QEMU matrix (36 legs)",
+      "label": "QEMU matrix (40 CI steps; 50 legs in the local gate)",
       "firmware": "BIOS (SeaBIOS) and UEFI (OVMF 2024.02)",
       "qemu": "QEMU 8.2.2 (Ubuntu package)",
       "host": "GitHub Actions ubuntu-24.04",
-      "result": "Passed — run 34760629701 (all four jobs green), on these exact images; the run's reproducibility job rebuilt both images from two clean checkouts and got these exact digests"
+      "result": "Passed — run 34782271250 (all four jobs green), on these exact images; the run’s reproducibility job rebuilt both images from two clean checkouts and got these exact digests"
     },
     {
       "label": "Release boot test (downloaded CI bytes)",
       "firmware": "UEFI (OVMF, QEMU-bundled edk2) and BIOS (SeaBIOS)",
       "qemu": "QEMU 11.1.0",
       "host": "Windows 11 (x86_64)",
-      "result": "Passed — UEFI + BIOS console boot reporting itisyou-os 0.9.0, two-boot persistence on an NVMe data disk, ping over QEMU user-mode networking; images unchanged afterwards"
+      "result": "Passed — UEFI + BIOS console boot reporting itisyou-os 0.10.0 with /sbin/init as pid 1, two-boot persistence on an NVMe data disk, ping over QEMU user-mode networking; images unchanged afterwards"
     }
   ],
   "files": [
     {
-      "file": "itisyou-os-0.9.0-x86_64-uefi.img",
+      "file": "itisyou-os-0.10.0-x86_64-uefi.img",
       "firmware": "UEFI (OVMF)",
-      "bytes": 4259840,
-      "sha256": "3d252547926ba497559d7419e2d77803c2af69148cec45ba5a83d6cdddfc443e"
+      "bytes": 5308416,
+      "sha256": "f98f5cbe89dc295699f75231bc71766eb6c129a60baa41d028f5ac0f315da792"
     },
     {
-      "file": "itisyou-os-0.9.0-x86_64-bios.img",
+      "file": "itisyou-os-0.10.0-x86_64-bios.img",
       "firmware": "BIOS (SeaBIOS)",
       "bytes": 5735424,
-      "sha256": "eb3ceb46782b9d04cd40dc61aecce12a8cdbc4ed089b556675f1623c01dd8232"
+      "sha256": "d8416a58f367d835a6755662d8d9322b0ba042d7362179030f0a0ea24f44f098"
     }
   ]
 }
