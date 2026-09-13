@@ -22,6 +22,21 @@ of the runbook below are therefore DONE; the next action is step 7 (merge
 `v0.10/integration`, continue V0.10). The repository is PRIVATE again, so CI
 needs the billing fix (or the same public window) before the next release.
 
+Tag `v0.9.0` → `997dbb4` (CI `34761869462` green), pushed 15:21. A follow-up
+commit `8fafda5` corrected four overstated site claims found by the release
+workflow's adversarial reviewers; production is now `cf7a7a97`. Reviewer
+findings NOT fixed (all accuracy/polish, none affects the download or the
+evidence): the /docs pages rendered from ARCHITECTURE.md (interrupt section
+still PIC-era), SECURITY_MODEL.md (boundary 7 "no network stack yet") and
+THREAT_MODEL.md (V0.8 non-threat heading) need V0.9 wording; TESTING.md says
+"24-leg" matrix; the home page's layer diagram and "What we're building now"
+heading; changelog cards show the current build on every entry;
+`downloads.mjs` stages only the current manifest (the v0.8.1 archive is copied
+by hand); releases.astro hard-codes the pre-release file naming; the SEC09-001
+title could be narrower ("a zero-length Ring 3 buffer"); V0.10 could be shown
+as in development (branch-only) rather than planned. The full list is in the
+workflow result of this session (run `wf_471678c2-9e3`).
+
 The rest of this section is the state as of the 14:20 wind-up.
 
 - **Latest release: `v0.8.1`** (content commit `bf32b53`, CI `34750316003`).
