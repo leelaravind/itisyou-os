@@ -948,6 +948,33 @@ naked timer interrupt path does not clear the direction and alignment-check
 flags a Ring 3 program may have set before kernel code runs after a
 preemption; that is also scheduled for V0.10, with a negative control.
 
+**The serial log is the evidence, so it has to be trustworthy.** The design
+review noticed two ways a Ring 3 program could corrupt the log that every test
+reads: output written in pieces could be interleaved with anyone else's, and
+nothing stopped a program from printing a line that looks exactly like a
+kernel marker. A probe showed both on the old write path — two lines written
+a byte at a time came out as `NEEPPRROOBBEE-` and `00112233…`, a kernel
+`user_exit` marker landed in the middle of a user's line, and a forged
+`[ITISYOU:SVC]` line went straight through. Each process now has a small line
+buffer and each complete line reaches the port in one locked write; any
+`[ITISYOU:` a program prints becomes `[RING3-U:`. This had to come before the
+always-on scheduler, which will make the interleaving routine instead of rare.
+
+**A denial of service in every release so far.** Writing V0.10's
+`wait_nohang`, which returns a status into a buffer the program names, the
+question "what if that buffer is read-only?" led back to the kernel's one
+user-copy helper. It checked that each page of the buffer was mapped, never
+that the program could write it. A program that points `cap_list` — which
+needs no capability — at its own code makes the kernel write there in Ring 0;
+the write-protect bit turns that into a page fault, and a kernel-mode page
+fault panics. A small probe showed it on the V0.10 kernel before the
+fix: `[ITISYOU:PANIC] page fault … PROTECTION_VIOLATION | CAUSED_BY_WRITE`.
+v0.9.0 has the same code. The fix walks all four levels of the page tables
+and requires the user bit everywhere, and the writable bit everywhere for a
+kernel write, so the same probe now gets `ERR_FAULT`; the leg that shows it
+is part of the V0.10 gate. The site and the limitations page say so for
+v0.9.0, which stays as released: a release is never rebuilt in place.
+
 **V0.10: a userspace system, one audited step at a time.** The design was
 argued out first — three independent plans, judged against each other, then
 merged into one with fourteen binding rules — and the rule that shaped
@@ -991,15 +1018,3 @@ found a denial of service in every release so far: the kernel's copy into a
 user buffer checked only that the page was mapped, so a program pointing a
 capability-free call at its own code made the kernel fault in Ring 0. It was
 disclosed for v0.9.0 the same evening and fixed on the branch.
-
-**The serial log is the evidence, so it has to be trustworthy.** The design
-review noticed two ways a Ring 3 program could corrupt the log that every test
-reads: output written in pieces could be interleaved with anyone else's, and
-nothing stopped a program from printing a line that looks exactly like a
-kernel marker. A probe showed both on the old write path — two lines written
-a byte at a time came out as `NEEPPRROOBBEE-` and `00112233…`, a kernel
-`user_exit` marker landed in the middle of a user's line, and a forged
-`[ITISYOU:SVC]` line went straight through. Each process now has a small line
-buffer and each complete line reaches the port in one locked write; any
-`[ITISYOU:` a program prints becomes `[RING3-U:`. This had to come before the
-always-on scheduler, which will make the interleaving routine instead of rare.
