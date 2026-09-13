@@ -955,6 +955,24 @@ Write-Output '=== QEMU kernel stack guard: overflow is caught, not silent (BIOS)
     '--forbid', 'armed=false',
     '--timeout-secs', '90', '--label', 'stack-guard-bios')
 
+Write-Output '=== QEMU line-atomic Ring 3 output; kernel markers unforgeable (BIOS) ==='
+# V0.10 OUT10-001/002: parent and child each write a line one byte per
+# syscall, yielding between bytes, co-scheduled with the background
+# services. Both lines must arrive whole, and a line imitating a kernel
+# marker must come out rewritten. (Unbuffered, the lines interleave byte by
+# byte and kernel markers land mid-line.)
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B200',
+    '--send', 'bg /bin/line-probe spawn',
+    '--send', 'shutdown',
+    '--require', 'LINEPROBE-A-0123456789abcdefghijklmnopqrstuv',
+    '--require', 'LINEPROBE-B-0123456789abcdefghijklmnopqrstuv',
+    '--require', '[RING3-U:SVC] spoofed-by-ring3',
+    '--require', 'LINEPROBE-OK',
+    '--forbid', '[ITISYOU:SVC] spoofed-by-ring3',
+    '--forbid', 'LINEPROBE-FAILED',
+    '--timeout-secs', '180', '--label', 'line-atomic-bios')
+
 Write-Output '=== QEMU kernel SYSCALL stack guard (BIOS) ==='
 # V0.10 HARD10-003: the stack every syscall runs on (the one V0.9's TCP bug
 # overflowed) is guarded like RSP0 and the double-fault stack.

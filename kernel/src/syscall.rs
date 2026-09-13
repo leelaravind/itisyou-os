@@ -1394,11 +1394,8 @@ fn sys_write(fd: u64, ptr: u64, len: u64) -> u64 {
     let _access = crate::harden::UserAccess::begin();
     // SAFETY: range validated in the active space; owning process suspended.
     let bytes = unsafe { core::slice::from_raw_parts(ptr as *const u8, len as usize) };
-    for chunk in bytes.utf8_chunks() {
-        crate::serial_print!("{}", chunk.valid());
-        if !chunk.invalid().is_empty() {
-            crate::serial_print!("\u{FFFD}");
-        }
-    }
+    // Line-atomic, marker-safe output (V0.10): the SMAP window stays open
+    // while the bytes are copied into the caller's line buffer.
+    crate::console_out::write(CURRENT_PID.load(Ordering::SeqCst), bytes);
     len
 }

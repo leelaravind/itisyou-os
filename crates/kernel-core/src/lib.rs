@@ -17,6 +17,7 @@ pub mod ed25519;
 pub mod elf;
 pub mod font;
 pub mod itfs;
+pub mod linebuf;
 pub mod manifest;
 pub mod marker;
 pub mod memmap;
