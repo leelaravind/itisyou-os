@@ -148,6 +148,15 @@ pub const SYS_CONSOLE_READ: u64 = 40;
 pub const SYS_GUI_EVENT: u64 = 41;
 /// V0.11 (ADR-0024): the approved system view (`CAP_SYS_VIEW`).
 pub const SYS_SYS_VIEW: u64 = 42;
+/// V0.11: file a proposal (`kernel_core::policy` record; `CAP_PROPOSE`).
+pub const SYS_PROPOSE: u64 = 43;
+
+/// File a proposal: its id, or `ERR_INVAL` (malformed record), `ERR_AGAIN`
+/// (table full, or one already pending), `ERR_PERM` (refused - the kernel
+/// prints and audits the reason).
+pub fn propose(record: &[u8]) -> u64 {
+    raw_syscall(SYS_PROPOSE, record.as_ptr() as u64, record.len() as u64, 0)
+}
 
 /// Copy the approved system view (a `kernel_core::sysview` record) into
 /// `buf`: returns its length, `ERR_2BIG` if `buf` is too small, `ERR_PERM`

@@ -1578,6 +1578,69 @@ Write-Output '=== QEMU V0.11: the diagnostic agent on real situations (BIOS) ===
     '--forbid', 'RING3-PANIC',
     '--timeout-secs', '180', '--label', 'ai-diagnose-bios')
 
+Write-Output '=== QEMU V0.11: proposals the kernel checks, and nothing executes (BIOS) ==='
+# ACT11-001, part 1 (ADR-0024). An agent holding `propose` files a record;
+# the kernel checks, in order, the record's format and vocabulary, the model
+# digest (the one it was built with), the view (the last one it served THIS
+# process, at most 5 s ago), the condition (recomputed from that view with
+# the shipped model), whether the action applies to the system now, and one
+# pending proposal per submitter - each refusal named, printed and audited.
+# Each adversarial mode runs as its own process; AIPROBE-ACCEPTED would mean
+# the kernel took one. The agent then files a real proposal; `proposals`
+# shows it with its preview; `deny` is final. There is no `approve` yet, so
+# nothing can execute.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B210',
+    '--send', '@pause 1500',
+    '--send', 'run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose forge-model',
+    '--send', 'run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose never-served',
+    '--send', 'run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose forged-view',
+    '--send', 'run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose stale',
+    '--send', 'run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose diagnosis',
+    '--send', 'run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose not-applicable',
+    '--send', 'run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose bad-field',
+    '--send', 'run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose bad-action',
+    '--send', 'run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose not-allowed',
+    '--send', 'run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose flood',
+    '--send', 'run /bin/ai-probe sys_view,fs_read /etc/ai -- propose good',
+    '--send', 'run /bin/ai-probe sys_view,propose,ipc,fs_read /etc/ai -- direct',
+    '--send', 'run /bin/agent sys_view,propose,ipc,fs_read /etc/ai -- propose',
+    '--send', 'proposals',
+    '--send', 'deny 2',
+    '--send', 'deny 2',
+    '--send', 'deny 99',
+    '--send', 'proposals',
+    '--send', 'shutdown',
+    '--require', 'proposal_refused pid=', '--require', 'reason=unknown_model',
+    '--require', 'proposal_refused pid=', '--require', 'reason=snapshot_mismatch',
+    '--require', 'proposal_refused pid=', '--require', 'reason=snapshot_stale',
+    '--require', 'proposal_refused pid=', '--require', 'reason=diagnosis_mismatch',
+    '--require', 'proposal_refused pid=', '--require', 'reason=not_applicable',
+    '--require', 'proposal_refused pid=', '--require', 'reason=bad_field',
+    '--require', 'proposal_refused pid=', '--require', 'reason=unknown_action',
+    '--require', 'proposal_refused pid=', '--require', 'reason=action_not_allowed',
+    '--require', 'proposal_refused pid=', '--require', 'reason=already_pending',
+    '--require', 'AIPROBE-PROPOSE-FILED mode=flood-first id=1',
+    '--require', 'proposal_submitted id=1 ',
+    '--require', 'model_check=ok snapshot_check=ok diagnosis_check=ok applies=ok',
+    '--require', 'action=propose cap=0x0 result=denied',
+    '--require', 'kind=sysadmin reason=scope_denied',
+    '--require', 'AIPROBE-DIRECT-ALL-DENIED',
+    '--require', 'AGENT-PROPOSAL filed id=2 action=retry-service target=flapd',
+    '--require', '[ITISYOU:AI] proposal id=1 state=pending action=retry-service target=flapd condition=service_failed risk=low reversible=true',
+    '--require', '[ITISYOU:AI] preview id=2 ask /sbin/init to start flapd once more',
+    '--require', '[ITISYOU:AI] proposal_denied id=2 by=console',
+    '--require', 'deny: id=2 refused reason=already_decided',
+    '--require', 'deny: id=99 refused reason=no_such_proposal',
+    '--require', '[ITISYOU:AI] proposal id=2 state=denied',
+    '--require', 'action=proposal_submitted cap=0x1000 result=ok',
+    '--forbid', 'AIPROBE-ACCEPTED',
+    '--forbid', 'AIPROBE-DIRECT-ALLOWED',
+    '--forbid', 'action_executed',
+    '--forbid', 'AIPROBE-FAILED',
+    '--forbid', 'RING3-PANIC',
+    '--timeout-secs', '240', '--label', 'ai-propose-bios')
+
 if ($anyFailed) { Write-Output 'TEST: FAILED'; exit 1 }
 Write-Output 'TEST: OK'
 exit 0

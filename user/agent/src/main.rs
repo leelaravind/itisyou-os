@@ -9,6 +9,11 @@
 //! scheduler" or "retry a service" no syscall exists at all.
 //!
 //! `run /bin/agent sys_view,ipc,fs_read /etc/ai -- diagnose`
+//! `run /bin/agent sys_view,propose,ipc,fs_read /etc/ai -- propose` (S8) -
+//! diagnose, then file ONE proposal (the kernel keeps one pending per
+//! submitter) for the first actionable condition, a paused scheduler first:
+//! `AGENT-PROPOSAL filed id= action= target=`. Filing is all it can do; only
+//! the console's `approve` turns a proposal into an action.
 //!
 //! Lines (all prefixed `AGENT-`): `VIEW` (the view's digest prefix and a few
 //! counts), `DIAGNOSIS conditions=<set> model=<prefix> scores=<a,b,c>`, and
@@ -150,7 +155,8 @@ fn runbook(c: Condition, v: &View) {
     write("\n");
 }
 
-fn diagnose() {
+/// Diagnose, and return what the proposal step needs.
+fn diagnose() -> (View, [u8; 32], Reply) {
     let (v, view_digest) = view();
     write("AGENT-VIEW sha=");
     write_prefix(&view_digest);
@@ -177,6 +183,72 @@ fn diagnose() {
             runbook(c, &v);
         }
     }
+    (v, view_digest, reply)
+}
+
+/// File ONE proposal - the kernel keeps at most one pending per submitter -
+/// for the first actionable condition, a paused scheduler first (nothing
+/// else recovers while it is paused).
+fn propose() {
+    use kernel_core::policy::{allowed_action, Record, NAME_LEN};
+    let (v, view_digest, reply) = diagnose();
+    let mut filed = false;
+    for c in [
+        Condition::SchedulerPaused,
+        Condition::ServiceFailed,
+        Condition::DenialBurst,
+    ] {
+        if !reply.conditions.has(c) {
+            continue;
+        }
+        let Some(action) = allowed_action(c) else {
+            write("AGENT-PROPOSAL-NONE id=");
+            write(c.name());
+            write(" reason=no_action\n");
+            continue;
+        };
+        if filed {
+            write("AGENT-PROPOSAL-SKIPPED id=");
+            write(c.name());
+            write(" reason=one_pending_per_agent\n");
+            continue;
+        }
+        let mut target = [0u8; NAME_LEN];
+        if action.has_target() {
+            let Some(row) = v.rows().iter().find(|r| r.state == SvcState::Failed) else {
+                continue;
+            };
+            target.copy_from_slice(&row.name);
+        }
+        let record = Record {
+            action,
+            condition: c,
+            target,
+            model: reply.model,
+            view: view_digest,
+        };
+        let r = ulib::propose(&record.encode());
+        if is_err(r) {
+            write("AGENT-PROPOSAL-REFUSED action=");
+            write(action.name());
+            write(" err=");
+            write_u64(u64::MAX - r);
+            write("\n");
+        } else {
+            write("AGENT-PROPOSAL filed id=");
+            write_u64(r);
+            write(" action=");
+            write(action.name());
+            write(" target=");
+            write(if action.has_target() {
+                record.target_str()
+            } else {
+                "-"
+            });
+            write("\n");
+            filed = true;
+        }
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -189,8 +261,11 @@ extern "C" fn _start() -> ! {
         split_args(&block[..len as usize]).next()
     };
     match mode {
-        Some(b"diagnose") => diagnose(),
-        _ => fail("AGENT-USAGE agent diagnose"),
+        Some(b"diagnose") => {
+            diagnose();
+        }
+        Some(b"propose") => propose(),
+        _ => fail("AGENT-USAGE agent diagnose|propose"),
     }
     exit(0)
 }

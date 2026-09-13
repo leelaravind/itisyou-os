@@ -133,6 +133,9 @@ pub const SYS_GUI_EVENT: u64 = 41;
 /// sys_view(buf, len) (V0.11, ADR-0024): the approved system view, a
 /// `kernel_core::sysview` record. SystemAdministration READ (`sys_view`).
 pub const SYS_SYS_VIEW: u64 = 42;
+/// propose(record, len) (V0.11, ADR-0024): file a proposal for the console to
+/// approve. SystemAdministration USE (`propose`).
+pub const SYS_PROPOSE: u64 = 43;
 
 pub const ERR_NOSYS: u64 = u64::MAX;
 pub const ERR_FAULT: u64 = u64::MAX - 1;
@@ -470,6 +473,12 @@ extern "C" fn syscall_dispatch(a1: u64, a2: u64, a3: u64, nr: u64) -> u64 {
             Ok(()) => sys_view(a1, a2),
             Err(e) => e,
         },
+        SYS_PROPOSE => {
+            match require_any(CapabilityKind::SystemAdministration, rights::USE, "propose") {
+                Ok(()) => crate::ai::sys_propose(a1, a2),
+                Err(e) => e,
+            }
+        }
         SYS_SVC_REPORT => match require_any(CapabilityKind::Service, rights::ADMIN, "svc_report") {
             Ok(()) => crate::services::sys_svc_report(a1, a2),
             Err(e) => e,

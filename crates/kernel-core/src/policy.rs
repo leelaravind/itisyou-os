@@ -330,6 +330,138 @@ pub const fn next(s: State, e: Event) -> Option<State> {
     }
 }
 
+// --- The proposal table -----------------------------------------------------
+
+/// One filed proposal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Entry {
+    /// Monotonic per boot, from 1; never reused.
+    pub id: u64,
+    /// The pid that filed it.
+    pub submitter: u64,
+    pub record: Record,
+    pub state: State,
+    /// Tick it was filed at.
+    pub filed: u64,
+}
+
+/// Why a transition was refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransitionError {
+    NoSuchProposal,
+    /// Not allowed from the state the proposal is in.
+    NotAllowed(State),
+}
+
+impl TransitionError {
+    pub const fn name(self) -> &'static str {
+        match self {
+            TransitionError::NoSuchProposal => "no_such_proposal",
+            TransitionError::NotAllowed(State::Pending) => "not_approved",
+            TransitionError::NotAllowed(_) => "already_decided",
+        }
+    }
+}
+
+/// The kernel's proposal table: at most [`MAX_PROPOSALS`] entries, at most
+/// one pending proposal per submitter, finished entries evicted oldest first
+/// to make room, and never an id reused.
+#[derive(Debug, Clone)]
+pub struct Table {
+    entries: [Option<Entry>; MAX_PROPOSALS],
+    next_id: u64,
+}
+
+impl Default for Table {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Table {
+    pub const fn new() -> Table {
+        Table {
+            entries: [None; MAX_PROPOSALS],
+            next_id: 1,
+        }
+    }
+
+    /// File a proposal: its id, or why not.
+    pub fn insert(&mut self, submitter: u64, record: Record, now: u64) -> Result<u64, Refusal> {
+        if self
+            .entries
+            .iter()
+            .flatten()
+            .any(|e| e.submitter == submitter && e.state == State::Pending)
+        {
+            return Err(Refusal::AlreadyPending);
+        }
+        let slot = match self.entries.iter().position(Option::is_none) {
+            Some(i) => i,
+            None => self
+                .entries
+                .iter()
+                .enumerate()
+                .filter(|(_, e)| e.is_some_and(|e| e.state.is_final()))
+                .min_by_key(|(_, e)| e.map_or(u64::MAX, |e| e.id))
+                .map(|(i, _)| i)
+                .ok_or(Refusal::TableFull)?,
+        };
+        let id = self.next_id;
+        self.next_id += 1;
+        self.entries[slot] = Some(Entry {
+            id,
+            submitter,
+            record,
+            state: State::Pending,
+            filed: now,
+        });
+        Ok(id)
+    }
+
+    pub fn get(&self, id: u64) -> Option<Entry> {
+        self.entries.iter().flatten().find(|e| e.id == id).copied()
+    }
+
+    /// Apply `event` to proposal `id`: its new state, or why not.
+    pub fn transition(&mut self, id: u64, event: Event) -> Result<State, TransitionError> {
+        let e = self
+            .entries
+            .iter_mut()
+            .flatten()
+            .find(|e| e.id == id)
+            .ok_or(TransitionError::NoSuchProposal)?;
+        let to = next(e.state, event).ok_or(TransitionError::NotAllowed(e.state))?;
+        e.state = to;
+        Ok(to)
+    }
+
+    /// Expire every pending proposal filed [`TTL_TICKS`] or more before
+    /// `now`; calls `f` with each one expired.
+    pub fn expire(&mut self, now: u64, mut f: impl FnMut(&Entry)) {
+        for e in self.entries.iter_mut().flatten() {
+            if e.state == State::Pending && now.saturating_sub(e.filed) >= TTL_TICKS {
+                e.state = State::Expired;
+                f(e);
+            }
+        }
+    }
+
+    /// The entries, oldest first.
+    pub fn entries(&self) -> impl Iterator<Item = Entry> + '_ {
+        let mut ids = [u64::MAX; MAX_PROPOSALS];
+        for (i, e) in self.entries.iter().enumerate() {
+            if let Some(e) = e {
+                ids[i] = e.id;
+            }
+        }
+        ids.sort_unstable();
+        ids.into_iter()
+            .take_while(|&id| id != u64::MAX)
+            .filter_map(move |id| self.get(id))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -505,6 +637,72 @@ mod tests {
             .all(|s| events.iter().all(|e| next(*s, *e) != Some(Pending))));
         // Denied can never become Approved, the case the console must refuse.
         assert_eq!(next(Denied, Approve), None);
+    }
+
+    #[test]
+    fn the_table_limits_submitters_and_size_and_never_reuses_ids() {
+        let r = rec(Action::RetryService, Condition::ServiceFailed, "flapd");
+        let mut t = Table::new();
+        assert_eq!(t.insert(10, r, 0), Ok(1));
+        // One pending proposal per submitter.
+        assert_eq!(t.insert(10, r, 1), Err(Refusal::AlreadyPending));
+        // Once it is decided, the same submitter may file again.
+        assert_eq!(t.transition(1, Event::Deny), Ok(State::Denied));
+        assert_eq!(t.insert(10, r, 2), Ok(2));
+        // Fill the table with pending proposals from other submitters.
+        for pid in 11..(11 + MAX_PROPOSALS as u64 - 2) {
+            assert!(t.insert(pid, r, 3).is_ok());
+        }
+        assert_eq!(t.entries().count(), MAX_PROPOSALS);
+        // Full: the denied entry (id 1) is the only one that can go.
+        let id = t.insert(99, r, 4).unwrap();
+        assert_eq!(id, MAX_PROPOSALS as u64 + 1);
+        assert!(t.get(1).is_none());
+        // Now every entry is pending: the table is full.
+        assert_eq!(t.insert(100, r, 5), Err(Refusal::TableFull));
+        // Ids are monotonic and listed oldest first.
+        let ids: Vec<u64> = t.entries().map(|e| e.id).collect();
+        let mut sorted = ids.clone();
+        sorted.sort_unstable();
+        assert_eq!(ids, sorted);
+        assert!(!ids.contains(&1));
+    }
+
+    #[test]
+    fn transitions_and_expiry_follow_the_lifecycle() {
+        let r = rec(Action::ResumeScheduler, Condition::SchedulerPaused, "");
+        let mut t = Table::new();
+        let a = t.insert(1, r, 100).unwrap();
+        let b = t.insert(2, r, 100).unwrap();
+        assert_eq!(
+            t.transition(9, Event::Approve),
+            Err(TransitionError::NoSuchProposal)
+        );
+        assert_eq!(t.transition(a, Event::Deny), Ok(State::Denied));
+        // A denied proposal is never approved.
+        let e = t.transition(a, Event::Approve).unwrap_err();
+        assert_eq!(
+            (e, e.name()),
+            (
+                TransitionError::NotAllowed(State::Denied),
+                "already_decided"
+            )
+        );
+        // Executing needs an approval first.
+        let e = t.transition(b, Event::Execute).unwrap_err();
+        assert_eq!(e.name(), "not_approved");
+        // Expiry: exactly at the TTL, only pending entries.
+        let mut expired = Vec::new();
+        t.expire(100 + TTL_TICKS - 1, |e| expired.push(e.id));
+        assert!(expired.is_empty());
+        t.expire(100 + TTL_TICKS, |e| expired.push(e.id));
+        assert_eq!(expired, [b]);
+        assert_eq!(t.get(b).unwrap().state, State::Expired);
+        assert_eq!(t.get(a).unwrap().state, State::Denied);
+        assert_eq!(
+            t.transition(b, Event::Approve).unwrap_err().name(),
+            "already_decided"
+        );
     }
 
     #[test]

@@ -156,7 +156,14 @@ pub fn boot_check() {
         Ok(bytes) => {
             let found = kernel_core::sha256::digest(bytes);
             let decoded = match kernel_core::model::decode(bytes) {
-                Ok(_) => "ok",
+                Ok(m) => {
+                    // Kept only to CHECK claims: the kernel recomputes a
+                    // proposal's condition with it and acts on nothing it says.
+                    if found == MODEL_SHA256 {
+                        *MODEL.lock() = Some(m);
+                    }
+                    "ok"
+                }
                 Err(e) => e.name(),
             };
             crate::serial_println!(
@@ -168,5 +175,232 @@ pub fn boot_check() {
         Err(_) => crate::serial_println!(
             "[ITISYOU:AI] model sha256={compiled} initramfs_match=false reason=missing"
         ),
+    }
+}
+
+// --- Proposals (ACT11-001) ---------------------------------------------------
+//
+// An agent holding `propose` files a record; the kernel checks everything it
+// can know itself and keeps what passes in a small table. NOTHING here acts:
+// the only path from a proposal to an action is the console's `approve`.
+
+use kernel_core::policy::{self, Action, Entry, Event, Facts, Record, Refusal, ServiceFacts};
+
+/// The shipped model, decoded at boot, used only to recompute the condition
+/// a proposal cites.
+static MODEL: crate::sync::Mutex<Option<kernel_core::model::Model>> = crate::sync::Mutex::new(None);
+static PROPOSALS: crate::sync::Mutex<policy::Table> = crate::sync::Mutex::new(policy::Table::new());
+
+/// Whether `/etc/init.conf` (the initramfs copy init itself reads) defines a
+/// service called `name`.
+fn in_init_conf(name: &str) -> bool {
+    crate::fs::read("/etc/init.conf")
+        .ok()
+        .and_then(|b| core::str::from_utf8(b).ok())
+        .and_then(|t| kernel_core::initconf::parse(t).ok())
+        .is_some_and(|c| c.services().any(|s| s.name == name))
+}
+
+/// What the kernel knows now that decides whether `record` applies.
+fn facts(record: &Record) -> Facts {
+    let target = if record.action.has_target() {
+        let name = record.target_str();
+        crate::services::with_status(|rows| {
+            rows.iter().find(|r| r.name.as_str() == name).map(|r| {
+                (
+                    matches!(r.state, kernel_core::service::ServiceState::Failed { .. }),
+                    r.owner != 0 && crate::initd::is_init(r.owner),
+                )
+            })
+        })
+        .map(|(failed, owned_by_init)| ServiceFacts {
+            failed,
+            owned_by_init,
+            in_init_conf: in_init_conf(name),
+        })
+    } else {
+        None
+    };
+    Facts {
+        always_on: crate::sched::enabled(),
+        paused: crate::sched::paused(),
+        target,
+    }
+}
+
+/// The checks, in order; the first that fails names the refusal.
+fn check(pid: u64, bytes: &[u8]) -> Result<(Record, u64), Refusal> {
+    let record = policy::decode(bytes)?;
+    if record.model != MODEL_SHA256 {
+        return Err(Refusal::UnknownModel);
+    }
+    let (tick, view_bytes) = last_served(pid).ok_or(Refusal::SnapshotMismatch)?;
+    if kernel_core::sha256::digest(&view_bytes) != record.view {
+        return Err(Refusal::SnapshotMismatch);
+    }
+    let now = crate::interrupts::ticks();
+    if now.saturating_sub(tick) > policy::VIEW_MAX_AGE_TICKS {
+        return Err(Refusal::SnapshotStale);
+    }
+    let view = View::decode(&view_bytes).map_err(|_| Refusal::SnapshotMismatch)?;
+    let fired = MODEL
+        .lock()
+        .as_ref()
+        .map(|m| m.detect(&sysview::features(&view)))
+        .ok_or(Refusal::UnknownModel)?;
+    if !fired.has(record.condition) {
+        return Err(Refusal::DiagnosisMismatch);
+    }
+    if !policy::applies(record.action, &facts(&record)) {
+        return Err(Refusal::NotApplicable);
+    }
+    let id = PROPOSALS.lock().insert(pid, record, now)?;
+    Ok((record, id))
+}
+
+fn target_or_dash(r: &Record) -> &str {
+    if r.action.has_target() {
+        r.target_str()
+    } else {
+        "-"
+    }
+}
+
+/// propose(record, len) (V0.11, syscall 43; SystemAdministration USE): file
+/// a proposal. Returns its id, `ERR_INVAL` for a malformed record,
+/// `ERR_AGAIN` for a full table or a proposal already pending, `ERR_PERM`
+/// for everything the kernel refused on its own knowledge. Every refusal is
+/// printed and audited with its reason.
+pub fn sys_propose(ptr: u64, len: u64) -> u64 {
+    use crate::syscall::{ERR_AGAIN, ERR_INVAL, ERR_PERM};
+    let pid = crate::syscall::CURRENT_PID.load(core::sync::atomic::Ordering::SeqCst);
+    let result = if len != policy::RECORD_LEN as u64 {
+        Err(Refusal::BadLength)
+    } else {
+        match crate::syscall::copy_from_user(ptr, len, policy::RECORD_LEN as u64) {
+            Ok(bytes) => check(pid, &bytes),
+            Err(e) => return e,
+        }
+    };
+    match result {
+        Ok((r, id)) => {
+            let mut m = [0u8; 64];
+            let mut v = [0u8; 64];
+            let (model, view) = (hex(&r.model, &mut m), hex(&r.view, &mut v));
+            crate::serial_println!(
+                "[ITISYOU:AI] proposal_submitted id={id} pid={pid} action={} target={} condition={} model_check=ok snapshot_check=ok diagnosis_check=ok applies=ok",
+                r.action.name(),
+                target_or_dash(&r),
+                r.condition.name()
+            );
+            crate::audit::allowed(
+                "proposal_submitted",
+                kernel_core::caps::CAP_PROPOSE,
+                Some(alloc::format!(
+                    "id={id} action={} target={} condition={} model={} view={}",
+                    r.action.name(),
+                    target_or_dash(&r),
+                    r.condition.name(),
+                    &model[..16],
+                    &view[..16]
+                )),
+            );
+            id
+        }
+        Err(why) => {
+            crate::serial_println!(
+                "[ITISYOU:AI] proposal_refused pid={pid} reason={}",
+                why.name()
+            );
+            crate::audit::denied_reason("propose", kernel_core::caps::CAP_PROPOSE, why.name());
+            match why {
+                Refusal::AlreadyPending | Refusal::TableFull => ERR_AGAIN,
+                Refusal::BadLength
+                | Refusal::BadVersion
+                | Refusal::UnknownAction
+                | Refusal::UnknownCondition
+                | Refusal::UnknownRunbook
+                | Refusal::BadField
+                | Refusal::BadReserved => ERR_INVAL,
+                _ => ERR_PERM,
+            }
+        }
+    }
+}
+
+/// Expire pending proposals past their TTL, printing and auditing each.
+fn expire_now() {
+    let now = crate::interrupts::ticks();
+    PROPOSALS.lock().expire(now, |e| {
+        crate::serial_println!("[ITISYOU:AI] proposal_expired id={} reason=ttl", e.id);
+        crate::audit::allowed(
+            "proposal_expired",
+            0,
+            Some(alloc::format!("id={} reason=ttl", e.id)),
+        );
+    });
+}
+
+/// What the operator is shown before deciding: built only from fields the
+/// kernel validated.
+fn preview(e: &Entry) {
+    let r = &e.record;
+    match r.action {
+        Action::ResumeScheduler => crate::serial_println!(
+            "[ITISYOU:AI] preview id={} turn background scheduling back on; verify {} ticks: background processes progress at busy points; rollback: {}",
+            e.id,
+            r.action.verify_ticks(),
+            r.action.rollback()
+        ),
+        Action::RetryService => crate::serial_println!(
+            "[ITISYOU:AI] preview id={} ask /sbin/init to start {} once more with its restart count reset; verify {} ticks: no failure or restart of {}; rollback: {}",
+            e.id,
+            r.target_str(),
+            r.action.verify_ticks(),
+            r.target_str(),
+            r.action.rollback()
+        ),
+    }
+}
+
+/// Console `proposals`: every entry, oldest first, with its preview.
+pub fn console_list() {
+    expire_now();
+    let now = crate::interrupts::ticks();
+    let entries: alloc::vec::Vec<Entry> = PROPOSALS.lock().entries().collect();
+    if entries.is_empty() {
+        crate::serial_println!("proposals: none");
+    }
+    for e in &entries {
+        crate::serial_println!(
+            "[ITISYOU:AI] proposal id={} state={} action={} target={} condition={} risk={} reversible={} submitter={} age_ticks={}",
+            e.id,
+            e.state.name(),
+            e.record.action.name(),
+            target_or_dash(&e.record),
+            e.record.condition.name(),
+            e.record.action.risk(),
+            e.record.action.reversible(),
+            e.submitter,
+            now.saturating_sub(e.filed)
+        );
+        preview(e);
+    }
+}
+
+/// Console `deny <id>`: final; a denied proposal can never be approved.
+pub fn console_deny(id: u64) {
+    expire_now();
+    let result = PROPOSALS.lock().transition(id, Event::Deny);
+    match result {
+        Ok(_) => {
+            crate::serial_println!("[ITISYOU:AI] proposal_denied id={id} by=console");
+            crate::audit::allowed(
+                "proposal_denied",
+                0,
+                Some(alloc::format!("id={id} by=console")),
+            );
+        }
+        Err(e) => crate::serial_println!("deny: id={id} refused reason={}", e.name()),
     }
 }

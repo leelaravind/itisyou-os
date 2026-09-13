@@ -13,6 +13,11 @@
 //! * `infer` (S5) - ask `/bin/inferd` about the real view and check the
 //!   answer against the model computed here from `/etc/ai/diag.model`:
 //!   `AIPROBE-INFER conditions=<set> match=true model_match=true ...`.
+//! * `propose <mode>` (S8) - file a proposal, a valid one (`good`) or one
+//!   malformed or false on purpose; an adversarial one the kernel accepts
+//!   prints `AIPROBE-ACCEPTED`, which the test forbids.
+//! * `direct` (S8) - with the agent's authority, try the calls that could
+//!   change the system: `AIPROBE-DIRECT-ALL-DENIED` when all are refused.
 
 #![no_std]
 #![no_main]
@@ -239,19 +244,184 @@ fn infer() {
     write(" \n");
 }
 
+// --- `propose <mode>` and `direct` (S8) -----------------------------------------
+
+fn model_digest() -> [u8; 32] {
+    let mut file = [0u8; kernel_core::model::LEN + 1];
+    let n = ulib::fs_read("/etc/ai/diag.model", &mut file);
+    if is_err(n) {
+        fail("read-model", n);
+    }
+    kernel_core::sha256::digest(&file[..n as usize])
+}
+
+fn view_digest() -> [u8; 32] {
+    let mut buf = [0u8; sysview::LEN];
+    let n = sys_view(&mut buf);
+    if is_err(n) {
+        fail("sys_view", n);
+    }
+    kernel_core::sha256::digest(&buf)
+}
+
+/// A record built by hand, so malformed ones can be made on purpose.
+fn record(action: u8, condition: u8, target: &[u8], model: &[u8; 32], view: &[u8; 32]) -> [u8; 88] {
+    let mut b = [0u8; 88];
+    b[0] = 1;
+    b[1] = action;
+    b[2] = condition;
+    b[3] = condition;
+    b[4..4 + target.len()].copy_from_slice(target);
+    b[20..52].copy_from_slice(model);
+    b[52..84].copy_from_slice(view);
+    b
+}
+
+/// File `rec`. `expect_refusal`: acceptance is a failure (`AIPROBE-ACCEPTED`,
+/// forbidden by the test).
+fn file(mode: &[u8], rec: &[u8], expect_refusal: bool) -> u64 {
+    let r = ulib::propose(rec);
+    let mode = core::str::from_utf8(mode).unwrap_or("?");
+    if is_err(r) {
+        write("AIPROBE-PROPOSE mode=");
+        write(mode);
+        write(" refused err=");
+        write_u64(u64::MAX - r);
+        write("\n");
+    } else {
+        write(if expect_refusal {
+            "AIPROBE-ACCEPTED mode="
+        } else {
+            "AIPROBE-PROPOSE-FILED mode="
+        });
+        write(mode);
+        write(" id=");
+        write_u64(r);
+        write("\n");
+    }
+    r
+}
+
+const RETRY: u8 = 2;
+const RESUME: u8 = 1;
+const FAILED: u8 = 0;
+const PAUSED: u8 = 1;
+
+fn propose(mode: &[u8]) {
+    let model = model_digest();
+    match mode {
+        b"good" => {
+            let v = view_digest();
+            file(mode, &record(RETRY, FAILED, b"flapd", &model, &v), false);
+        }
+        b"forge-model" => {
+            let v = view_digest();
+            let mut m = model;
+            m[0] ^= 1;
+            file(mode, &record(RETRY, FAILED, b"flapd", &m, &v), true);
+        }
+        b"never-served" => {
+            // This process never asked for a view.
+            file(
+                mode,
+                &record(RETRY, FAILED, b"flapd", &model, &[0x5a; 32]),
+                true,
+            );
+        }
+        b"forged-view" => {
+            let mut v = view_digest();
+            v[31] ^= 1;
+            file(mode, &record(RETRY, FAILED, b"flapd", &model, &v), true);
+        }
+        b"stale" => {
+            let v = view_digest();
+            ulib::sleep_ticks(kernel_core::policy::VIEW_MAX_AGE_TICKS + 20);
+            file(mode, &record(RETRY, FAILED, b"flapd", &model, &v), true);
+        }
+        b"diagnosis" => {
+            // Claims the scheduler is paused; the view says it is not.
+            let v = view_digest();
+            file(mode, &record(RESUME, PAUSED, b"", &model, &v), true);
+        }
+        b"not-applicable" => {
+            // tickd is running: there is nothing to retry.
+            let v = view_digest();
+            file(mode, &record(RETRY, FAILED, b"tickd", &model, &v), true);
+        }
+        b"bad-field" => {
+            // A marker smuggled into the target.
+            let v = view_digest();
+            file(
+                mode,
+                &record(RETRY, FAILED, b"[ITISYOU:AI]", &model, &v),
+                true,
+            );
+        }
+        b"bad-action" => {
+            let v = view_digest();
+            file(mode, &record(3, FAILED, b"flapd", &model, &v), true);
+        }
+        b"not-allowed" => {
+            // A paused scheduler cannot ask to retry a service.
+            let v = view_digest();
+            file(mode, &record(RETRY, PAUSED, b"flapd", &model, &v), true);
+        }
+        b"flood" => {
+            let v = view_digest();
+            let r = record(RETRY, FAILED, b"flapd", &model, &v);
+            file(b"flood-first", &r, false);
+            file(mode, &r, true);
+        }
+        _ => {
+            write("AIPROBE-FAILED step=propose-mode\n");
+            exit(2)
+        }
+    }
+}
+
+/// The agent's own authority (view, propose, IPC, reads) reaches none of
+/// the calls that could change the system.
+fn direct() {
+    let mut allowed = false;
+    for (call, r) in [
+        ("svc_report", ulib::svc_report(&[0u8; 32])),
+        ("fs_write", ulib::fs_write("/data/agent-was-here", b"x")),
+        ("spawn", ulib::spawn("/bin/child")),
+    ] {
+        if r != ERR_PERM {
+            write("AIPROBE-DIRECT-ALLOWED call=");
+            write(call);
+            write("\n");
+            allowed = true;
+        }
+    }
+    if !allowed {
+        write("AIPROBE-DIRECT-ALL-DENIED\n");
+    }
+}
+
 #[unsafe(no_mangle)]
 extern "C" fn _start() -> ! {
     let mut block = [0u8; 128];
     let len = args(&mut block);
-    let mode = if is_err(len) {
-        None
+    let block = if is_err(len) {
+        &block[..0]
     } else {
-        split_args(&block[..len as usize]).next()
+        &block[..len as usize]
     };
-    match mode {
+    let mut it = split_args(block);
+    match it.next() {
         Some(b"view") => view(),
         Some(b"view-denied") => view_denied(),
         Some(b"infer") => infer(),
+        Some(b"propose") => match it.next() {
+            Some(m) => propose(m),
+            None => {
+                write("AIPROBE-FAILED step=propose-mode\n");
+                exit(2)
+            }
+        },
+        Some(b"direct") => direct(),
         _ => {
             write("AIPROBE-FAILED step=mode\n");
             exit(2)
