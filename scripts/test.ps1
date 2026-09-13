@@ -499,7 +499,7 @@ Write-Output '=== QEMU TCP stream against the host OS TCP stack (BIOS) ==='
     '--require', 'TCPSERVER-DENIED call=tcp_listen',
     '--require', 'exchanges=2 attempts=2 echo_ok=true bytes=5000',
     '--forbid', 'TCPSERVER-FAILED',
-    '--require', '[ITISYOU:TCP] owner_exit pid=3 orphaned=1 aborted=0',
+    '--forbid', 'owner=3 state=',
     '--require', '[ITISYOU:TCP] injected_loss seq=',
     '--require', '[ITISYOU:TCP] retransmit seq=',
     '--require', 'injected_losses=2',

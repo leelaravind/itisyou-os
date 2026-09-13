@@ -92,10 +92,12 @@ The rest of this section is the state as of the 14:20 wind-up.
   branch tip `b5cc23d` (adds `main`'s later commits and the agent's zero-length
   fix): VERIFY OK, 39/39 legs, 385 host tests. Then guard pages for kernel
   TASK stacks (HARD10-001, `e12329b`, the branch tip): VERIFY OK, 40/40 legs.
-- **Keys:** root and release-signer private keys (KEY09-001) are in
-  `E:\secrets\itisyou-os\` (`root.seed`, `release-signer.seed`), generated
-  with the OS CSPRNG, OUTSIDE the repository, never committed. The owner
-  should move them to offline storage. Only public material is in `keys/`.
+- **Keys:** root and release-signer private keys (KEY09-001) were MOVED on
+  2026-09-13 ~15:50 to the owner's external USB drive (TOSHIBA EXT, then G:),
+  folder `ITISYOU-OS-OFFLINE-SIGNING-KEYS\` (copies verified byte-identical,
+  originals under `E:\secrets\itisyou-os` deleted). Keep that drive
+  disconnected; issuing certificates or revocation lists needs it. Only public
+  material is in `keys/`.
 - Draft PR #1 (`w0-01-freeze-normative-inputs`) is a separate, unmerged,
   owner-gated track. Left untouched.
 
