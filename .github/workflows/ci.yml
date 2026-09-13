@@ -410,6 +410,67 @@ jobs:
           # --forbid assertions state the refusals, which print no line.
           cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --expect B210             --send "harden"             --send "run /bin/init"             --send "run /bin/wx-test"             --send "run /bin/harden-probe"             --send "run /bin/stack-guard-probe"             --send "run /bin/pf-test"             --send "shutdown"             --require "cpu_protection smep=true smap=true umip=true"             --require "harden: smep=true smap=true umip=true"             --require "RING3-DONE"             --require "load failed: WxSegment"             --require "HARDEN-PROBE-SGDT"             --require "vector=13 addr=0x0 contained=true"             --require "STACKGUARD-WROTE page=15"             --require "vector=14 addr=0x7ffffdf000 contained=true"             --require "addr=0xffff8000dead0000 contained=true"             --forbid "HARDEN-LEAK-SGDT"             --forbid "STACKGUARD-LEAK"             --timeout-secs 300 --label harden-bios
 
+      - name: QEMU program arguments (console and parent-to-child)
+        run: |
+          # V0.10 PROC10-001 (same leg as scripts/test.ps1 args-bios). Console
+          # arguments arrive in order through the capability-free args
+          # syscall (short buffer ERR_2BIG with nothing written, kernel
+          # pointer ERR_FAULT); 17 console arguments are refused with a clear
+          # message and the program never runs; a parent holding only spawn
+          # passes arguments to a child holding nothing through spawn_args
+          # (the child exits 42 only after checking them); six hostile blocks
+          # are refused with no child created; without the Process capability
+          # spawn_args is refused at the gate and audited; pre-V0.10 run
+          # syntax is unchanged.
+          cargo run -q -p qemu-runner -- \
+            --image target/images/itisyou-kernel-bios.img \
+            --expect B210 \
+            --send "run /bin/args-probe - - -- alpha beta gamma" \
+            --send "run /bin/args-probe -- a b c d e f g h i j k l m n o p q" \
+            --send "bg /bin/args-probe spawn -- spawn-child" \
+            --send "bg /bin/args-probe - -- spawn-child" \
+            --send "run /bin/args-probe" \
+            --send "run /bin/args-probe - /etc extra" \
+            --send "shutdown" \
+            --require "ARGS-COUNT n=3" \
+            --require "ARGS-ITEM i=0 value=alpha" \
+            --require "ARGS-ITEM i=1 value=beta" \
+            --require "ARGS-ITEM i=2 value=gamma" \
+            --require "ARGS-2BIG-OK" --require "ARGS-FAULT-OK" --require "ARGS-OK" \
+            --require "run: /bin/args-probe: Exit(0)" \
+            --require "run: /bin/args-probe: arguments rejected: too_many (limit 16 arguments, 512 bytes" \
+            --require "ARGS-ITEM i=0 value=spawn-child" \
+            --require "action=spawn_args cap=0x0 result=ok" --require "argc=3" \
+            --require "ARGS-ITEM i=0 value=child" \
+            --require "ARGS-ITEM i=1 value=delta" \
+            --require "ARGS-ITEM i=2 value=echo-7" \
+            --require "ARGS-CHILD-OK n=3" \
+            --require "ARGS-SPAWN-OK child_status=42" \
+            --require "spawn_args refused reason=too_many len=34" \
+            --require "spawn_args refused reason=too_long len=601" \
+            --require "spawn_args refused reason=bad_byte len=6" \
+            --require "spawn_args refused reason=bad_byte len=10" \
+            --require "spawn_args refused reason=empty len=4" \
+            --require "spawn_args refused reason=unterminated len=3" \
+            --require "ARGS-HOSTILE-REFUSED case=too_many" \
+            --require "ARGS-HOSTILE-REFUSED case=too_long" \
+            --require "ARGS-HOSTILE-REFUSED case=non_printable" \
+            --require "ARGS-HOSTILE-REFUSED case=space" \
+            --require "ARGS-HOSTILE-REFUSED case=empty" \
+            --require "ARGS-HOSTILE-REFUSED case=unterminated" \
+            --require "ARGS-HOSTILE-OK refused=6" \
+            --require "bg: /bin/args-probe: exit=0" \
+            --require "ARGS-SPAWN-DENIED call=spawn_args" \
+            --require "action=spawn_args cap=0x0 result=denied" \
+            --require "kind=process reason=no_handle" \
+            --require "ARGS-COUNT n=0" \
+            --require "program arguments go after --" \
+            --require "shutting down (QEMU exit)" \
+            --forbid "ARGS-HOSTILE-ACCEPTED" --forbid "ARGS-HOSTILE-WRONG-ERROR" \
+            --forbid "ARGS-SPAWN-FAILED" --forbid "ARGS-CHILD-MISMATCH" \
+            --forbid "ARGS-FAILED" --forbid "RING3-PANIC" --forbid "value=q" \
+            --timeout-secs 300 --label args-bios
+
       - name: QEMU interrupt routing (ACPI MADT + I/O APIC cutover + MSI-X)
         run: |
           # V0.9: timer and PS/2 lines run through the I/O APIC on the MADT's

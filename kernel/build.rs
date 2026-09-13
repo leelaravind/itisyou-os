@@ -51,6 +51,7 @@ fn main() {
         "harden-probe",
         "stack-guard-probe",
         "hello-app",
+        "args-probe",
     ] {
         println!(
             "cargo::rerun-if-changed={}",
@@ -156,6 +157,8 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
             "user-stack-guard-probe",
             "-p",
             "user-hello-app",
+            "-p",
+            "user-args-probe",
         ])
         .arg("--target-dir")
         .arg(&target_dir)
@@ -211,6 +214,7 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
         ("user-fs-user-persist", "bin/fs-user-persist"),
         ("user-harden-probe", "bin/harden-probe"),
         ("user-stack-guard-probe", "bin/stack-guard-probe"),
+        ("user-args-probe", "bin/args-probe"),
     ];
     entries.push(("bin/".to_string(), Vec::new(), true));
     for (artifact, dest) in programs {

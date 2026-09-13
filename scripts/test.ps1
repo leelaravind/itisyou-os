@@ -549,6 +549,81 @@ Write-Output '=== QEMU hardening: SMEP/SMAP/UMIP, W^X, stack guard (BIOS) ==='
     '--forbid', 'STACKGUARD-LEAK',
     '--timeout-secs', '240', '--label', 'harden-bios')
 
+Write-Output '=== QEMU program arguments: console and parent-to-child (BIOS) ==='
+# V0.10 PROC10-001. Every process carries an immutable argument block (at most
+# 16 arguments, 512 bytes, printable ASCII without spaces), validated once
+# when the process is created and read back with the capability-free `args`
+# syscall. The leg proves both launch paths and the refusals:
+#   * console: `run <path> - - -- alpha beta gamma` arrives in order, and the
+#     syscall's own contract holds (a buffer one byte short is ERR_2BIG with
+#     nothing written; a kernel pointer is ERR_FAULT);
+#   * console refusal: 17 arguments are refused by the validator with a clear
+#     message and the program never runs (`value=q` is forbidden);
+#   * parent -> child: a Ring 3 parent holding only `spawn` passes
+#     `child delta echo-7` through spawn_args to a child holding NOTHING; the
+#     child exits 42 only after checking them, and the parent requires 42;
+#   * six hostile blocks (too many, too long, control byte, space, empty
+#     argument, missing terminator) are each refused with the documented
+#     error and no child is created;
+#   * without the Process capability spawn_args is refused at the gate and
+#     audited, exactly like spawn_caps;
+#   * pre-V0.10 syntax is unchanged: `run <path>` gives no arguments, and a
+#     stray fourth token is an error rather than silently ignored.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B210',
+    '--send', 'run /bin/args-probe - - -- alpha beta gamma',
+    '--send', 'run /bin/args-probe -- a b c d e f g h i j k l m n o p q',
+    '--send', 'bg /bin/args-probe spawn -- spawn-child',
+    '--send', 'bg /bin/args-probe - -- spawn-child',
+    '--send', 'run /bin/args-probe',
+    '--send', 'run /bin/args-probe - /etc extra',
+    '--send', 'shutdown',
+    '--require', 'ARGS-COUNT n=3',
+    '--require', 'ARGS-ITEM i=0 value=alpha',
+    '--require', 'ARGS-ITEM i=1 value=beta',
+    '--require', 'ARGS-ITEM i=2 value=gamma',
+    '--require', 'ARGS-2BIG-OK',
+    '--require', 'ARGS-FAULT-OK',
+    '--require', 'ARGS-OK',
+    '--require', 'run: /bin/args-probe: Exit(0)',
+    '--require', 'run: /bin/args-probe: arguments rejected: too_many (limit 16 arguments, 512 bytes',
+    '--require', 'ARGS-ITEM i=0 value=spawn-child',
+    '--require', 'action=spawn_args cap=0x0 result=ok',
+    '--require', 'argc=3',
+    '--require', 'ARGS-ITEM i=0 value=child',
+    '--require', 'ARGS-ITEM i=1 value=delta',
+    '--require', 'ARGS-ITEM i=2 value=echo-7',
+    '--require', 'ARGS-CHILD-OK n=3',
+    '--require', 'ARGS-SPAWN-OK child_status=42',
+    '--require', 'spawn_args refused reason=too_many len=34',
+    '--require', 'spawn_args refused reason=too_long len=601',
+    '--require', 'spawn_args refused reason=bad_byte len=6',
+    '--require', 'spawn_args refused reason=bad_byte len=10',
+    '--require', 'spawn_args refused reason=empty len=4',
+    '--require', 'spawn_args refused reason=unterminated len=3',
+    '--require', 'ARGS-HOSTILE-REFUSED case=too_many',
+    '--require', 'ARGS-HOSTILE-REFUSED case=too_long',
+    '--require', 'ARGS-HOSTILE-REFUSED case=non_printable',
+    '--require', 'ARGS-HOSTILE-REFUSED case=space',
+    '--require', 'ARGS-HOSTILE-REFUSED case=empty',
+    '--require', 'ARGS-HOSTILE-REFUSED case=unterminated',
+    '--require', 'ARGS-HOSTILE-OK refused=6',
+    '--require', 'bg: /bin/args-probe: exit=0',
+    '--require', 'ARGS-SPAWN-DENIED call=spawn_args',
+    '--require', 'action=spawn_args cap=0x0 result=denied',
+    '--require', 'kind=process reason=no_handle',
+    '--require', 'ARGS-COUNT n=0',
+    '--require', 'program arguments go after --',
+    '--require', 'shutting down (QEMU exit)',
+    '--forbid', 'ARGS-HOSTILE-ACCEPTED',
+    '--forbid', 'ARGS-HOSTILE-WRONG-ERROR',
+    '--forbid', 'ARGS-SPAWN-FAILED',
+    '--forbid', 'ARGS-CHILD-MISMATCH',
+    '--forbid', 'ARGS-FAILED',
+    '--forbid', 'RING3-PANIC',
+    '--forbid', 'value=q',
+    '--timeout-secs', '240', '--label', 'args-bios')
+
 Write-Output '=== QEMU interrupt routing: ACPI MADT + I/O APIC cutover + MSI-X (BIOS) ==='
 # V0.9: the timer, PS/2 keyboard and mouse run through the I/O APIC on the
 # routes the ACPI MADT declares (QEMU: IRQ0 -> GSI 2), and the 8259s plus the

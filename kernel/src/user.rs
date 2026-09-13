@@ -140,6 +140,42 @@ pub struct Process {
     /// Kernel-owned, process-bound V0.8 handles. Invalid entries are empty
     /// slots; their authority is always revalidated in the kernel table.
     pub handles: [kernel_core::capability::CapabilityHandle; crate::capability::HANDLE_SLOTS],
+    /// Program arguments (V0.10): immutable for the life of the process and
+    /// validated when it was built — see [`Args`].
+    pub args: Args,
+}
+
+/// A process's argument block (V0.10, `kernel_core::progargs` encoding).
+///
+/// The only constructors are [`Args::empty`] and [`Args::new`], and `new`
+/// validates (count, size, printable-ASCII-without-spaces), so a process can
+/// never hold an unvalidated block and `args` never has to re-check one. The
+/// bytes sit behind an `Arc<[u8]>`: publishing them for a quantum is a
+/// reference-count bump, and nothing can mutate them after creation.
+#[derive(Clone)]
+pub struct Args(alloc::sync::Arc<[u8]>);
+
+impl Args {
+    /// No arguments — what every launch path that does not pass any gets.
+    pub fn empty() -> Self {
+        Args(alloc::sync::Arc::from(&[][..]))
+    }
+
+    /// Validate an encoded block and take a private copy of it.
+    pub fn new(block: &[u8]) -> Result<Self, kernel_core::progargs::ArgError> {
+        kernel_core::progargs::validate_block(block)?;
+        Ok(Args(alloc::sync::Arc::from(block)))
+    }
+
+    /// The encoded block (arguments, each NUL-terminated).
+    pub fn bytes(&self) -> &[u8] {
+        &self.0
+    }
+
+    /// Number of arguments.
+    pub fn count(&self) -> usize {
+        kernel_core::progargs::split(&self.0).count()
+    }
 }
 
 impl Process {
@@ -202,6 +238,7 @@ pub fn load_from_bytes(bytes: &[u8]) -> Result<Process, LoadError> {
         fs_prefixes: None,
         handles: [kernel_core::capability::CapabilityHandle::INVALID;
             crate::capability::HANDLE_SLOTS],
+        args: Args::empty(),
     };
 
     let result = (|| {
@@ -322,6 +359,7 @@ pub fn run_quantum(process: &mut Process, first: bool) -> UserExit {
     crate::syscall::CURRENT_CAPS.store(process.caps, Ordering::SeqCst);
     crate::syscall::set_current_handles(&process.handles);
     crate::syscall::set_current_sandbox(process.fs_prefixes.clone());
+    crate::syscall::set_current_args(Some(process.args.clone()));
     activate_l4(process.space.l4_phys());
     // Arm the preemption quantum for this slice; the timer decrements it
     // while this process runs at CPL=3 and preempts when it hits zero.
@@ -338,6 +376,7 @@ pub fn run_quantum(process: &mut Process, first: bool) -> UserExit {
     crate::syscall::CURRENT_CAPS.store(0, Ordering::SeqCst);
     crate::syscall::clear_current_handles();
     crate::syscall::set_current_sandbox(None);
+    crate::syscall::set_current_args(None);
     exit
 }
 
@@ -396,7 +435,19 @@ pub fn run_path_with(
     caps: u64,
     fs_prefixes: Option<alloc::sync::Arc<alloc::vec::Vec<alloc::string::String>>>,
 ) -> Result<UserExit, LoadError> {
-    let process = load_with(path, caps, fs_prefixes)?;
+    run_path_with_args(path, caps, fs_prefixes, Args::empty())
+}
+
+/// [`run_path_with`] plus program arguments (V0.10 — the console's
+/// `run <path> … -- <args>`). `args` is already validated by construction.
+pub fn run_path_with_args(
+    path: &str,
+    caps: u64,
+    fs_prefixes: Option<alloc::sync::Arc<alloc::vec::Vec<alloc::string::String>>>,
+    args: Args,
+) -> Result<UserExit, LoadError> {
+    let mut process = load_with(path, caps, fs_prefixes)?;
+    process.args = args;
     Ok(run(process))
 }
 

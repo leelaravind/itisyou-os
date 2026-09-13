@@ -25,6 +25,7 @@ pub mod net;
 pub mod path;
 pub mod pci;
 pub mod pkg;
+pub mod progargs;
 pub mod scancode;
 pub mod service;
 pub mod sha256;
