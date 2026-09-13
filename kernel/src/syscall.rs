@@ -1192,8 +1192,9 @@ pub fn copy_from_user(ptr: u64, len: u64, max: u64) -> Result<alloc::vec::Vec<u8
     }
     // Zero bytes: nothing to read, and the pointer must not be touched — a
     // zero-length request is valid with ANY pointer, NULL included, and
-    // forming even an empty slice from NULL is undefined behaviour (a debug
-    // kernel panics on it). Found by the V0.10 `args-probe` NULL check.
+    // forming even an empty slice from NULL is undefined behaviour (the debug
+    // kernel panics on it). Found by the V0.10 program-arguments work; the
+    // ungated `cap_list(NULL, 0)` reached it on V0.9 (SEC09-001).
     if len == 0 {
         return Ok(alloc::vec::Vec::new());
     }
