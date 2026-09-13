@@ -1,9 +1,27 @@
-# Current status — V0.8 Networking, Authenticity & Hardening (v0.8.1)
+# Current status — V0.9 in progress (latest release: v0.8.1)
 
 **Timestamp:** 2026-09-13 (Europe/London)
 **Branch:** `main` · **Repository:** `E:\Project\itisyou-os`
-**Milestone:** `V0.8 — Networking, Authenticity & Hardening`, release
-`v0.8.1` (release-integrity closeout of `v0.8.0`)
+**Latest release:** `v0.8.1` (V0.8 — Networking, Authenticity & Hardening,
+release-integrity closeout), live at https://os.itisyou.app with its download.
+**In development:** `0.9.0-dev` — V0.9 Transport, Interrupt Cutover & Trust.
+
+## V0.9 (in progress)
+
+Verified so far (QEMU + host evidence in `docs/REQUIREMENTS.md` § V0.9): ACPI
+discovery; the I/O APIC cutover with the 8259 PIC retired, including the PIT
+mode-3 double-delivery bug the cutover exposed; ACPI S5 power-off; a DHCP
+client (and a V0.8 broadcast-UDP checksum bug it exposed); audit anchoring
+against an off-disk witness, shown against a whole-trail forgery; IPv6
+foundations (link-local, SLAAC, NDP, ICMPv6 — client paths against QEMU's
+router, responder paths against the harness's own peer); TCP streams from
+Ring 3 against the host operating system's own TCP stack, including recovery
+from injected loss by retransmission (and two bugs that work exposed: a kernel
+stack overflow corrupting the capability table, and a V0.8 socket leak on the
+console's `run` exit path). Still open: the signing-key hierarchy. The website
+stays on the `v0.8.1` release until V0.9 closes.
+
+## V0.8.1 (release)
 
 ## 2026-09-13 audit and V0.8.1
 

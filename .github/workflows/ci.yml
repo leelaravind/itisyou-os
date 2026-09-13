@@ -257,6 +257,68 @@ jobs:
             --forbid "DHCP-FAILED" \
             --timeout-secs 240 --label net-dhcp-bios
 
+      - name: QEMU IPv6 foundations against QEMU user-mode networking (BIOS)
+        run: |
+          # Link-local from the MAC, router solicitation, SLAAC from the
+          # advertised prefix, neighbour resolution and ICMPv6 echo against
+          # QEMU's own IPv6 router - with IPv4 still working alongside.
+          cargo run -q -p qemu-runner -- \
+            --image target/images/itisyou-kernel-bios.img --net-user \
+            --expect B200 \
+            --send "ipv6" --send "ping6 fec0::2 2" --send "ping 10.0.2.2 1" \
+            --send "net" --send "shutdown" \
+            --require "[ITISYOU:NET6] up link_local=fe80::5054:ff:fe12:3456" \
+            --require "[ITISYOU:NET6] slaac global=fec0::5054:ff:fe12:3456 router=fe80::2" \
+            --require "IPV6-OK global=fec0::5054:ff:fe12:3456" \
+            --require "PING6-SUMMARY target=fec0::2 sent=2 received=2" \
+            --require "PING-SUMMARY target=10.0.2.2 sent=1 received=1" \
+            --require "rx_malformed=0 rx_unwanted=0 router_adverts=1" \
+            --forbid "IPV6-NO-ROUTER" \
+            --timeout-secs 240 --label net-ipv6-bios
+
+      - name: QEMU IPv6 responder paths against the harness peer (BIOS)
+        run: |
+          # The harness's own peer solicits the guest's link-local address and
+          # pings it (QEMU's router never does); every ICMPv6 checksum is
+          # checked by the peer's independent code.
+          cargo run -q -p qemu-runner -- \
+            --image target/images/itisyou-kernel-bios.img --net \
+            --expect B200 --send "ipv6" --send "net" --send "shutdown" \
+            --require "IPV6-NO-ROUTER (link-local only)" \
+            --require "[HOST:NET6] guest_na target=fe80:0:0:0:5054:ff:fe12:3456 solicited=true override=true" \
+            --require "[HOST:NET6] guest_echo6_reply from=fe80:0:0:0:5054:ff:fe12:3456 payload_ok=true" \
+            --require "neighbor_adverts_sent=1 echo_replies_sent=1" \
+            --require "guest_na=1 guest_icmp6_replies=1 bad_icmp6_csum=0" \
+            --timeout-secs 240 --label net-ipv6-responder-bios
+
+      - name: QEMU TCP stream against the host OS TCP stack (BIOS)
+        run: |
+          # slirp maps the guest's 10.0.2.2 to the host's loopback, so the
+          # peer is the host's own TCP stack; the echo endpoint checks the
+          # pattern itself. Clean stream, then two injected losses recovered
+          # by retransmission, then the capability denial.
+          cargo run -q -p qemu-runner -- \
+            --image target/images/itisyou-kernel-bios.img \
+            --net-user --tcp-echo-port 47123 --expect B200 \
+            --send "run /bin/tcp-probe network" --send "tcp drop 2" \
+            --send "run /bin/tcp-probe network" --send "run /bin/tcp-probe -" \
+            --send "tcp" --send "shutdown" \
+            --require 'action=tcp_connect cap=0x100 result=ok' \
+            --require 'TCPPROBE-CONNECTED' \
+            --require 'TCPPROBE-ECHO-OK bytes=3000' \
+            --require 'TCPPROBE-CLOSED' \
+            --require 'TCPPROBE-OK' \
+            --require '[ITISYOU:TCP] owner_exit pid=3 orphaned=1 aborted=0' \
+            --require '[ITISYOU:TCP] injected_loss seq=' \
+            --require '[ITISYOU:TCP] retransmit seq=' \
+            --require 'injected_losses=2' \
+            --require 'malformed=0' \
+            --require 'TCPPROBE-DENIED call=tcp_connect' \
+            --require 'action=tcp_connect cap=0x0 result=denied' \
+            --require '[HOST:TCP] summary connections=2 bytes_in=6000 bytes_out=6000 pattern_ok=true clean_close=true' \
+            --forbid "TCPPROBE-FAILED" \
+            --timeout-secs 300 --label net-tcp-bios
+
       - name: QEMU long-running background services (BIOS)
         run: |
           # V0.8 persistent services: tickd (IPC-only) and flapd (no caps)

@@ -161,6 +161,8 @@ struct Options {
     /// as `10.0.2.2:<port>` through `--net-user`); `{TCP_ECHO_PORT}` in a
     /// `--send` line is replaced with its port (V0.9).
     tcp_echo: bool,
+    /// Fixed port for `--tcp-echo` (default: ephemeral).
+    tcp_echo_port: u16,
     /// Run an audit-anchor witness persisting to this file; `{WITNESS_PORT}`
     /// in a `--send` line is replaced with its UDP port (V0.9).
     audit_witness: Option<PathBuf>,
@@ -226,6 +228,7 @@ fn parse_args() -> Result<Options, String> {
     let mut net_user = false;
     let mut net_user_extra = None;
     let mut tcp_echo = false;
+    let mut tcp_echo_port = 0u16;
     let mut audit_witness = None;
     let mut nvme = false;
     let mut nvme_persist = None;
@@ -283,6 +286,12 @@ fn parse_args() -> Result<Options, String> {
             "--net-user" => net_user = true,
             "--net-user-extra" => net_user_extra = Some(value("--net-user-extra")?),
             "--tcp-echo" => tcp_echo = true,
+            "--tcp-echo-port" => {
+                tcp_echo = true;
+                tcp_echo_port = value("--tcp-echo-port")?
+                    .parse()
+                    .map_err(|_| "--tcp-echo-port needs a port number".to_string())?;
+            }
             "--audit-witness" => audit_witness = Some(PathBuf::from(value("--audit-witness")?)),
             "--nvme" => nvme = true,
             "--nvme-persist" => nvme_persist = Some(PathBuf::from(value("--nvme-persist")?)),
@@ -347,6 +356,7 @@ fn parse_args() -> Result<Options, String> {
         net_user,
         net_user_extra,
         tcp_echo,
+        tcp_echo_port,
         audit_witness,
         nvme,
         nvme_persist,
@@ -704,7 +714,7 @@ fn run(opts: &Options) -> RunResult {
     };
     let net_ports = wire_peer.as_ref().map(|p| (p.host_port, p.guest_port));
     let tcp_echo = if opts.tcp_echo {
-        match tcp_echo::TcpEcho::start(net_tx.clone()) {
+        match tcp_echo::TcpEcho::start_on(opts.tcp_echo_port, net_tx.clone()) {
             Ok(echo) => {
                 let _ = net_tx.send(format!("[HOST:TCP] ready port={}", echo.port));
                 Some(echo)

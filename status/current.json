@@ -3,7 +3,7 @@
   "maturity": "pre-alpha",
   "architecture": "x86_64",
   "environment": "QEMU",
-  "milestone": "V0.9 \u2014 Transport, Interrupt Cutover & Trust",
+  "milestone": "V0.9 — Transport, Interrupt Cutover & Trust",
   "commit": null,
   "lastVerifiedAt": null,
   "verification": "in-development",
@@ -225,8 +225,8 @@
     },
     {
       "id": "net-tcp",
-      "name": "TCP",
-      "status": "in-development"
+      "name": "TCP streams from Ring 3 (retransmission, verified against the host TCP stack)",
+      "status": "verified"
     },
     {
       "id": "net-dhcp",
@@ -281,7 +281,7 @@
     {
       "id": "net-ipv6",
       "name": "IPv6 foundations (NDP, SLAAC, ICMPv6)",
-      "status": "planned"
+      "status": "verified"
     },
     {
       "id": "pkg-keys",

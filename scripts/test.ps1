@@ -371,6 +371,82 @@ Write-Output '=== QEMU DHCP against QEMU user-mode networking (BIOS) ==='
     '--forbid', 'DHCP-FAILED',
     '--timeout-secs', '180', '--label', 'net-dhcp-bios')
 
+Write-Output '=== QEMU IPv6 foundations against QEMU user-mode networking (BIOS) ==='
+# QEMU's user-mode network is an independent IPv6 router (fe80::2, prefix
+# fec0::/64). The guest derives its link-local address from its MAC, joins the
+# all-nodes and solicited-node groups in the NIC's multicast filter, solicits a
+# router, forms a SLAAC address from the advertised prefix, resolves the
+# router's global address by neighbour solicitation and pings it - while IPv4
+# keeps working alongside.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--net-user',
+    '--expect', 'B200',
+    '--send', 'ipv6',
+    '--send', 'ping6 fec0::2 2',
+    '--send', 'ping 10.0.2.2 1',
+    '--send', 'net',
+    '--send', 'shutdown',
+    '--require', '[ITISYOU:NET6] up link_local=fe80::5054:ff:fe12:3456',
+    '--require', '[ITISYOU:NET6] slaac global=fec0::5054:ff:fe12:3456 router=fe80::2',
+    '--require', 'IPV6-OK global=fec0::5054:ff:fe12:3456',
+    '--require', 'PING6-SUMMARY target=fec0::2 sent=2 received=2',
+    '--require', 'PING-SUMMARY target=10.0.2.2 sent=1 received=1',
+    '--require', 'net6: link_local=fe80::5054:ff:fe12:3456 global=fec0::5054:ff:fe12:3456 router=fe80::2',
+    '--require', 'rx_malformed=0 rx_unwanted=0 router_adverts=1',
+    '--forbid', 'IPV6-NO-ROUTER',
+    '--timeout-secs', '180', '--label', 'net-ipv6-bios')
+
+Write-Output '=== QEMU IPv6 responder paths against the harness peer (BIOS) ==='
+# QEMU's router never solicits the guest, so the guest's RESPONDER paths need
+# a peer that does: the harness's own byte-level implementation solicits the
+# guest's link-local address (to its solicited-node group) and pings it,
+# checking every ICMPv6 checksum itself. With no router on this wire the guest
+# must stay link-local only.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--net',
+    '--expect', 'B200',
+    '--send', 'ipv6',
+    '--send', 'net',
+    '--send', 'shutdown',
+    '--require', 'IPV6-NO-ROUTER (link-local only)',
+    '--require', '[HOST:NET6] guest_na target=fe80:0:0:0:5054:ff:fe12:3456 solicited=true override=true',
+    '--require', '[HOST:NET6] guest_echo6_reply from=fe80:0:0:0:5054:ff:fe12:3456 payload_ok=true',
+    '--require', 'neighbor_adverts_sent=1 echo_replies_sent=1',
+    '--require', 'guest_na=1 guest_icmp6_replies=1 bad_icmp6_csum=0',
+    '--timeout-secs', '180', '--label', 'net-ipv6-responder-bios')
+
+Write-Output '=== QEMU TCP stream against the host OS TCP stack (BIOS) ==='
+# QEMU's user-mode network maps the guest's 10.0.2.2 to the host's loopback,
+# so the peer is the host operating system's own TCP implementation, sharing
+# no code with the guest's. The harness's echo endpoint checks the byte
+# pattern itself. Three runs: a clean stream; the same stream with the next
+# two outgoing data segments discarded, recovered by the retransmission
+# timer; and the probe without the network capability, refused and audited.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--net-user', '--tcp-echo-port', '47123',
+    '--expect', 'B200',
+    '--send', 'run /bin/tcp-probe network',
+    '--send', 'tcp drop 2',
+    '--send', 'run /bin/tcp-probe network',
+    '--send', 'run /bin/tcp-probe -',
+    '--send', 'tcp',
+    '--send', 'shutdown',
+    '--require', 'action=tcp_connect cap=0x100 result=ok',
+    '--require', 'TCPPROBE-CONNECTED',
+    '--require', 'TCPPROBE-ECHO-OK bytes=3000',
+    '--require', 'TCPPROBE-CLOSED',
+    '--require', 'TCPPROBE-OK',
+    '--require', '[ITISYOU:TCP] owner_exit pid=3 orphaned=1 aborted=0',
+    '--require', '[ITISYOU:TCP] injected_loss seq=',
+    '--require', '[ITISYOU:TCP] retransmit seq=',
+    '--require', 'injected_losses=2',
+    '--require', 'malformed=0',
+    '--require', 'TCPPROBE-DENIED call=tcp_connect',
+    '--require', 'action=tcp_connect cap=0x0 result=denied',
+    '--require', '[HOST:TCP] summary connections=2 bytes_in=6000 bytes_out=6000 pattern_ok=true clean_close=true',
+    '--forbid', 'TCPPROBE-FAILED',
+    '--timeout-secs', '240', '--label', 'net-tcp-bios')
+
 Write-Output '=== QEMU hardening: SMEP/SMAP/UMIP, W^X, stack guard (BIOS) ==='
 # Every leg in this matrix already runs on a CPU that advertises SMEP, SMAP and
 # UMIP (see the runner's -cpu line), so the whole suite passing is itself

@@ -21,7 +21,9 @@
 //!   and dropped. Each drop has a reason, so "the network is broken" is always
 //!   a diagnosable statement.
 
+pub mod ipv6;
 pub mod socket;
+pub mod tcp;
 
 use crate::device::e1000;
 use kernel_core::net::{arp, eth, icmp, ipv4, udp};
@@ -452,6 +454,9 @@ pub fn poll() -> usize {
     e1000::with(|nic| nic.clear_interrupt_cause());
     loop {
         let Some(Some(n)) = e1000::with(|nic| nic.receive(&mut buf)) else {
+            // Every drain also runs the TCP timers: this polled stack has no
+            // background timer, so whoever polls is what retransmits.
+            tcp::tick();
             return processed;
         };
         processed += 1;
@@ -470,6 +475,7 @@ fn dispatch(frame: &[u8]) {
     match parsed.ethertype {
         eth::EtherType::Arp => on_arp(parsed.payload),
         eth::EtherType::Ipv4 => on_ipv4(parsed.payload),
+        eth::EtherType::Ipv6 => ipv6::on_frame(parsed.payload),
         _ => IFACE.lock().stats.rx_unwanted += 1,
     }
 }
@@ -530,6 +536,11 @@ fn on_ipv4(payload: &[u8]) {
         // BROADCAST datagram fail its checksum and be dropped as malformed —
         // invisible until V0.9's DHCP client depended on a broadcast reply.
         ipv4::proto::UDP => on_udp(packet.header.src, packet.header.dst, packet.payload),
+        // TCP is unicast only: a segment to the broadcast address is noise,
+        // and answering it with a RST would be a reflection amplifier.
+        ipv4::proto::TCP if packet.header.dst == our_ip => {
+            tcp::on_segment(packet.header.src, packet.header.dst, packet.payload)
+        }
         _ => IFACE.lock().stats.rx_unwanted += 1,
     }
 }

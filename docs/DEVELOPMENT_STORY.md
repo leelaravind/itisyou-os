@@ -719,3 +719,54 @@ witness's copy with the trail recovered at boot — `MISMATCH`, recorded as a
 denial. In the harness the witness is the runner itself, persisting anchors to
 a file across the four separate QEMU processes; on a real deployment it would
 be another machine, which is the whole point.
+
+**IPv6 foundations, and the half QEMU could not test.** The IPv6 codec
+(`kernel_core::net::ipv6`: header, ICMPv6 checksum over the pseudo-header,
+echo, RS/RA/NS/NA with RFC 4861 validation, RFC 5952 formatting) was written in
+parallel by a subagent in an isolated file and reviewed before integration. The
+kernel side derives its link-local address from the MAC and joins exactly two
+multicast groups in the e1000's hash filter — all-nodes and its solicited-node
+group — rather than switching the card to multicast-promiscuous mode, keeping
+the V0.8 rule that the card filters and the stack re-checks. Against QEMU's own
+IPv6 router it formed `fec0::5054:ff:fe12:3456` by SLAAC and pinged the router,
+first run. But QEMU never solicited the guest, so the guest's *responder* paths
+(answering neighbour solicitations and echo requests) had run zero times —
+`neighbor_adverts_sent=0` said so. The harness's own byte-level peer now
+solicits the guest and pings it, checking every ICMPv6 checksum with its own
+code. One design correction during integration: the echo-reply path originally
+resolved the destination with a blocking neighbour solicitation from *inside*
+the receive path, which would have re-entered `poll` from itself; it now uses
+the cache that the solicitation which preceded the ping has just filled.
+
+**TCP, tested against a stack we did not write.** The state machine
+(`kernel_core::net::tcp`) was written by a subagent in one isolated file against
+a specification — RFC 9293 transitions, RFC 5961 reset and SYN handling, one
+retransmission timer with backoff — and it found one bug of its own on the way
+(a FIN queued behind unsent data was lost if the peer's FIN arrived first). The
+kernel side keeps eight connection slots and drives every timer from the NIC
+poll. The test peer is the point: QEMU's user-mode network maps the guest's
+10.0.2.2 to the host's loopback, so the guest talks to the *host operating
+system's* TCP stack, and the harness's echo endpoint checks the byte pattern
+with its own code. A test-only switch (`tcp drop 2`) discards the next two
+outgoing data segments, so retransmission is exercised against that real peer
+instead of being claimed from unit tests.
+
+The first QEMU run failed in a way worth recording. The connect succeeded; the
+very next syscall was refused with `invalid_handle` — a capability handle that
+had been valid a moment earlier. Nothing in TCP touches capabilities. The
+cause: a TCP connection block is 8 KB, and the unoptimized build copied it by
+value several times on its way into the table — more than the 32 KB syscall
+stack holds. The stack has no guard page (a known limitation), so the overflow
+did not fault; it wrote over whatever sat below the stack, which happened to be
+the capability table. The fix builds connections in place in their static
+slots (`Tcb::connect_in_place`, host-tested to leave no trace of the slot's
+previous connection). The lesson stands in `docs/KNOWN_LIMITATIONS.md`: without
+guard pages, a kernel stack overflow is silent corruption, and this one
+surfaced only because the corrupted bytes happened to be checked.
+
+The second finding was older. After a probe exited in TIME-WAIT, its connection
+still named the dead process as owner. The console's foreground `run` path had
+never released a program's network resources — only the scheduler's exit path
+did — so since V0.8 a foreground program that exited without closing its UDP
+socket left the port bound for the rest of the boot. Both paths now release
+sockets and connections, and the leg shows it (`owner_exit pid=3 orphaned=1`).

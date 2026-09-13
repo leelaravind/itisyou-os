@@ -373,6 +373,12 @@ pub fn run(mut process: Process) -> UserExit {
     }
     crate::gfx::compositor::remove_owned(process.pid);
     crate::capability::revoke_owner(process.pid);
+    // The same network release the scheduler's exit path does. Until V0.9
+    // this foreground path skipped it, so a UDP port bound by a program the
+    // console ran stayed bound for the rest of the boot — found when the
+    // first TCP connection outlived its program here.
+    crate::net::socket::close_owner(process.pid);
+    crate::net::tcp::close_owner(process.pid);
     process.space.teardown();
     terminal
 }

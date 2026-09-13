@@ -1,6 +1,6 @@
 # Session checkpoint — resumable state
 
-**Timestamp:** 2026-09-13 ~10:30 Europe/London (session 4)
+**Timestamp:** 2026-09-13 ~12:45 Europe/London (session 4)
 **Repository:** `E:\Project\itisyou-os` · branch `main` · remote
 https://github.com/leelaravind/itisyou-os (private)
 **Tags:** `v0.1.0` … `v0.8.0` (all on green-CI commits); `v0.8.1` in progress
@@ -29,10 +29,11 @@ left committed, pushed and described here.
   `v0.8.1` release until V0.9 closes). Verified and committed: ACPI discovery,
   I/O APIC cutover with the PIC retired (plus the PIT mode-3 double-delivery
   fix), ACPI S5 power-off, DHCP client, broadcast-UDP checksum fix
-  (checkpoint `82d72be`, local gate 27/27). Verified, committing next: audit
-  anchoring against an off-disk witness (four-boot test). In flight: TCP
-  (host core + kernel integration + host-stack echo test) and IPv6 foundations
-  (host codec). Not started: KEY09-001 signing-key hierarchy — open design
+  (checkpoint `82d72be`), audit anchoring against an off-disk witness
+  (`e20b4d5`), IPv6 foundations and TCP streams (checkpoint "v0.9: IPv6
+  foundations and TCP streams" — QEMU legs `net-ipv6-bios`,
+  `net-ipv6-responder-bios`, `net-tcp-bios`; ADR-0020). Not started:
+  KEY09-001 signing-key hierarchy — open design
   question recorded in `docs/REQUIREMENTS.md`: fixture packages baked into the
   image are signed at build time, so an off-tree release key needs a CI secret
   AND breaks third-party reproducibility of the image unless fixtures are signed
