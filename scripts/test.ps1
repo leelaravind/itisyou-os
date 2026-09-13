@@ -951,6 +951,20 @@ Write-Output '=== QEMU kernel stack guard: overflow is caught, not silent (BIOS)
     '--forbid', 'armed=false',
     '--timeout-secs', '90', '--label', 'stack-guard-bios')
 
+Write-Output '=== QEMU kernel TASK stack guard (BIOS) ==='
+# V0.10: kernel task stacks live in guarded slots of a dedicated window. A
+# task that recurses must end in a double fault that names it.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B080', '--expect', 'B200',
+    '--send', 'panic-test task-stack-overflow',
+    '--expect-panic',
+    '--require', 'guard_unmapped=true; yielding to it',
+    '--require', 'kernel_stack_overflow stack=task id=',
+    '--require', 'guard_hit=true',
+    '--require', 'kernel stack overflow: stack=task id=',
+    '--forbid', 'the overflowing task returned',
+    '--timeout-secs', '90', '--label', 'stack-guard-task-bios')
+
 Write-Output '=== QEMU filesystem reboot persistence (UEFI, two boots) ==='
 # Two separate QEMU guests share one disposable persistent disk: boot 1
 # formats ITFS + writes /hello, boot 2 (fresh guest) mounts + verifies it —

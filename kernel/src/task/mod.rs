@@ -6,6 +6,7 @@
 //! preemption is future work and is documented as such.
 
 mod context;
+pub mod stack;
 
 use alloc::boxed::Box;
 use alloc::collections::VecDeque;
@@ -14,7 +15,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 use spin::Mutex;
 
 pub const STACK_SIZE: usize = 32 * 1024;
-const MAX_TASKS: usize = 16;
+pub(crate) const MAX_TASKS: usize = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskState {
@@ -31,8 +32,10 @@ pub struct Task {
     rsp: u64,
     /// Entry function, taken exactly once by the trampoline.
     entry: Option<fn()>,
-    /// Owned stack storage (kept alive for the task's lifetime).
-    /// Boxed tasks keep `rsp` slot addresses stable across Vec growth.
+    /// Owned stack storage for heap-allocated stacks; spawned tasks use a
+    /// guarded slot in the task-stack window instead (`stack.rs`, V0.10), so
+    /// only the boot task's `None` remains. Boxed tasks keep `rsp` slot
+    /// addresses stable across Vec growth.
     _stack: Option<Vec<u8>>,
 }
 
@@ -53,6 +56,8 @@ static SPAWNED: AtomicUsize = AtomicUsize::new(0);
 pub enum TaskError {
     NotInitialized,
     TooManyTasks,
+    /// The task's guarded stack could not be mapped (V0.10).
+    NoStack,
 }
 
 /// Initialize the scheduler; the calling (boot) context becomes task 0.
@@ -84,8 +89,9 @@ pub fn spawn(name: &'static str, entry: fn()) -> Result<usize, TaskError> {
     }
 
     let id = sched.tasks.len();
-    let stack = alloc::vec![0u8; STACK_SIZE];
-    let stack_top = (stack.as_ptr() as u64 + STACK_SIZE as u64) & !0xF;
+    // A guarded stack (V0.10): an overflow faults on the unmapped page below
+    // it instead of silently overwriting the heap.
+    let stack_top = stack::map(id).map_err(|_| TaskError::NoStack)? & !0xF;
 
     // Seed the stack so the first context switch "returns" into the
     // trampoline: [6 zeroed callee-saved regs][trampoline address].
@@ -107,7 +113,7 @@ pub fn spawn(name: &'static str, entry: fn()) -> Result<usize, TaskError> {
         state: TaskState::Ready,
         rsp,
         entry: Some(entry),
-        _stack: Some(stack),
+        _stack: None,
     }));
     sched.ready.push_back(id);
     SPAWNED.fetch_add(1, Ordering::SeqCst);

@@ -878,3 +878,10 @@ candidate, and the only thing between it and `v0.9.0` is a CI run GitHub will
 not start until the account's billing is fixed. That is written down as the
 first next action in `docs/SESSION_CHECKPOINT.md`, with the rest of the
 release runbook after it.
+
+**Guarding the stacks V0.10 will lean on.** HARD09-001 guarded the two static
+kernel stacks and said plainly that task stacks — heap `Vec`s — were not. The
+always-on scheduler planned for V0.10 will run real kernel tasks on exactly
+those stacks, so they moved first: each task gets a fixed slot in a dedicated
+virtual window, the slot's first page never mapped. The leg spawns a task that
+recurses and requires the double fault to name it.
