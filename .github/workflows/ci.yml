@@ -1021,6 +1021,20 @@ jobs:
             --timeout-secs 120 --label fs-persist-verify
           rm -f artifacts/fs-persist-ci.img
 
+      - name: QEMU V0.11 the diagnostic model the build trained (BIOS)
+        run: |
+          # MODEL11-001 (ADR-0024): the build trained the model on Linux and
+          # accepted the pin (a stale pin fails the build), so this digest
+          # being the one committed in ai/diag.model.sha256 is the
+          # cross-host reproducibility check; at boot the kernel finds the
+          # same bytes in the initramfs and decodes them.
+          pin=$(head -n1 ai/diag.model.sha256 | tr -d '\r\n ')
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
+            --expect B110 --send "shutdown" \
+            --require "[ITISYOU:AI] model sha256=$pin bytes=276 initramfs_match=true decode=ok" \
+            --forbid "initramfs_match=false" \
+            --timeout-secs 180 --label ai-model-bios
+
       - name: Upload QEMU evidence
         if: always()
         uses: actions/upload-artifact@v4

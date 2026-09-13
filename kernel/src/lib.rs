@@ -11,6 +11,7 @@
 extern crate alloc;
 
 pub mod acpi;
+pub mod ai;
 pub mod apic;
 pub mod audit;
 pub mod bootstage;
@@ -178,6 +179,8 @@ pub fn init_subsystems(boot_info: &'static mut BootInfo) {
     // B110: VFS + embedded initramfs.
     let (files, dirs) = fs::init();
     serial_println!("[ITISYOU:INFO] initramfs files={files} dirs={dirs}");
+    // V0.11: the model in the initramfs is the one this kernel was built with.
+    ai::boot_check();
     bootstage::emit(Stage::B110VfsReady);
 
     // B120: input path (polled serial RX).

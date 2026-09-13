@@ -1452,6 +1452,20 @@ Remove-Item $persistDisk -ErrorAction SilentlyContinue
     '--timeout-secs', '90', '--label', 'fs-persist-verify')
 Remove-Item $persistDisk -ErrorAction SilentlyContinue
 
+Write-Output '=== QEMU V0.11: the diagnostic model the build trained (BIOS) ==='
+# MODEL11-001 (ADR-0024). The build trains the model from ai/scenarios.txt,
+# refuses to build on a stale pin, ships /etc/ai/diag.model and compiles its
+# SHA-256 into the kernel; at boot the kernel checks that the initramfs copy
+# is the one it was built with and that it decodes. The digest required here
+# is the pin in ai/diag.model.sha256.
+$modelPin = (Get-Content ai/diag.model.sha256 -TotalCount 1).Trim()
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B110',
+    '--send', 'shutdown',
+    '--require', "[ITISYOU:AI] model sha256=$modelPin bytes=276 initramfs_match=true decode=ok",
+    '--forbid', 'initramfs_match=false',
+    '--timeout-secs', '120', '--label', 'ai-model-bios')
+
 if ($anyFailed) { Write-Output 'TEST: FAILED'; exit 1 }
 Write-Output 'TEST: OK'
 exit 0
