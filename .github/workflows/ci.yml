@@ -397,6 +397,18 @@ jobs:
             --forbid "[ITISYOU:SVC] spoofed-by-ring3" --forbid "LINEPROBE-FAILED" \
             --timeout-secs 240 --label line-atomic-bios
 
+      - name: QEMU kernel copies refuse read-only user memory (BIOS)
+        run: |
+          cargo run -q -p qemu-runner -- \
+            --image target/images/itisyou-kernel-bios.img --expect B200 \
+            --send "run /bin/uaccess-probe - - -- probe" --send "shutdown" \
+            --require "UACCESS-ARGS-RO-REFUSED" --require "UACCESS-CAPLIST-RO-REFUSED" \
+            --require "UACCESS-RW-OK" --require "UACCESS-OK" \
+            --require "run: /bin/uaccess-probe: Exit(0)" \
+            --require "shutting down (QEMU exit)" \
+            --forbid "UACCESS-FAILED" \
+            --timeout-secs 120 --label uaccess-bios
+
       - name: QEMU always-on co-scheduling (BIOS)
         run: |
           cargo run -q -p qemu-runner -- \

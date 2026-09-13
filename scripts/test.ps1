@@ -973,6 +973,24 @@ Write-Output '=== QEMU line-atomic Ring 3 output; kernel markers unforgeable (BI
     '--forbid', 'LINEPROBE-FAILED',
     '--timeout-secs', '180', '--label', 'line-atomic-bios')
 
+Write-Output '=== QEMU kernel copies refuse read-only user memory (BIOS) ==='
+# V0.10 SEC10-001: a program holding NO capability points `args` and
+# `cap_list` at its own read-only code and data. The kernel must refuse with
+# ERR_FAULT. (Before the fix it wrote there in Ring 0 and the write-protect
+# fault panicked the kernel.)
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B200',
+    '--send', 'run /bin/uaccess-probe - - -- probe',
+    '--send', 'shutdown',
+    '--require', 'UACCESS-ARGS-RO-REFUSED',
+    '--require', 'UACCESS-CAPLIST-RO-REFUSED',
+    '--require', 'UACCESS-RW-OK',
+    '--require', 'UACCESS-OK',
+    '--require', 'run: /bin/uaccess-probe: Exit(0)',
+    '--require', 'shutting down (QEMU exit)',
+    '--forbid', 'UACCESS-FAILED',
+    '--timeout-secs', '120', '--label', 'uaccess-bios')
+
 Write-Output '=== QEMU always-on co-scheduling (BIOS) ==='
 # V0.10 SCHED10-001: background processes run in bounded slices at the
 # audited safe points - the idle prompt (held idle by @pause), job waits,

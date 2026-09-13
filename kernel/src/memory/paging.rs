@@ -265,6 +265,48 @@ pub fn translate_active(addr: VirtAddr) -> Option<PhysAddr> {
     }
 }
 
+/// May Ring 3 access `addr` in the ACTIVE address space — every level of
+/// the walk present and user-accessible, and writable too when `write`?
+///
+/// V0.10 (SEC10-001): the kernel's copies to and from user memory must
+/// refuse a page the program itself could not touch that way. Checking only
+/// that a page is mapped let a program point `args` or `cap_list` at its own
+/// read-only code; the kernel then wrote there in Ring 0, CR0.WP turned the
+/// write into a page fault, and a kernel-mode page fault panics. x86 grants
+/// write access only if EVERY level allows it, so every level is checked,
+/// not just the leaf.
+pub fn user_accessible_active(addr: VirtAddr, write: bool) -> bool {
+    let mut need = PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE;
+    if write {
+        need |= PageTableFlags::WRITABLE;
+    }
+    let (l4_frame, _) = Cr3::read();
+    let mut table_phys = l4_frame.start_address().as_u64();
+    let indices = [
+        addr.p4_index(),
+        addr.p3_index(),
+        addr.p2_index(),
+        addr.p1_index(),
+    ];
+    for (level, index) in indices.into_iter().enumerate() {
+        // SAFETY: `table_phys` is the active root or a table the previous
+        // level's present entry points at; every physical frame is mapped at
+        // `phys_offset`. Read only; single CPU, and the owning process is
+        // suspended while the kernel runs (UNSAFE_INVENTORY row 22).
+        let table = unsafe { &*((phys_offset() + table_phys) as *const PageTable) };
+        let entry = &table[index];
+        if !entry.flags().contains(need) {
+            return false;
+        }
+        // A 1 GiB (level 1) or 2 MiB (level 2) page ends the walk.
+        if level == 3 || (level > 0 && entry.flags().contains(PageTableFlags::HUGE_PAGE)) {
+            return true;
+        }
+        table_phys = entry.addr().as_u64();
+    }
+    true
+}
+
 /// Translate a virtual address to its physical mapping, if mapped
 /// (in the KERNEL/boot table — not process spaces).
 pub fn translate(addr: VirtAddr) -> Option<PhysAddr> {
