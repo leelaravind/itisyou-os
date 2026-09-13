@@ -323,3 +323,140 @@ pub fn with_records<R>(f: impl FnOnce(&[Record]) -> R) -> R {
     drop(ring);
     f(&snapshot)
 }
+
+// --- Anchoring (V0.9) --------------------------------------------------------
+//
+// The chain detects a record being altered, removed, reordered or inserted —
+// but it is unkeyed, so an attacker who can rewrite the whole trail can write
+// one that verifies: in the limit, an EMPTY trail (`count=0`, genesis head),
+// which erases the entire history without leaving a mark. A key stored beside
+// the trail would not help (the same attacker reads it), and there is no
+// hardware root of trust to seal one. What does help is a copy of the head
+// the attacker cannot reach: a witness on another machine. `anchor` sends the
+// SAVED trail's head there; `check_anchor` asks for it back and compares it
+// with the head this boot recovered from disk.
+
+/// What the witness said about the trail recovered at boot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnchorVerdict {
+    /// The witness's last anchor is exactly the trail on disk.
+    Match,
+    /// The trail on disk is not the one last anchored: rewritten, replaced or
+    /// rolled back.
+    Mismatch,
+    /// The witness holds no anchor yet.
+    Unanchored,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnchorError {
+    /// Nothing has been saved in this boot or recovered from disk.
+    NothingSaved,
+    NoReply,
+    BadReply,
+}
+
+const ANCHOR_TIMEOUT_MS: u64 = 2000;
+
+fn parse_witness(reply: &str) -> Option<(usize, kernel_core::audit_chain::Head)> {
+    let mut count = None;
+    let mut head = None;
+    for field in reply.split_whitespace() {
+        if let Some(v) = field.strip_prefix("count=") {
+            count = v.parse().ok();
+        } else if let Some(v) = field.strip_prefix("head=") {
+            head = kernel_core::audit_chain::parse_head(v);
+        }
+    }
+    Some((count?, head?))
+}
+
+/// Send the saved trail's head to the witness at `ip:port` and wait for its
+/// acknowledgement. Returns what was anchored.
+pub fn anchor(
+    ip: kernel_core::net::ipv4::Ipv4Addr,
+    port: u16,
+) -> Result<(usize, kernel_core::audit_chain::Head), AnchorError> {
+    let (count, head, saved) = {
+        let chain = CHAIN.lock();
+        (
+            chain.saved_count,
+            chain.saved_head,
+            chain.boot > 0 || chain.saved_count > 0,
+        )
+    };
+    if !saved {
+        return Err(AnchorError::NothingSaved);
+    }
+    let mut hex = [0u8; 64];
+    let head_text = kernel_core::audit_chain::format_head(&head, &mut hex);
+    let msg = alloc::format!("ITISYOU-ANCHOR v1 count={count} head={head_text}");
+    let mut reply = [0u8; 256];
+    let n = crate::net::udp_request(ip, port, msg.as_bytes(), &mut reply, ANCHOR_TIMEOUT_MS)
+        .ok_or(AnchorError::NoReply)?;
+    let text = core::str::from_utf8(&reply[..n]).map_err(|_| AnchorError::BadReply)?;
+    // The witness must echo exactly what it stored; anything else means the
+    // anchor cannot be relied on.
+    match text.strip_prefix("ANCHORED").and_then(parse_witness) {
+        Some((c, h)) if c == count && h == head => {
+            crate::serial_println!(
+                "[ITISYOU:AUDIT] anchored count={count} head={head_text} witness_ack=ok"
+            );
+            allowed("audit_anchor", 0, None);
+            Ok((count, head))
+        }
+        _ => Err(AnchorError::BadReply),
+    }
+}
+
+/// Ask the witness for the last anchored head and compare it with the trail
+/// recovered from disk at boot (or saved since).
+pub fn check_anchor(
+    ip: kernel_core::net::ipv4::Ipv4Addr,
+    port: u16,
+) -> Result<AnchorVerdict, AnchorError> {
+    let (count, head) = {
+        let chain = CHAIN.lock();
+        (chain.saved_count, chain.saved_head)
+    };
+    let mut reply = [0u8; 256];
+    let n = crate::net::udp_request(
+        ip,
+        port,
+        b"ITISYOU-ANCHOR-QUERY v1",
+        &mut reply,
+        ANCHOR_TIMEOUT_MS,
+    )
+    .ok_or(AnchorError::NoReply)?;
+    let text = core::str::from_utf8(&reply[..n]).map_err(|_| AnchorError::BadReply)?;
+    let mut trail_hex = [0u8; 64];
+    let trail_text = kernel_core::audit_chain::format_head(&head, &mut trail_hex);
+    let verdict = if text.starts_with("NONE") {
+        AnchorVerdict::Unanchored
+    } else {
+        let (wc, wh) = text
+            .strip_prefix("LAST")
+            .and_then(parse_witness)
+            .ok_or(AnchorError::BadReply)?;
+        let mut w_hex = [0u8; 64];
+        let w_text = kernel_core::audit_chain::format_head(&wh, &mut w_hex);
+        crate::serial_println!(
+            "[ITISYOU:AUDIT] anchor_witness count={wc} head={w_text} trail_count={count} trail_head={trail_text}"
+        );
+        if wc == count && wh == head {
+            AnchorVerdict::Match
+        } else {
+            AnchorVerdict::Mismatch
+        }
+    };
+    let result = match verdict {
+        AnchorVerdict::Match => "MATCH",
+        AnchorVerdict::Mismatch => "MISMATCH",
+        AnchorVerdict::Unanchored => "UNANCHORED",
+    };
+    crate::serial_println!("[ITISYOU:AUDIT] anchor_check result={result}");
+    if verdict == AnchorVerdict::Mismatch {
+        denied("audit_anchor_mismatch", 0);
+    }
+    Ok(verdict)
+}

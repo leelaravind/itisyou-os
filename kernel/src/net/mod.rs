@@ -773,3 +773,39 @@ pub fn dhcp_configure(timeout_ms: u64) -> Result<kernel_core::net::dhcp::Lease, 
     crate::audit::allowed("dhcp_lease", 0, None);
     Ok(lease)
 }
+
+/// One UDP request/response exchange from kernel context (the shell): bind an
+/// ephemeral kernel socket, send `payload` to `dst:dst_port`, and wait up to
+/// `timeout_ms` for a reply from exactly that endpoint. Returns the reply's
+/// length in `reply`. Retransmits every 500 ms, since UDP carries no promise.
+pub fn udp_request(
+    dst: Ipv4Addr,
+    dst_port: u16,
+    payload: &[u8],
+    reply: &mut [u8],
+    timeout_ms: u64,
+) -> Option<usize> {
+    let local_port = 41000u16 + (crate::interrupts::ticks() as u16 & 0x0FFF);
+    let sock = socket::bind_kernel(local_port)?;
+    let result = (|| {
+        let mut deadline = crate::interrupts::Deadline::after_ms(timeout_ms);
+        let mut resend = crate::interrupts::Deadline::after_ms(0);
+        loop {
+            if !resend.pending() {
+                send_udp(dst, dst_port, local_port, payload);
+                resend = crate::interrupts::Deadline::after_ms(500);
+            }
+            poll();
+            if let Some((len, from, port)) = socket::take(sock, reply) {
+                if from == dst && port == dst_port {
+                    return Some(len);
+                }
+            }
+            if !deadline.pending() {
+                return None;
+            }
+        }
+    })();
+    socket::close_kernel(sock);
+    result
+}

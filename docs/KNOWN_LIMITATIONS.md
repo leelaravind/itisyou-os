@@ -63,10 +63,14 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
   use. No key rotation, no revocation list, no expiry. (V0.9: a key hierarchy
   whose private keys never enter the source tree.)
 - The audit trail is hash-chained and persistent: it detects a record being
-  altered, deleted, reordered or inserted. It does **not** defend against an
-  attacker who rewrites the whole file including its stored head. Persisting is
-  explicit (`audit save`), not automatic on every record. (V0.9: anchoring the
-  head outside the attacker's reach.)
+  altered, deleted, reordered or inserted. On its own it does **not** detect an
+  attacker who rewrites the whole file — the chain is unkeyed, and a valid empty
+  trail verifies. Since V0.9 the saved head can be **anchored** with a witness
+  off the disk and checked against it, which does detect that rewrite; but
+  anchoring and checking are explicit commands (`audit anchor`, `audit
+  check-anchor`), the witness must be reachable, and in the harness the witness
+  is a test peer, not a hardened service. Persisting is explicit (`audit
+  save`), not automatic on every record.
 - SMEP, SMAP and UMIP are enabled when the CPU advertises them (the harness's
   CPU model does); W^X for user segments, a guard page below the user stack, and
   user-pointer validation are always on. Kernel task stacks and the double-fault

@@ -30,7 +30,9 @@ use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
+mod tcp_echo;
 mod wire;
+mod witness;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -155,6 +157,13 @@ struct Options {
     /// — a network whose addresses differ from the guest's static defaults, so
     /// a test can prove the guest applied what DHCP told it.
     net_user_extra: Option<String>,
+    /// Serve a TCP echo endpoint on the host's loopback (reached by the guest
+    /// as `10.0.2.2:<port>` through `--net-user`); `{TCP_ECHO_PORT}` in a
+    /// `--send` line is replaced with its port (V0.9).
+    tcp_echo: bool,
+    /// Run an audit-anchor witness persisting to this file; `{WITNESS_PORT}`
+    /// in a `--send` line is replaced with its UDP port (V0.9).
+    audit_witness: Option<PathBuf>,
     /// Attach an emulated NVMe controller backed by a generated raw disk
     /// whose first sector carries a known magic (for storage read tests).
     nvme: bool,
@@ -216,6 +225,8 @@ fn parse_args() -> Result<Options, String> {
     let mut net = false;
     let mut net_user = false;
     let mut net_user_extra = None;
+    let mut tcp_echo = false;
+    let mut audit_witness = None;
     let mut nvme = false;
     let mut nvme_persist = None;
     let mut timeout = Duration::from_secs(60);
@@ -271,6 +282,8 @@ fn parse_args() -> Result<Options, String> {
             "--net" => net = true,
             "--net-user" => net_user = true,
             "--net-user-extra" => net_user_extra = Some(value("--net-user-extra")?),
+            "--tcp-echo" => tcp_echo = true,
+            "--audit-witness" => audit_witness = Some(PathBuf::from(value("--audit-witness")?)),
             "--nvme" => nvme = true,
             "--nvme-persist" => nvme_persist = Some(PathBuf::from(value("--nvme-persist")?)),
             "--timeout-secs" => {
@@ -333,6 +346,8 @@ fn parse_args() -> Result<Options, String> {
         net,
         net_user,
         net_user_extra,
+        tcp_echo,
+        audit_witness,
         nvme,
         nvme_persist,
         timeout,
@@ -688,6 +703,34 @@ fn run(opts: &Options) -> RunResult {
         None
     };
     let net_ports = wire_peer.as_ref().map(|p| (p.host_port, p.guest_port));
+    let tcp_echo = if opts.tcp_echo {
+        match tcp_echo::TcpEcho::start(net_tx.clone()) {
+            Ok(echo) => {
+                let _ = net_tx.send(format!("[HOST:TCP] ready port={}", echo.port));
+                Some(echo)
+            }
+            Err(e) => {
+                eprintln!("qemu-runner: could not start the TCP echo endpoint: {e}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let echo_port = tcp_echo.as_ref().map(|e| e.port.to_string());
+    let witness_port = match &opts.audit_witness {
+        Some(store) => match witness::Witness::start(store.clone(), net_tx.clone()) {
+            Ok(w) => {
+                let _ = net_tx.send(format!("[HOST:WITNESS] ready port={}", w.port));
+                Some(w.port.to_string())
+            }
+            Err(e) => {
+                eprintln!("qemu-runner: could not start the audit witness: {e}");
+                None
+            }
+        },
+        None => None,
+    };
 
     let mut cmd = build_command(opts, serial_port, monitor_port, net_ports);
     let command_line: Vec<String> = std::iter::once(opts.qemu.clone())
@@ -877,7 +920,14 @@ fn run(opts: &Options) -> RunResult {
                             {
                                 sent_commands = true;
                                 for cmd in &opts.send {
-                                    let _ = writeln!(serial_writer, "{cmd}");
+                                    let mut line = cmd.clone();
+                                    if let Some(port) = &echo_port {
+                                        line = line.replace("{TCP_ECHO_PORT}", port);
+                                    }
+                                    if let Some(port) = &witness_port {
+                                        line = line.replace("{WITNESS_PORT}", port);
+                                    }
+                                    let _ = writeln!(serial_writer, "{line}");
                                 }
                                 let _ = serial_writer.flush();
                             }
@@ -979,6 +1029,12 @@ fn run(opts: &Options) -> RunResult {
     // fails here.
     if let Some(peer) = &wire_peer {
         let summary = peer.summary();
+        serial_lines.push(summary.clone());
+        log_text.push_str(&summary);
+        log_text.push('\n');
+    }
+    if let Some(echo) = &tcp_echo {
+        let summary = echo.summary();
         serial_lines.push(summary.clone());
         log_text.push_str(&summary);
         log_text.push('\n');

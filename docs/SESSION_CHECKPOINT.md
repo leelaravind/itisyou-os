@@ -24,10 +24,21 @@ left committed, pushed and described here.
   https://os.itisyou.app/download (`website/scripts/downloads.mjs`). All rows in
   `docs/REQUIREMENTS.md` § V0.8.1 are terminal. Content commit `bf32b53`
   (CI `34750316003`); production `5436979f-5e4c-42ea-af02-32dbcf5b364a`.
-- **Next milestone: V0.9 — Transport, Interrupt Cutover & Trust**
-  (`docs/ROADMAP.md`, including the 2026-09-13 amendment that inserts V0.10
-  Userspace System before the AI layer, moves AI to V0.11, and moves daily-
-  driver hardware research after V1.0).
+- **V0.9 — Transport, Interrupt Cutover & Trust is in progress** (version
+  `0.9.0-dev`, status `in-development`; production intentionally stays at the
+  `v0.8.1` release until V0.9 closes). Verified and committed: ACPI discovery,
+  I/O APIC cutover with the PIC retired (plus the PIT mode-3 double-delivery
+  fix), ACPI S5 power-off, DHCP client, broadcast-UDP checksum fix
+  (checkpoint `82d72be`, local gate 27/27). Verified, committing next: audit
+  anchoring against an off-disk witness (four-boot test). In flight: TCP
+  (host core + kernel integration + host-stack echo test) and IPv6 foundations
+  (host codec). Not started: KEY09-001 signing-key hierarchy — open design
+  question recorded in `docs/REQUIREMENTS.md`: fixture packages baked into the
+  image are signed at build time, so an off-tree release key needs a CI secret
+  AND breaks third-party reproducibility of the image unless fixtures are signed
+  by a separately certified test key. Roadmap: `docs/ROADMAP.md` (2026-09-13
+  amendment: V0.10 Userspace System, V0.11 AI layer, daily-driver hardware after
+  V1.0).
 - Draft PR #1 (`w0-01-freeze-normative-inputs`) is a separate, unmerged,
   owner-gated architecture track. It was deliberately left untouched.
 

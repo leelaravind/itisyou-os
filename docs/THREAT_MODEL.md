@@ -72,3 +72,20 @@ The guest has never been attached to a real network. Its only peer is the test
 harness on localhost, and there is no DHCP, no IPv6, and no TCP — so there is
 no listening service, no connection state to exhaust, and nothing that
 initiates traffic on its own.
+
+## V0.9 additions
+
+- **Whole-trail rewrite of the audit log** (an attacker with disk access writes
+  a new, internally consistent trail — in the limit, an empty one): the unkeyed
+  hash chain cannot detect this by construction. Mitigation: anchoring the
+  saved head with a witness off the disk (`audit anchor` / `audit
+  check-anchor`); verified by a four-boot test in which the forgery passes the
+  chain check and fails the anchor check. Residual risk: anchoring is explicit,
+  and an attacker who also controls the witness is out of scope.
+- **Firmware tables as input**: ACPI tables are parsed with every length and
+  checksum validated before use and every page confirmed mapped before it is
+  read; a malformed table is refused and the kernel keeps its previous
+  configuration (no cutover without a valid MADT).
+- **DHCP as input**: replies are accepted only for this client's transaction
+  and hardware address, from the server port, with options bounds-checked; a
+  lease missing an address or server identity is refused rather than applied.

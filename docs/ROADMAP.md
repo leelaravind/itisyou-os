@@ -135,8 +135,8 @@ written, and the change is recorded here rather than made silently:
 
 Verified so far: ACPI discovery, the I/O APIC cutover with the 8259 PIC
 retired (and the PIT-mode bug it exposed), ACPI S5 power-off, the DHCP client,
-and a fix for broadcast UDP checksums. Remaining: TCP, IPv6 foundations, the
-signing-key hierarchy, audit anchoring. Status per row in `docs/REQUIREMENTS.md`.
+a fix for broadcast UDP checksums, and audit anchoring against an off-disk
+witness. Remaining: TCP, IPv6 foundations, the signing-key hierarchy. Status per row in `docs/REQUIREMENTS.md`.
 
 - **TCP** with a connection state machine (active and passive open, orderly
   close, reset), a retransmission timer with backoff, and a receive window;

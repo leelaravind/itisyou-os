@@ -153,7 +153,7 @@ fn execute(line: &str) {
 
 fn cmd_help() {
     crate::serial_println!(
-        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path> [caps|-] [prefix]  run a Ring 3 ELF (optionally sandboxed)\n  bg <path> [caps]  run a Ring 3 ELF co-scheduled with the background services\n  svc               supervise the on-demand services; show all service state\n  pkg <op> ...      app packages: install/stage/launch/rollback/recover/list\n  xhciwait          wait for USB HID input through the xHCI controller\n  harden            CPU-enforced kernel/user separation (SMEP/SMAP/UMIP)\n  irq               interrupt routing (I/O APIC), delivery proofs and counters\n  acpi              ACPI tables found: MADT routes, FADT, S5\n  store <op> ...    persistent store: ls | put <name> <text> | cat <name> | rm <name>\n  net               interface address, counters and bound sockets\n  ping <ip> [n]     ICMP echo the given IPv4 address\n  resolve <name>    DNS A lookup through the configured server\n  dhcp              obtain and apply an address from a DHCP server\n  audit [save|verify]  privileged-action trail; persist it or re-verify it\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  usbwait           wait for USB HID input (keyboard/mouse)\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU (test-exit device)\n  poweroff          ACPI S5 soft power-off\n  reboot            8042 CPU reset"
+        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path> [caps|-] [prefix]  run a Ring 3 ELF (optionally sandboxed)\n  bg <path> [caps]  run a Ring 3 ELF co-scheduled with the background services\n  svc               supervise the on-demand services; show all service state\n  pkg <op> ...      app packages: install/stage/launch/rollback/recover/list\n  xhciwait          wait for USB HID input through the xHCI controller\n  harden            CPU-enforced kernel/user separation (SMEP/SMAP/UMIP)\n  irq               interrupt routing (I/O APIC), delivery proofs and counters\n  acpi              ACPI tables found: MADT routes, FADT, S5\n  store <op> ...    persistent store: ls | put <name> <text> | cat <name> | rm <name>\n  net               interface address, counters and bound sockets\n  ping <ip> [n]     ICMP echo the given IPv4 address\n  resolve <name>    DNS A lookup through the configured server\n  dhcp              obtain and apply an address from a DHCP server\n  audit [save|verify|anchor <ip> <port>|check-anchor <ip> <port>]  privileged-action trail\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  usbwait           wait for USB HID input (keyboard/mouse)\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU (test-exit device)\n  poweroff          ACPI S5 soft power-off\n  reboot            8042 CPU reset"
     );
 }
 
@@ -730,8 +730,29 @@ fn cmd_audit(args: &[&str]) {
             crate::audit::recover();
             return;
         }
+        Some(sub @ ("anchor" | "check-anchor")) => {
+            // V0.9: anchor the saved trail's head with a witness outside this
+            // disk, or compare the trail on disk against the witness's copy.
+            let (Some(ip), Some(port)) = (
+                args.get(1).and_then(|t| parse_ipv4(t)),
+                args.get(2).and_then(|p| p.parse::<u16>().ok()),
+            ) else {
+                crate::serial_println!("audit: usage: audit {sub} <witness-ip> <port>");
+                return;
+            };
+            if sub == "anchor" {
+                if let Err(e) = crate::audit::anchor(ip, port) {
+                    crate::serial_println!("[ITISYOU:AUDIT] anchor_failed reason={e:?}");
+                }
+            } else if let Err(e) = crate::audit::check_anchor(ip, port) {
+                crate::serial_println!("[ITISYOU:AUDIT] anchor_check_failed reason={e:?}");
+            }
+            return;
+        }
         Some(other) => {
-            crate::serial_println!("audit: unknown subcommand \"{other}\" (save | verify)");
+            crate::serial_println!(
+                "audit: unknown subcommand \"{other}\" (save | verify | anchor | check-anchor)"
+            );
             return;
         }
         None => {}
