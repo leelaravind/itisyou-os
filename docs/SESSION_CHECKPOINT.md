@@ -9,6 +9,16 @@ https://github.com/leelaravind/itisyou-os (private)
 
 ## Where things stand
 
+**FINAL 15:37 — read first.** The repository is PRIVATE again (15:37:14).
+CI on `8fafda5` (`34762496909`) was green. CI on the docs-only commit `4964cc1`
+(`34762696403`) FAILED in one step, "QEMU TCP stream against the host OS TCP
+stack (BIOS)" (`net-tcp-bios`), after that leg had passed on `f06673e`,
+`997dbb4` and `8fafda5` — a flaky leg on the GitHub runner, not a code change.
+First job next session: pull that run's log, find which marker was missed
+(host client attempt, loss-injection timing or the retransmit window), make the
+leg deterministic, and get main green again. The `v0.9.0` tag (`997dbb4`) had
+green CI and stands.
+
 **UPDATE 15:10 — v0.9.0 RELEASED.** The owner authorised making the repository
 public so GitHub-hosted CI could run (history scanned for secrets first), then
 private again. Release commit `f06673e`, CI run `34760629701` green (all four
