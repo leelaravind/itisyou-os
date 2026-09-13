@@ -1,12 +1,12 @@
 {
-  "version": "0.9.0",
+  "version": "0.10.0-dev",
   "maturity": "pre-alpha",
   "architecture": "x86_64",
   "environment": "QEMU",
-  "milestone": "V0.9 — Transport, Interrupt Cutover & Trust (v0.9.0)",
-  "commit": "f06673e00f27c3e5ef3df756a452969464d2b558",
-  "lastVerifiedAt": "2026-09-13T13:50:30Z",
-  "verification": "verified",
+  "milestone": "V0.10 — Userspace System (in development)",
+  "commit": null,
+  "lastVerifiedAt": null,
+  "verification": "in-development",
   "modules": [
     {
       "id": "boot",
@@ -291,6 +291,21 @@
     {
       "id": "release-artifact",
       "name": "Reproducible, checksummed public boot images",
+      "status": "verified"
+    },
+    {
+      "id": "proc-args",
+      "name": "Program arguments for Ring 3 programs (V0.10)",
+      "status": "verified"
+    },
+    {
+      "id": "fs-reclaim",
+      "name": "ITFS space reclamation, no format change (V0.10)",
+      "status": "verified"
+    },
+    {
+      "id": "task-stack-guards",
+      "name": "Guard pages for kernel task stacks (V0.10)",
       "status": "verified"
     }
   ]
