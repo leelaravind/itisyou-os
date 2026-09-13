@@ -4,8 +4,11 @@
  * reached when its verification gates pass, never before.
  *
  * Statuses use the allowed vocabulary honestly: delivered milestones are Verified
- * (machine-checked in QEMU); near-term milestones are Planned; the far
- * research milestones are Concept — documented direction, not active work.
+ * (machine-checked in QEMU); the milestone being built is In Development until
+ * its release gate (CI on the release commit, then the tag) has passed, even
+ * when every feature in it is already verified; near-term milestones are
+ * Planned; the far research milestones are Concept — documented direction, not
+ * active work.
  */
 import type { ModuleStatus } from './status';
 
@@ -16,6 +19,12 @@ export interface Milestone {
   current?: boolean;
   summary: string;
   components: string[];
+  /**
+   * Release state of an unreleased milestone — what still stands between its
+   * verified work and a tagged release. Rendered on /roadmap, /releases,
+   * /download, /build and the home page; omit once the milestone is released.
+   */
+  release?: string;
 }
 
 export const MILESTONES: Milestone[] = [
@@ -109,8 +118,14 @@ export const MILESTONES: Milestone[] = [
     status: 'in-development',
     current: true,
     summary:
-      'TCP with a connection state machine, a retransmission timer and a receive window, verified against a real host TCP stack with loss injected; a DHCP client and IPv6 foundations (NDP, SLAAC, ICMPv6); ACPI table discovery and the I/O APIC cutover that retires the 8259 PIC, plus ACPI power-off; a package-signing key hierarchy with rotation and revocation whose private keys never enter the source tree; and anchoring the audit head outside the audited disk.',
-    components: ['TCP, DHCP, IPv6 foundations', 'ACPI + I/O APIC cutover, PIC retired', 'Signing-key hierarchy; audit anchoring'],
+      'Verified locally in QEMU, not yet released. TCP from Ring 3: a host-tested RFC 9293 state machine with a retransmission timer and a receive window; programs connect and listen (one connection per listen) under a network capability scoped to the port; verified against the host operating system’s own TCP stack, including two deliberately dropped segments recovered by retransmission. A DHCP client, and IPv6 foundations: link-local and SLAAC addresses, neighbour discovery, ICMPv6 echo in both directions. ACPI table discovery and the I/O APIC cutover that retires the 8259 PIC, plus ACPI S5 power-off. A package-signing key hierarchy: only an offline root is compiled in, signing keys are trusted through root-signed certificates limited by package-name scope and a release-epoch validity window, a root-signed revocation list retires them, and the private keys stay outside the source tree. The audit head anchored with a witness off the audited disk, and guard pages under the kernel’s syscall and double-fault stacks, so an overflow of either faults instead of silently corrupting kernel data.',
+    components: [
+      'TCP from Ring 3 (connect + listen), DHCP, IPv6 foundations',
+      'ACPI + I/O APIC cutover (PIC retired), ACPI S5 power-off',
+      'Offline-root signing-key hierarchy; audit anchoring; kernel stack guards',
+    ],
+    release:
+      'Release pending. Every V0.9 feature is verified locally; what remains is the release itself — CI green on the release commit, then the tag, the website and the download. GitHub Actions is currently refusing to start jobs on this account because of a billing problem, so that CI run cannot happen yet. Until it does, V0.9 is not released: the latest release, and the only download, is v0.8.1.',
   },
   {
     id: 'V0.10',

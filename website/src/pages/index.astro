@@ -8,6 +8,7 @@ import VerificationLoop from '../components/VerificationLoop.astro';
 import { status } from '../lib/status';
 import { MILESTONES } from '../lib/roadmap';
 import { JOURNAL } from '../lib/journal';
+import { RELEASES } from '../lib/releases';
 
 const description =
   'ITISYOU OS is an experimental pre-alpha research operating system: an independently bootable x86_64 kernel in Rust (no_std), developed and verified exclusively inside QEMU. Building an operating system from the kernel upward.';
@@ -66,6 +67,9 @@ const layers = [
 
 const roadmapTeaser = MILESTONES.map((m) => ({ id: m.id, name: m.name, status: m.status, current: m.current }));
 const latestJournal = JOURNAL.slice(0, 2);
+/** The milestone in development, if any — verified work that is not yet released. */
+const building = MILESTONES.find((m) => m.current && m.status !== 'verified');
+const latestRelease = RELEASES[0];
 ---
 
 <Base title="ITISYOU OS" description={description}>
@@ -169,6 +173,17 @@ const latestJournal = JOURNAL.slice(0, 2);
         Statuses are read from <span class="text-meta-bright">status/current.json</span> at build time. “Implemented”
         and “Verified” are not interchangeable; anything not marked Verified should be assumed incomplete.
       </p>
+      {
+        building && (
+          <p class="font-mono text-mono-data text-meta-bright mt-4 max-w-3xl border-l-2 border-line-strong pl-4">
+            Modules marked Verified include {building.id} work that passed its host and QEMU tests locally but is not
+            yet released. The latest release, and the download, is{' '}
+            <a href={latestRelease.download ?? '/releases'} class="underline underline-offset-2 hover:text-ink">{latestRelease.tag}</a>; see the{' '}
+            <a href="/roadmap" class="underline underline-offset-2 hover:text-ink">roadmap</a> for what the {building.id}
+            release is waiting on.
+          </p>
+        )
+      }
     </section>
 
     <!-- ================= Boot sequence ================= -->

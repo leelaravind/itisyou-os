@@ -36,7 +36,7 @@ const kernelCells = [
   { label: 'SERIAL / STAGES', value: 'COM1 markers, pre-allocator', modId: 'serial' },
   { label: 'CPU BASELINE', value: 'vendor/features identification', modId: 'cpu' },
   { label: 'MEMORY', value: 'memory map → PMM → paging → heap', modId: 'memory-physical' },
-  { label: 'DESCRIPTORS / IRQ', value: 'GDT/TSS/IDT → PIC/PIT timer', modId: 'interrupts' },
+  { label: 'DESCRIPTORS / IRQ', value: 'GDT/TSS/IDT → I/O APIC/PIT timer (V0.9)', modId: 'interrupts' },
   { label: 'TASKS / FS / SHELL', value: 'scheduler → VFS/initramfs → shell', modId: 'scheduler' },
 ];
 
@@ -137,8 +137,8 @@ const cellStatus = (id: string) => status.modules.find((m) => m.id === id)?.stat
           <h2 id="layer-user" class="font-sans text-headline-md text-ink mb-2">Userspace</h2>
           <p class="text-meta-bright text-sm mb-4">
             Ring 3 execution with a validated syscall ABI (V0.2): real ELF64 programs, user pointers checked before
-            any kernel dereference, no user mapping of kernel pages, faults contained to the process. One process at
-            a time — per-process page tables for concurrent processes are the next step.
+            any kernel dereference, no user mapping of kernel pages, faults contained to the process. Since V0.3–V0.4,
+            concurrent, preemptively scheduled processes, each in its own address space.
           </p>
           <StatusTag status={cellStatus('ring3')} />
         </section>
@@ -192,25 +192,25 @@ const cellStatus = (id: string) => status.modules.find((m) => m.id === id)?.stat
     <section class="mb-8 panel p-gutter" aria-labelledby="next-title">
       <h2 id="next-title" class="font-sans text-headline-md text-ink mb-4">Planned next boundaries</h2>
       <p class="text-body-base text-meta-bright mb-4 max-w-3xl">
-        Dependency order for the kernel subsystems — each lands with host tests and QEMU selftests before the
-        next begins:
+        After V0.9 is released, V0.10 — Userspace System — is planned, not started. Each item lands with host tests
+        and QEMU evidence before it is claimed:
       </p>
-      <ol class="flex flex-wrap items-center gap-x-3 gap-y-2 font-mono text-mono-data list-none">
+      <ul class="flex flex-wrap items-center gap-x-3 gap-y-2 font-mono text-mono-data list-none">
         {
-          ['physical memory manager', 'paging abstraction', 'heap', 'descriptors/interrupts', 'scheduler', 'VFS/initramfs', 'shell'].map(
+          ['userspace init', 'always-on scheduler', 'program arguments', 'Ring 3 shell', 'filesystem space reclamation', 'desktop applications with focus'].map(
             (step, i, arr) => (
               <li class="flex items-center gap-3">
                 <span class="text-meta-bright">{step}</span>
                 {i < arr.length - 1 && (
                   <span aria-hidden="true" class="text-muted">
-                    →
+                    ·
                   </span>
                 )}
               </li>
             ),
           )
         }
-      </ol>
+      </ul>
       <div class="mt-6">
         <a href="/docs/architecture" class="btn">Full architecture doc</a>
       </div>

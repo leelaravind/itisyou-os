@@ -20,6 +20,19 @@ export interface JournalEntry {
 export const JOURNAL: JournalEntry[] = [
   {
     date: '2026-09-13',
+    time: '13:12',
+    session: 'Session 4 — V0.9',
+    title: 'V0.9: TCP, IPv6, a signing-key hierarchy and kernel stack guards — verified locally, not released',
+    what:
+      'IPv6 foundations — link-local and SLAAC addresses, neighbour discovery, ICMPv6 echo in both directions — and TCP from Ring 3, verified against the host operating system’s own TCP stack: a program connects and streams, two deliberately dropped segments are recovered by retransmission, and a program can also listen. Package trust moved to a key hierarchy: an offline root, certificates limited by package-name scope and a release-epoch window, and a root-signed revocation list. The kernel’s syscall and double-fault stacks now sit on unmapped guard pages. With the I/O APIC cutover, ACPI power-off, DHCP and audit anchoring from earlier in the session, every V0.9 feature is verified locally; nothing is released yet.',
+    detail:
+      'The first TCP run failed somewhere TCP never goes: a capability handle that had been valid a moment earlier was refused as invalid. An 8 KB connection block, copied by value several times in the unoptimized build, overran the 32 KB syscall stack — which had no guard page — and wrote over the capability table below it. Connections are now built in place in static slots, and both static kernel stacks have guard pages, so an overflow of either now stops the machine with a double fault naming the stack (heap-allocated task stacks still have none). The same work exposed a V0.8 leak: the console’s foreground run path never released a program’s UDP sockets, so a port stayed bound for the rest of the boot; both exit paths now release sockets and connections. The key hierarchy settled the open question of moving the signing key out of the tree without a CI secret that would have made the image unreproducible: the fixture key stays published, but is trusted only through a root certificate scoped to hello-* names. Then GitHub Actions refused to start any job on the account for a billing reason; until the owner clears it, the full local gate at each exact commit is the verification of record, and the V0.9 release waits for CI.',
+    evidence:
+      'net-tcp-bios · TCPPROBE-ECHO-OK bytes=3000 · injected_losses=2 · pattern_ok=true · owner_exit pid=3 orphaned=1 · stack-guard-bios · kernel_stack_overflow stack=priv … guard_hit=true · trust-bios · revoked_signer | certificate_expired | out_of_scope · CI run 34755059496 refused to start',
+    status: 'in-development',
+  },
+  {
+    date: '2026-09-13',
     time: '09:45',
     session: 'Session 4 — audit + V0.8.1',
     title: 'Audit: the V0.8 engineering reproduces; the V0.8 release did not agree with itself',

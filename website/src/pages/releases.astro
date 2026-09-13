@@ -5,10 +5,13 @@ import StatusTag from '../components/StatusTag.astro';
 import WarningBanner from '../components/WarningBanner.astro';
 import { status } from '../lib/status';
 import { RELEASES } from '../lib/releases';
+import { MILESTONES } from '../lib/roadmap';
 
 const description =
-  'ITISYOU OS releases: every version tag with its commit and green CI run, what each delivered, and why no image is downloadable yet — the first public, checksummed boot image is a V1.0 deliverable.';
+  'ITISYOU OS releases: every version tag with its commit and green CI run, what each delivered, and which carry a public, checksummed boot image for virtual machines (v0.8.1 is the first).';
 const repo = 'https://github.com/leelaravind/itisyou-os';
+/** The milestone in development, if any — built and verified, but not yet tagged. */
+const building = MILESTONES.find((m) => m.current && m.status !== 'verified');
 ---
 
 <Base title="Releases" description={description}>
@@ -38,6 +41,13 @@ const repo = 'https://github.com/leelaravind/itisyou-os';
         a verified state, not something you can fetch. Since v0.8.1 a release can also carry a public download: boot
         images built by CI, checksummed, and booted byte for byte before publication. Earlier tags have none.
       </p>
+      {
+        building?.release && (
+          <p class="mx-gutter mt-4 font-mono text-mono-data text-meta-bright max-w-3xl border-l-2 border-line-strong pl-4">
+            <span class="text-ink">NOT YET TAGGED // {building.id} — {building.name}.</span> {building.release}
+          </p>
+        )
+      }
       <div class="table-scroll mt-4">
         <table class="w-full border-collapse min-w-[720px]">
           <caption class="sr-only">Release tags with commit, date, CI run and summary</caption>

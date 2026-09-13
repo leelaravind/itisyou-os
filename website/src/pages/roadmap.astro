@@ -3,9 +3,13 @@ import Base from '../layouts/Base.astro';
 import Breadcrumbs from '../components/Breadcrumbs.astro';
 import StatusTag from '../components/StatusTag.astro';
 import { MILESTONES } from '../lib/roadmap';
+import { RELEASES } from '../lib/releases';
 
 const description =
   'ITISYOU OS roadmap V0.1 through V1.0 — milestones sequenced by dependency, not calendar. No fabricated dates; a milestone is reached when its verification gates pass, never before.';
+
+const latestRelease = RELEASES[0];
+const building = MILESTONES.find((m) => m.current && m.status !== 'verified');
 ---
 
 <Base title="Roadmap" description={description}>
@@ -15,9 +19,12 @@ const description =
       <h1 class="font-sans font-light text-[36px] sm:text-display-lg text-ink mb-4">System Roadmap</h1>
       <p class="font-mono text-mono-data text-meta-bright max-w-2xl">
         Milestones are sequenced by dependency, not calendar — this page carries no dates on purpose. A milestone is
-        reached when its verification gates pass, never before. Everything after the current release is planned
-        direction, not delivered work; the 2026-09-13 amendment that re-sequenced it is recorded in the roadmap
-        document.
+        reached when its verification gates pass, never before. The latest release is {latestRelease.tag}.
+        {
+          building
+            ? `${building.id} is in development: its features are verified in QEMU, but it is not released. Everything after ${building.id} is planned direction, not delivered work;`
+            : 'Everything after it is planned direction, not delivered work;'
+        } the 2026-09-13 amendment that re-sequenced it is recorded in the roadmap document.
       </p>
     </header>
 
@@ -57,6 +64,11 @@ const description =
                   <StatusTag status={m.status} class="h-fit" />
                 </div>
                 <p class="text-body-base text-meta-bright max-w-3xl mb-6">{m.summary}</p>
+                {m.release && (
+                  <p class="font-mono text-mono-data text-meta-bright border-l-2 border-line-strong pl-4 max-w-3xl mb-6">
+                    <span class="text-ink">RELEASE //</span> {m.release}
+                  </p>
+                )}
                 <ul class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 list-none">
                   {m.components.map((component, i) => (
                     <li class="border border-line bg-log p-4">

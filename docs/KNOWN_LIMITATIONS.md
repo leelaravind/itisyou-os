@@ -87,7 +87,10 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
   integration, which overflowed the (then unguarded) syscall stack and
   silently corrupted the capability table beside it. Kernel TASK stacks
   (32 KiB, heap-allocated) still have no guard page: an overflow there would
-  still be silent corruption.
+  still be silent corruption. Today only the selftest's two worker tasks use
+  them; they matter once V0.10's always-on scheduler runs kernel tasks for
+  real. Whether the bootloader-provided boot/console stack has a guard page
+  has not been verified.
 - No hardware root of trust, no Secure Boot chain, no measured boot.
 
 ## Storage
