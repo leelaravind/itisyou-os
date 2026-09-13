@@ -4,8 +4,8 @@
   "architecture": "x86_64",
   "environment": "QEMU",
   "milestone": "V0.8 \u2014 Networking, Authenticity & Hardening (v0.8.1 release-integrity closeout)",
-  "commit": "397ab80a573e475a5bb17780ea852649b851becd",
-  "lastVerifiedAt": "2026-09-13T09:24:38Z",
+  "commit": "bf32b5337d9503b47bb4cece7d5436a0b1804cca",
+  "lastVerifiedAt": "2026-09-13T09:56:20Z",
   "verification": "verified",
   "modules": [
     {
