@@ -63,6 +63,13 @@ extern "C" fn _start() -> ! {
         yield_now();
     }
     write("TCPPROBE-CONNECTED\n");
+    // A zero-length send with a NULL pointer is a valid request for nothing;
+    // it must be answered (nothing accepted) without the kernel ever forming
+    // a slice from that pointer.
+    if ulib::raw_syscall(ulib::SYS_TCP_SEND, sock, 0, 0) != ERR_AGAIN {
+        fail("null-send")
+    }
+    write("TCPPROBE-NULL-SEND-OK\n");
 
     let mut data = [0u8; LEN];
     for (i, b) in data.iter_mut().enumerate() {

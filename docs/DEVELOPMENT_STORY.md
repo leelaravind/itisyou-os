@@ -809,3 +809,17 @@ The test does it on purpose — the console switches onto the syscall stack and
 recurses — and the leg requires the machine to stop with
 `kernel_stack_overflow stack=priv`. Heap-allocated task stacks are still
 unguarded, and the limitation says so.
+
+**Wind-up, under a hard deadline.** The owner set a strict six-hour box for
+this session (09:44–15:44 BST). By the wind-up every V0.9 feature row was
+verified by the full local gate at an exact commit, the public site had been
+corrected (it still called V0.9 "planned") and re-verified in a real browser
+with the v0.8.1 download re-checked byte for byte, and two V0.10 items —
+program arguments and ITFS space reclamation — had been built by parallel
+agents in isolated worktrees, each with its own QEMU evidence and a negative
+control, then merged onto a separate integration branch and gated again
+there. They stay off `main` deliberately: `main` is the V0.9 release
+candidate, and the only thing between it and `v0.9.0` is a CI run GitHub will
+not start until the account's billing is fixed. That is written down as the
+first next action in `docs/SESSION_CHECKPOINT.md`, with the rest of the
+release runbook after it.
