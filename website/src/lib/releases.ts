@@ -61,6 +61,7 @@ export const RELEASES: Release[] = [
       'No userspace init; the console is part of the kernel.',
       'Filesystem: ≤ 12 files, no directories, no space reuse.',
       'The boot image itself is not authenticated; no real package is signed by the release key yet.',
+      'Found after the release (SEC10-001): any program can panic the kernel by pointing cap_list at its own read-only memory — the kernel checks that a user buffer is mapped, not that the program may write it. Fixed on the V0.10 branch.',
       'One CPU; software rendering only; no suspend/resume.',
     ],
   },

@@ -25,7 +25,8 @@ only through narrow, deterministic, auditable paths).
 2. **Kernel trusted boundary** — all Rust `no_std` code in `kernel/`;
    the trusted computing base.
 3. **Userspace boundary** *(V0.2–V0.6, verified)* — ring 3 with validated
-   syscalls; user pointers checked before any kernel dereference; no user
+   syscalls; user pointers checked before any kernel dereference (in
+   v0.9.0 for being mapped only — see SEC10-001 in KNOWN_LIMITATIONS); no user
    mapping of kernel pages; per-process page tables; GUI window ownership;
    mediated device access.
 4. **Privileged system-service boundary** *(V0.7, verified; V0.10 init)* —
