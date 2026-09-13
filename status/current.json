@@ -1,9 +1,9 @@
 {
-  "version": "0.10.0-dev",
+  "version": "0.10.0",
   "maturity": "pre-alpha",
   "architecture": "x86_64",
   "environment": "QEMU",
-  "milestone": "V0.10 — Userspace System (in development)",
+  "milestone": "V0.10 — Userspace System",
   "commit": null,
   "lastVerifiedAt": null,
   "verification": "in-development",
@@ -306,6 +306,41 @@
     {
       "id": "task-stack-guards",
       "name": "Guard pages for kernel task stacks (V0.10)",
+      "status": "verified"
+    },
+    {
+      "id": "always-on-sched",
+      "name": "Always-on co-scheduling at audited safe points (V0.10)",
+      "status": "verified"
+    },
+    {
+      "id": "process-tree",
+      "name": "Process tree: parent-only wait, wait_nohang, sleep, orphans, ps/kill (V0.10)",
+      "status": "verified"
+    },
+    {
+      "id": "userspace-init",
+      "name": "/sbin/init as pid 1 from /etc/init.conf, restarted by the kernel (V0.10)",
+      "status": "verified"
+    },
+    {
+      "id": "svc-report",
+      "name": "Kernel service table fed by kernel-checked supervisor reports (V0.10)",
+      "status": "verified"
+    },
+    {
+      "id": "ring3-shell",
+      "name": "Ring 3 shell with the console’s input (V0.10)",
+      "status": "verified"
+    },
+    {
+      "id": "desktop-apps",
+      "name": "Ring 3 desktop apps with click-to-focus and routed input (V0.10)",
+      "status": "verified"
+    },
+    {
+      "id": "user-copy-hardening",
+      "name": "Kernel copies refuse user memory the program cannot write (V0.10)",
       "status": "verified"
     }
   ]
