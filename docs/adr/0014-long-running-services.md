@@ -2,7 +2,10 @@
 
 ## Status
 
-Accepted and verified for V0.8 (`services-bg-bios`).
+Accepted and verified for V0.8 (`services-bg-bios`). **Superseded for boot
+services by ADR-0023 (V0.10):** the persistent services are started and
+supervised by `/sbin/init` from `/etc/init.conf`, not by a static kernel
+table. The on-demand supervisor (`svc`) described here is unchanged.
 
 ## Context
 

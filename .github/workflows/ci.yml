@@ -434,7 +434,7 @@ jobs:
             --require "PROCPROBE-OK" \
             --require "bg: /bin/proc-probe: exit=0" \
             --require "[ITISYOU:PROC] reparent child=" \
-            --require "to=orphan" \
+            --require "INIT-REAPED-ORPHAN pid=" \
             --require "PROCPROBE-ORPHAN-CHILD-DONE" \
             --require "path=/bin/tickd state=runnable" \
             --require "ps: processes=" \
@@ -464,6 +464,7 @@ jobs:
         run: |
           cargo run -q -p qemu-runner -- \
             --image target/images/itisyou-kernel-bios.img --expect B210 \
+            --send "ps" \
             --send "cat /etc/init.conf" \
             --send "run /sbin/init fs_read - -- check /etc/init.conf" \
             --send "run /sbin/init fs_read - -- check /etc/init-tests/cycle.conf" \
@@ -471,6 +472,14 @@ jobs:
             --send "run /sbin/init - - -- check /etc/init.conf" \
             --send "bg /sbin/init spawn,service,fs_read -- once /etc/init-tests/demo.conf" \
             --send "svc" \
+            --send "bg /bin/proc-probe spawn -- all" \
+            --send "busy 500" \
+            --send "run /bin/tick-client" \
+            --send "kill 1" \
+            --send "busy 1000" \
+            --send "kill 2" \
+            --send "ps" \
+            --send "run /bin/tick-client" \
             --send "shutdown" \
             --require "service tickd /bin/tickd caps=ipc restart=always" \
             --require "INIT-CONFIG-OK path=/etc/init.conf services=2 order=tickd,flapd" \
@@ -491,7 +500,32 @@ jobs:
             --forbid "ARGS-FAILED" \
             --forbid "INIT-USAGE" \
             --forbid "INIT-REPORT-REFUSED" \
-            --timeout-secs 180 --label init-bios
+            --require '[ITISYOU:INIT] start pid=1 path=/sbin/init caps=0x413 sandbox=/etc' \
+            --require 'INIT-CONFIG path=/etc/init.conf services=2 order=tickd,flapd' \
+            --require 'pid=1 action=spawn cap=0x2 result=ok' \
+            --require 'pid=1 action=spawn cap=0x0 result=ok' \
+            --require 'bg_start name=tickd pid=2 caps=0x2 long_running=true supervisor=1' \
+            --require 'bg_start name=flapd pid=3 caps=0x0 long_running=true supervisor=1' \
+            --require '[ITISYOU:INIT] ready pid=1 services=2' \
+            --require '[ITISYOU:INIT] settled ready=true' \
+            --require '  pid=1 ppid=0 path=/sbin/init state=' \
+            --require '  pid=2 ppid=1 path=/bin/tickd state=runnable' \
+            --require 'bg_failed name=flapd restarts=3 supervisor=1' \
+            --require 'INIT-REAPED-ORPHAN pid=' \
+            --require 'TICKC-OK passes=' \
+            --require 'kill: pid=1 path=/sbin/init state=killed' \
+            --require '[ITISYOU:INIT] died pid=1 status=killed' \
+            --require 'action=restart restarts=1' \
+            --require '[ITISYOU:INIT] restart pid=' \
+            --require 'caps=0x413 sandbox=/etc restarts=1' \
+            --require 'kill: pid=2: no such process' \
+            --forbid "settled ready=false" \
+            --forbid "init=true reason=" \
+            --forbid "action=give_up" \
+            --forbid "kill: pid=2 path=" \
+            --forbid "TICKC-RECV-TIMEOUT" \
+            --forbid "TICKC-SEND-TIMEOUT" \
+            --timeout-secs 240 --label init-bios
 
       - name: QEMU always-on co-scheduling (BIOS)
         run: |
@@ -611,7 +645,7 @@ jobs:
           # exit treated as a fault and restarted under the bounded policy,
           # then Failed at the ceiling rather than a restart storm; and the
           # system staying healthy and interactive throughout.
-          cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --expect B190             --send "bg /bin/tick-client"             --send "bg /bin/spin-finite"             --send "svc"             --send "bg /bin/tick-client"             --send "shutdown"             --require "bg_start name=tickd pid=1 caps=0x2 long_running=true"             --require "bg_start name=flapd pid=2 caps=0x0 long_running=true"             --require "TICKD-READY" --require "TICKD-ALIVE tick="             --require "TICKD-SERVED n=2" --require "TICKC-OK passes="             --require "bg_restart name=flapd pid=" --require "clean_exit=true"             --require "bg_failed name=flapd restarts=3"             --require "name=flapd state=failed"             --require "tickd  Running"             --require "flapd  Failed { restarts: 3 }"             --require "SVC-CLIENT-OK"             --require "svc: started=3 done=2 failed=1 restarts=3"             --require "shutting down (QEMU exit)"             --timeout-secs 300 --label services-bg-bios
+          cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --expect B190             --send "bg /bin/tick-client"             --send "bg /bin/spin-finite"             --send "svc"             --send "bg /bin/tick-client"             --send "shutdown"             --require "bg_start name=tickd pid=2 caps=0x2 long_running=true"             --require "bg_start name=flapd pid=3 caps=0x0 long_running=true"             --require "TICKD-READY" --require "TICKD-ALIVE tick="             --require "TICKD-SERVED n=2" --require "TICKC-OK passes="             --require "bg_restart name=flapd pid=" --require "clean_exit=true"             --require "bg_failed name=flapd restarts=3"             --require "name=flapd state=failed"             --require "tickd  Running"             --require "flapd  Failed { restarts: 3 }"             --require "SVC-CLIENT-OK"             --require "svc: started=3 done=2 failed=1 restarts=3"             --require "shutting down (QEMU exit)"             --timeout-secs 300 --label services-bg-bios
 
       - name: QEMU hardening (SMEP/SMAP/UMIP, W^X, stack guard)
         run: |

@@ -150,11 +150,14 @@
     the kernel can decide by itself (not its child, a reserved name, a row it
     does not own, `ready` from a non-init, no capability) and one accepted
     report about its own child.
-25. **Userspace init** (V0.10, `init-bios`): `/sbin/init` checks the shipped
-    `/etc/init.conf` and two broken fixtures (a dependency cycle, an unknown
-    capability) with exact line and reason, is refused the file without the
-    filesystem capability, and supervises a service from a test config
-    through to `svc`.
+25. **Userspace init** (V0.10, `init-bios`): init boots as pid 1 and starts
+    tickd and flapd (pids 2 and 3) before the console; `/sbin/init` checks the
+    shipped `/etc/init.conf` and two broken fixtures (a dependency cycle, an
+    unknown capability) with exact line and reason, is refused the file
+    without the filesystem capability, and supervises a service from a test
+    config through to `svc`; an orphan goes to init; `kill 1` ends init's
+    tree and the kernel restarts it, and a client is then served by the new
+    tickd.
 26. **Kernel copies into user memory** (V0.10, `uaccess-bios`): a program with
     no capability points `args` and `cap_list` at its own read-only code and
     data; the kernel must refuse (`ERR_FAULT`) — before SEC10-001 it panicked.
