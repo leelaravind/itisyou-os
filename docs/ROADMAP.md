@@ -131,7 +131,7 @@ written, and the change is recorded here rather than made silently:
    trust to seal one. Moving the head out of that attacker's reach is the
    honest form of the same goal.
 
-## V0.9 — Transport, Interrupt Cutover & Trust *(in progress)*
+## V0.9 — Transport, Interrupt Cutover & Trust *(released as v0.9.0, 2026-09-13)*
 
 Verified so far: ACPI discovery, the I/O APIC cutover with the 8259 PIC
 retired (and the PIT-mode bug it exposed), ACPI S5 power-off, the DHCP client,

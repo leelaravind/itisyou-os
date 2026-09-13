@@ -4,11 +4,16 @@
  * reached when its verification gates pass, never before.
  *
  * Statuses use the allowed vocabulary honestly: delivered milestones are Verified
- * (machine-checked in QEMU); the milestone being built is In Development until
- * its release gate (CI on the release commit, then the tag) has passed, even
- * when every feature in it is already verified; near-term milestones are
- * Planned; the far research milestones are Concept — documented direction, not
- * active work.
+ * (machine-checked in QEMU); the milestone being built on `main` is In
+ * Development until its release gate (CI on the release commit, then the tag)
+ * has passed, even when every feature in it is already verified; near-term
+ * milestones are Planned; the far research milestones are Concept — documented
+ * direction, not active work.
+ *
+ * `current` marks the milestone `main` is on. Pages treat a current milestone
+ * that is not yet Verified as "built but unreleased" and say its work is not
+ * in the download, so `current` must never sit on a milestone whose work is
+ * not on `main` (work on a side branch is neither current nor released).
  */
 import type { ModuleStatus } from './status';
 
@@ -21,8 +26,8 @@ export interface Milestone {
   components: string[];
   /**
    * Release state of an unreleased milestone — what still stands between its
-   * verified work and a tagged release. Rendered on /roadmap, /releases,
-   * /download, /build and the home page; omit once the milestone is released.
+   * verified work and a tagged release. Rendered on /roadmap, /releases and
+   * /build; omit once the milestone is released.
    */
   release?: string;
 }
@@ -115,24 +120,22 @@ export const MILESTONES: Milestone[] = [
   {
     id: 'V0.9',
     name: 'Transport, Interrupt Cutover & Trust',
-    status: 'in-development',
+    status: 'verified',
     current: true,
     summary:
-      'Verified locally in QEMU, not yet released. TCP from Ring 3: a host-tested RFC 9293 state machine with a retransmission timer and a receive window; programs connect and listen (one connection per listen) under a network capability scoped to the port; verified against the host operating system’s own TCP stack, including two deliberately dropped segments recovered by retransmission. A DHCP client, and IPv6 foundations: link-local and SLAAC addresses, neighbour discovery, ICMPv6 echo in both directions. ACPI table discovery and the I/O APIC cutover that retires the 8259 PIC, plus ACPI S5 power-off. A package-signing key hierarchy: only an offline root is compiled in, signing keys are trusted through root-signed certificates limited by package-name scope and a release-epoch validity window, a root-signed revocation list retires them, and the private keys stay outside the source tree. The audit head anchored with a witness off the audited disk, and guard pages under the kernel’s syscall and double-fault stacks, so an overflow of either faults instead of silently corrupting kernel data.',
+      'Released as v0.9.0. TCP from Ring 3: a host-tested RFC 9293 state machine with a retransmission timer and a receive window; programs connect and listen (one connection per listen) under a network capability scoped to the port; verified against the host operating system’s own TCP stack, including two deliberately dropped segments recovered by retransmission. A DHCP client, and IPv6 foundations: link-local and SLAAC addresses, neighbour discovery, ICMPv6 echo in both directions. ACPI table discovery and the I/O APIC cutover that retires the 8259 PIC, plus ACPI S5 power-off. A package-signing key hierarchy: only an offline root is compiled in, signing keys are trusted through root-signed certificates limited by package-name scope and a release-epoch validity window, a root-signed revocation list retires them, and the private keys stay outside the source tree. The audit head anchored with a witness off the audited disk, and guard pages under the kernel’s syscall and double-fault stacks, so an overflow of either faults instead of silently corrupting kernel data. Also fixed on the way: a program’s sockets and connections are released on every exit path, broadcast UDP is checksummed against its real destination, and a zero-length copy never touches the user pointer — before that fix any program could panic the kernel with cap_list(NULL, 0). Stated limits: no TCP over IPv6 and no IPv6 sockets, no TCP congestion control beyond an in-flight cap, ACPI tables without an AML interpreter, and no guard pages yet for heap-allocated kernel task stacks.',
     components: [
       'TCP from Ring 3 (connect + listen), DHCP, IPv6 foundations',
       'ACPI + I/O APIC cutover (PIC retired), ACPI S5 power-off',
       'Offline-root signing-key hierarchy; audit anchoring; kernel stack guards',
     ],
-    release:
-      'Release pending. Every V0.9 feature is verified locally; what remains is the release itself — CI green on the release commit, then the tag, the website and the download. GitHub Actions is currently refusing to start jobs on this account because of a billing problem, so that CI run cannot happen yet. Until it does, V0.9 is not released: the latest release, and the only download, is v0.8.1.',
   },
   {
     id: 'V0.10',
     name: 'Userspace System',
     status: 'planned',
     summary:
-      'Inserted by the 2026-09-13 roadmap amendment because the AI layer depends on it: a userspace init as the first process starting services from configuration, an always-on scheduler so services never starve behind the console, program arguments, a Ring 3 shell, filesystem space reclamation, and persistent Ring 3 applications on the live desktop with focus and input routing.',
+      'Inserted by the 2026-09-13 roadmap amendment because the AI layer depends on it: a userspace init as the first process starting services from configuration, an always-on scheduler so services never starve behind the console, program arguments, a Ring 3 shell, filesystem space reclamation, and persistent Ring 3 applications on the live desktop with focus and input routing. Work has started on a separate branch, where program arguments, ITFS space reclamation and guard pages for kernel task stacks are verified; none of it is on the main branch or in any release yet.',
     components: ['Userspace init + always-on scheduler', 'Ring 3 shell, program arguments', 'Desktop applications; filesystem reclamation'],
   },
   {

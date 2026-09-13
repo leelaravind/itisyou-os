@@ -823,3 +823,17 @@ candidate, and the only thing between it and `v0.9.0` is a CI run GitHub will
 not start until the account's billing is fixed. That is written down as the
 first next action in `docs/SESSION_CHECKPOINT.md`, with the rest of the
 release runbook after it.
+
+**v0.9.0, and the repository that went public for an hour.** With CI refused
+for billing, the owner chose the free path: make the repository public so
+GitHub-hosted runners would run, release, then make it private again. Before
+flipping it the whole history was scanned — all 77 commits on every branch —
+for credential patterns and for sensitive file names; nothing but the secret
+scanner's own filename matched, and the signing roots live outside the
+repository by design. The release commit's CI run went green on the first
+try: the whole QEMU matrix on Linux, including every V0.9 leg that had only
+ever run on Windows, and the reproducibility job, whose two clean builds landed
+on exactly the digests the build job uploaded. The published images were then
+boot-tested byte for byte (UEFI and BIOS reporting `itisyou-os 0.9.0`,
+two-boot persistence, networking) before the site linked them, and v0.8.1 was
+kept downloadable beside them.

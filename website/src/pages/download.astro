@@ -5,7 +5,8 @@ import StatusTag from '../components/StatusTag.astro';
 import WarningBanner from '../components/WarningBanner.astro';
 import { status } from '../lib/status';
 import { MILESTONES } from '../lib/roadmap';
-import downloads from '../data/downloads.json';
+import { RELEASES } from '../lib/releases';
+import manifestJson from '../data/downloads.json';
 
 interface DownloadFile {
   file: string;
@@ -20,13 +21,36 @@ interface BootTest {
   host: string;
   result: string;
 }
-const files = downloads.files as DownloadFile[];
-const bootTests = downloads.bootTests as BootTest[];
+/**
+ * src/data/downloads.json is the manifest of the release this page serves.
+ * Everything release-specific below — tag, files, digests, notices, what the
+ * images contain — is read from it (and from that tag's RELEASES entry), so
+ * the page follows the manifest instead of naming a release itself.
+ */
+interface Manifest {
+  tag: string;
+  version: string;
+  published: boolean;
+  commit?: string | null;
+  builtBy?: string | null;
+  builtAt?: string | null;
+  reproducibility?: string | null;
+  notice?: string | null;
+  bootTests?: BootTest[];
+  files?: DownloadFile[];
+}
+const downloads = manifestJson as unknown as Manifest;
+const files = downloads.files ?? [];
+const bootTests = downloads.bootTests ?? [];
 const published = downloads.published && files.length > 0;
 const base = `/downloads/${downloads.tag}`;
 const mib = (n: number) => `${(n / (1024 * 1024)).toFixed(2)} MiB`;
 const uefi = files.find((f) => f.firmware.startsWith('UEFI'));
 const bios = files.find((f) => f.firmware.startsWith('BIOS'));
+/** The RELEASES entry of the release this page serves. */
+const release = RELEASES.find((r) => r.tag === downloads.tag);
+/** Earlier releases whose published files stay downloadable from /downloads/<tag>/. */
+const archived = RELEASES.filter((r) => r.archive && r.tag !== downloads.tag);
 /** The milestone in development, if any — its work is not in these images. */
 const building = MILESTONES.find((m) => m.current && m.status !== 'verified');
 
@@ -73,7 +97,7 @@ const description = published
     {
       published && (
         <>
-          <section class="panel" aria-labelledby="rel-title">
+          <section class="panel scroll-mt-24" id={downloads.tag} aria-labelledby="rel-title">
             <div class="flex flex-col md:flex-row">
               <div class="md:w-72 border-b md:border-b-0 md:border-r border-line p-gutter bg-surface-2 flex flex-col gap-4">
                 <h2 id="rel-title" class="font-sans text-headline-md text-ink">{downloads.tag}</h2>
@@ -148,7 +172,9 @@ const description = published
             </div>
             <div class="panel p-gutter">
               <h2 class="font-mono text-mono-label text-ink tracking-widest mb-4">03 // REPRODUCIBILITY</h2>
-              <p class="text-sm text-meta-bright">{downloads.reproducibility}</p>
+              <p class="text-sm text-meta-bright">
+                {downloads.reproducibility ?? 'No reproducibility statement is recorded for these images.'}
+              </p>
             </div>
           </section>
 
@@ -172,16 +198,15 @@ const description = published
               <p>&nbsp;&nbsp;... -drive file=data.img,if=none,format=raw,id=nvme0 -device nvme,serial=itisyou1,drive=nvme0</p>
               <p class="text-muted mt-3">// optional: let the console's `shutdown` command exit QEMU</p>
               <p>&nbsp;&nbsp;... -device isa-debug-exit,iobase=0xf4,iosize=0x04</p>
-              <p class="text-muted mt-3">// optional: network (static 10.0.2.15; this release has no TCP or DHCP)</p>
+              <p class="text-muted mt-3">// optional: network (QEMU user-mode; static 10.0.2.15/24 via 10.0.2.2 at boot)</p>
               <p>&nbsp;&nbsp;... -netdev user,id=net0 -device e1000,netdev=net0</p>
             </div>
             <p class="mt-4 text-sm text-meta">
               On Windows hosts QEMU's stdio console can stall on input; use
               <code>-serial tcp:127.0.0.1:4555,server=on,wait=on</code> and connect a raw TCP client (for example PuTTY in
-              raw mode) instead. The exact command lines the release gate ran are recorded in its evidence. On QEMU's
-              user-mode network the image's ARP and ICMP echo to the gateway were verified (<code>ping 10.0.2.2</code>);
-              DNS through QEMU's forwarder was not (it failed on the test host), so UDP and DNS are verified only against
-              the test harness's own network peer.
+              raw mode) instead. The exact command lines the release gate ran are recorded in its evidence. DNS through
+              QEMU's user-mode forwarder failed on the test host, so DNS is verified only against the test harness's own
+              network peer. What each release can do on the network is under “What this release is” below.
             </p>
           </section>
 
@@ -220,11 +245,7 @@ const description = published
             <div class="panel p-gutter">
               <h2 id="notes-title" class="font-mono text-mono-label text-ink tracking-widest mb-4">06 // WHAT THIS RELEASE IS</h2>
               <p class="text-sm text-meta-bright mb-3">
-                V0.8 — Networking, Authenticity &amp; Hardening, as the v0.8.1 closeout: Ring 3 processes in per-process
-                address spaces with preemptive scheduling, capability handles enforced at the syscall boundary, a
-                persistent crash-consistent filesystem on NVMe, a compositor with PS/2 and USB input, AC97 audio, an IPv4
-                stack (ARP/ICMP/UDP/DNS) with capability-scoped sockets, Ed25519-signed packages with atomic update and
-                rollback, a hash-chained audit trail, SMEP/SMAP/UMIP.
+                {release?.contents ?? `${downloads.tag}: see the releases page for what this tag delivered.`}
               </p>
               {building && (
                 <p class="text-sm text-meta-bright mb-3">
@@ -236,17 +257,70 @@ const description = published
             </div>
             <div class="panel p-gutter">
               <h2 class="font-mono text-mono-label text-ink tracking-widest mb-4">07 // KNOWN LIMITATIONS</h2>
-              <ul class="text-sm text-meta-bright flex flex-col gap-2 list-none">
-                <li>− No TCP, DHCP or IPv6; one static IPv4 address (10.0.2.15/24).</li>
-                <li>− No userspace init; the console is part of the kernel.</li>
-                <li>− Filesystem: ≤ 12 files, no directories, no space reuse.</li>
-                <li>− Package trust root is a published development key.</li>
-                <li>− One CPU; software rendering only; no power management.</li>
-              </ul>
+              {release?.limitations && (
+                <ul class="text-sm text-meta-bright flex flex-col gap-2 list-none">
+                  {release.limitations.map((l) => (
+                    <li>− {l}</li>
+                  ))}
+                </ul>
+              )}
               <a class="btn mt-4" href="/docs/known-limitations">Full list</a>
             </div>
           </section>
         </>
+      )
+    }
+
+    {
+      archived.length > 0 && (
+        <section aria-labelledby="prev-title">
+          <h2 id="prev-title" class="font-mono text-mono-label text-ink tracking-widest mb-4">08 // PREVIOUS RELEASES</h2>
+          <p class="text-sm text-meta-bright max-w-3xl mb-6">
+            Earlier release images stay downloadable, unchanged: a published file is never replaced. They are older
+            systems with more limits than the release above; the same rules apply — verify the SHA-256 before booting,
+            and virtual machines only.
+          </p>
+          <div class="flex flex-col gap-gutter">
+            {archived.map((r) => (
+              <article class="panel scroll-mt-24" id={r.tag} aria-labelledby={`prev-${r.tag}`}>
+                <div class="p-gutter border-b border-line bg-surface-2 flex flex-wrap items-baseline justify-between gap-3">
+                  <h3 id={`prev-${r.tag}`} class="font-sans text-headline-md text-ink">{r.tag}</h3>
+                  <p class="font-mono text-mono-data text-meta">{r.milestone} · {r.date}</p>
+                </div>
+                <div class="p-gutter flex flex-col gap-4">
+                  {r.contents && <p class="text-sm text-meta-bright max-w-3xl">{r.contents}</p>}
+                  <p class="font-mono text-mono-data text-meta break-all">Built by {r.archive!.builtBy}</p>
+                  <ul class="grid grid-cols-1 md:grid-cols-2 gap-px bg-line border border-line list-none">
+                    {r.archive!.files.map((f) => (
+                      <li class="bg-surface p-6 flex flex-col gap-3 min-w-0">
+                        <span class="font-mono text-mono-label text-muted tracking-widest">{f.firmware}</span>
+                        <a class="btn self-start" href={`/downloads/${r.tag}/${f.file}`} download>
+                          Download {f.file}
+                        </a>
+                        <p class="font-mono text-mono-data text-meta-bright">
+                          {f.bytes.toLocaleString('en-GB')} bytes ({mib(f.bytes)}) · raw disk image
+                        </p>
+                        <p class="font-mono text-mono-data text-ink break-all">SHA-256 {f.sha256}</p>
+                      </li>
+                    ))}
+                  </ul>
+                  <p class="font-mono text-mono-data text-meta">
+                    Checksum list:{' '}
+                    <a class="underline underline-offset-4" href={`/downloads/${r.tag}/SHA256SUMS.txt`}>SHA256SUMS.txt</a>.
+                  </p>
+                  {r.archive!.notice && <p class="text-sm text-meta-bright max-w-3xl break-words">{r.archive!.notice}</p>}
+                  {r.limitations && (
+                    <ul class="text-sm text-meta-bright flex flex-col gap-2 list-none">
+                      {r.limitations.map((l) => (
+                        <li>− {l}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
       )
     }
   </div>
