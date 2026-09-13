@@ -57,11 +57,18 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
   policy editor.
 - The filesystem sandbox is a per-process set of path prefixes, checked on the
   normalized path for reads and, separately from the write right, for writes.
-- **Package trust root is a development key.** Its seed is a literal in
-  `kernel/build.rs`, published deliberately so nobody mistakes it for a secret —
-  which means the current build authenticates packages against a key anyone can
-  use. No key rotation, no revocation list, no expiry. (V0.9: a key hierarchy
-  whose private keys never enter the source tree.)
+- **Package trust is a key hierarchy** (V0.9): the kernel trusts only an
+  offline root whose private key is outside the source tree, and signing keys
+  only through root-signed certificates with a name scope and a validity
+  window in release epochs, subject to a root-signed revocation list. The
+  image's fixture packages are signed by a PUBLISHED test key — deliberately,
+  so anyone can reproduce the image — whose certificate covers only names
+  starting `hello-`. Limits: rotation is an offline operation plus a new
+  image (no over-the-network trust updates); validity is by release epoch, not
+  date, because there is no trusted clock; the boot image itself is not
+  authenticated, so whoever can rewrite it can replace the root with the
+  kernel; and there is no persistent anti-rollback floor for revocation lists
+  across boots. No real package is signed by the release key yet.
 - The audit trail is hash-chained and persistent: it detects a record being
   altered, deleted, reordered or inserted. On its own it does **not** detect an
   attacker who rewrites the whole file — the chain is unkeyed, and a valid empty

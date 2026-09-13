@@ -236,6 +236,49 @@ Remove-Item $platDisk -ErrorAction SilentlyContinue
     '--require', 'result=denied',
     '--timeout-secs', '240', '--label', 'platform-bios')
 
+Write-Output '=== QEMU signing-key hierarchy: root, certificates, revocation (BIOS) ==='
+# V0.9 KEY09-001. The kernel trusts only an offline root (public key compiled
+# in); signing keys are trusted through root-signed certificates in
+# /etc/trust, each with a scope and a validity window in release epochs, and a
+# root-signed revocation list retires keys. Every refused fixture is intact
+# and correctly signed — only the chain can refuse it, each for its own
+# reason. The published test key signing a package outside its scope is the
+# case that makes publishing it safe.
+$trustDisk = Join-Path $env:ITISYOU_SCRATCH 'itisyou-trust-test.img'
+Remove-Item $trustDisk -ErrorAction SilentlyContinue
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $trustDisk,
+    '--expect', 'B190',
+    '--send', 'pkg trust',
+    '--send', 'pkg install /pkgs/hello-app-1.itpkg',
+    '--send', 'pkg install /pkgs/hello-app-retired.itpkg',
+    '--send', 'pkg install /pkgs/hello-app-expired.itpkg',
+    '--send', 'pkg install /pkgs/hello-app-rogue.itpkg',
+    '--send', 'pkg install /pkgs/other-app-1.itpkg',
+    '--send', 'pkg install /pkgs/hello-app-untrusted.itpkg',
+    '--send', 'pkg launch hello-app',
+    '--send', 'pkg list',
+    '--send', 'shutdown',
+    '--require', '[ITISYOU:TRUST] root=679e3823 epoch=9',
+    '--require', 'cert file=rogue-signer.cert result=rejected reason=bad_root_signature',
+    '--require', 'action=trust_load_certificate cap=0x0 result=denied',
+    '--require', 'revocations seq=1 count=1 result=ok',
+    '--require', 'certs_loaded=4 rejected=1',
+    '--require', 'label=retired-signer',
+    '--require', 'epochs=9..=12 state=revoked',
+    '--require', 'epochs=7..=8 state=expired',
+    '--require', 'signature result=ok signer=c645535e key_id=1 label=test-signer',
+    '--require', 'install name=hello-app v=1 result=ok',
+    '--require', 'signature result=refused reason=revoked_signer',
+    '--require', 'signature result=refused reason=certificate_expired',
+    '--require', 'signature result=refused reason=out_of_scope',
+    '--require', 'signature result=refused reason=untrusted_signer',
+    '--require', 'HELLO-APP-OK',
+    '--forbid', 'stage name=other-app',
+    '--forbid', 'store v2',
+    '--timeout-secs', '240', '--label', 'trust-bios')
+Remove-Item $trustDisk -ErrorAction SilentlyContinue
+
 Write-Output '=== QEMU long-running background services (BIOS) ==='
 # V0.8 persistent services: `tickd` and `flapd` are ordinary Ring 3 processes
 # started at boot with exactly the capabilities they declare (tickd IPC-only,

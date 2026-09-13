@@ -770,3 +770,28 @@ never released a program's network resources — only the scheduler's exit path
 did — so since V0.8 a foreground program that exited without closing its UDP
 socket left the port bound for the rest of the boot. Both paths now release
 sockets and connections, and the leg shows it (`owner_exit pid=3 orphaned=1`).
+
+**A key hierarchy, and the question that was blocking it.** The recorded design
+question for KEY09-001 was real: the image's fixture packages are signed at
+build time, so moving the signing key out of the tree seemed to require a CI
+secret — and an image nobody else could rebuild bit for bit, undoing v0.8.1's
+reproducibility. The answer was to stop treating "the key that signs the
+fixtures" and "the key the kernel trusts" as the same key. The kernel now
+trusts only an offline root (its public half compiled in; its private half
+generated with the OS CSPRNG and kept outside the repository). The fixture key
+stays published, but it is trusted only through a root-signed certificate that
+covers package names starting `hello-` — so it can sign fixtures and nothing
+else. A release key, also off-tree, is certified for any name. Validity windows
+are in kernel release epochs rather than dates, because this kernel has no
+clock an attacker cannot set. The QEMU leg exercises every branch with intact,
+correctly signed packages that only the chain can refuse: a revoked key, an
+expired certificate, a certificate signed by an impostor root (refused when
+`/etc/trust` is loaded), and the published test key signing a package outside
+its scope. The last is the one that makes publishing that key defensible.
+
+**The CI that would not start.** The IPv6/TCP checkpoint was pushed and every
+CI job was refused before it began: GitHub reported that the account's
+payments had failed or its spending limit needed raising. That is outside
+anything this session can or should touch. The verification of record for the
+V0.9 checkpoints is therefore the full local gate, run in an isolated worktree
+at each exact commit; the V0.9 release waits for CI to run again.

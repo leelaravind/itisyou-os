@@ -61,7 +61,7 @@ only network this OS has ever been attached to is a test harness on localhost.
 | Unbounded kernel memory from remote traffic | flooding | ARP cache, socket table and per-socket queues are fixed-size arrays; a peer can cause entries to be *replaced*, never allocated |
 | A program reaching the network without authority | any Ring 3 process | network access is a capability scoped to a port, re-checked on every datagram call against the socket's own port, so a handle narrowed or revoked after the bind stops working at the next use |
 | A hostile package installed | a package from any source | Ed25519 signature over context + lengths + digest, verified against a compiled-in trust root; unsigned, foreign and forged packages refused as three distinct outcomes; re-verified at launch as well as install |
-| A stolen or misused signing key | the development key is published | ACCEPTED for a pre-alpha build and documented: the mechanism is enforced, the key it currently anchors is not a secret. Not acceptable for any real deployment |
+| A stolen or misused signing key | the development key is published | V0.8: ACCEPTED for a pre-alpha build. Superseded in V0.9 (ADR-0021): the published key is now a scope-limited test key (`hello-*` only); trust flows from an offline root through certificates with scopes and epoch windows, and a compromised key is retired by a root-signed revocation list |
 | Evidence tampering | editing the persisted trail | records hash-chained, chain extended before the bounded ring drops anything, verified on every boot. Does NOT cover an attacker who rewrites the file including its head |
 | Kernel dereferencing a user pointer by accident | a logic bug | SMAP: forbidden by default, permitted only inside three declared windows |
 | Ring 3 leaking kernel addresses | `sgdt`/`sidt`/`sldt`/`str`/`smsw` | UMIP; verified by a probe whose success marker is forbidden from the log |
@@ -98,6 +98,14 @@ initiates traffic on its own.
   buffers, a fixed outbox). Residual risks, stated: initial sequence numbers
   are TSC-mixed rather than keyed (RFC 6528), and challenge ACKs are not rate
   limited.
+- **Signing-key compromise and misuse** (ADR-0021): a stolen signing key is
+  bounded by its certificate's scope and epoch window and retired by a
+  root-signed revocation list; a certificate or list the root did not sign is
+  refused at load; replaying an older revocation list is refused. Residual
+  risks, stated: a stolen ROOT key defeats the hierarchy (it is kept offline
+  for that reason); the boot image is unauthenticated, so an attacker who can
+  rewrite it replaces the root with the kernel; no cross-boot anti-rollback
+  floor for revocation lists.
 - **Kernel stack exhaustion**: V0.9 demonstrated that an overflow of a kernel
   stack corrupts adjacent kernel data silently (it hit the capability table).
   The trigger was removed; guard pages for kernel stacks remain future work.

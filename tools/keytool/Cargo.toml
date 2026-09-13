@@ -1,0 +1,8 @@
+[package]
+name = "keytool"
+version.workspace = true
+edition.workspace = true
+description = "Offline tool for the package-signing key hierarchy: certificates and revocation lists signed by the root"
+
+[dependencies]
+kernel-core = { path = "../../crates/kernel-core" }

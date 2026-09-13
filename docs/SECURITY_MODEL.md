@@ -97,9 +97,11 @@ static process bit capabilities and path prefixes. Per-resource handles,
 revocation, enforcement at the syscall boundary, signed package authenticity
 and a port-scoped network policy have since landed in V0.8
 (forged, expired and revoked handles are each refused on the real syscall
-path, with the reason audited). What remains open is key management: the
-package trust root is a single compiled-in DEVELOPMENT key whose seed is
-published in the source tree, with no rotation, revocation list or expiry. A
-real deployment requires provisioning a signing key that never enters the
-source tree; until then the mechanism is real and the key it anchors is not a
-secret.
+path, with the reason audited). V0.9 added key management (ADR-0021): the
+kernel trusts only an offline root whose private key never enters the source
+tree; signing keys are trusted through root-signed certificates that limit
+each key to a package-name scope and a window of release epochs, and a
+root-signed revocation list retires keys (an older list can never replace a
+newer one). The fixture packages in the image are signed by a published test
+key whose certificate covers only `hello-*` names, which keeps the image
+reproducible without letting that key vouch for anything real.

@@ -95,6 +95,14 @@ pub enum TrustError {
     /// The signature does not verify under its own embedded key: the bytes
     /// were altered after signing, or the signature was fabricated.
     BadSignature,
+    /// Signed by a certified key that the root has since revoked (V0.9).
+    RevokedSigner,
+    /// The signer's certificate is valid only for later release epochs.
+    CertificateNotYetValid,
+    /// The signer's certificate is valid only for earlier release epochs.
+    CertificateExpired,
+    /// The signer is certified, but not for this package's name.
+    OutOfScope,
 }
 
 impl TrustError {
@@ -104,6 +112,10 @@ impl TrustError {
             TrustError::Unsigned => "unsigned",
             TrustError::UntrustedSigner => "untrusted_signer",
             TrustError::BadSignature => "bad_signature",
+            TrustError::RevokedSigner => "revoked_signer",
+            TrustError::CertificateNotYetValid => "certificate_not_yet_valid",
+            TrustError::CertificateExpired => "certificate_expired",
+            TrustError::OutOfScope => "out_of_scope",
         }
     }
 }

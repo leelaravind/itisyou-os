@@ -137,8 +137,11 @@ Verified so far: ACPI discovery, the I/O APIC cutover with the 8259 PIC
 retired (and the PIT-mode bug it exposed), ACPI S5 power-off, the DHCP client,
 a fix for broadcast UDP checksums, and audit anchoring against an off-disk
 witness, IPv6 foundations (client and responder paths), and TCP streams from
-Ring 3 verified against the host's own TCP stack with loss injected. Remaining:
-the signing-key hierarchy. Status per row in `docs/REQUIREMENTS.md`.
+Ring 3 verified against the host's own TCP stack with loss injected, and the
+package-signing key hierarchy (offline root, scoped certificates, signed
+revocation). Every V0.9 feature row is verified; what remains is the release
+itself (CI green on the release commit, website, download, tag). Status per
+row in `docs/REQUIREMENTS.md`.
 
 - **TCP** with a connection state machine (active and passive open, orderly
   close, reset), a retransmission timer with backoff, and a receive window;

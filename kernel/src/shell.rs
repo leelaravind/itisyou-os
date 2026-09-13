@@ -946,10 +946,15 @@ fn cmd_pkg(args: &[&str]) {
     use crate::fs_disk::FileSystem;
     let Some(&sub) = args.first() else {
         crate::serial_println!(
-            "pkg: subcommands: install <vfs.pkg> | stage <vfs.pkg> | launch <app> | rollback <app> | recover | list"
+            "pkg: subcommands: install <vfs.pkg> | stage <vfs.pkg> | launch <app> | rollback <app> | recover | list | trust"
         );
         return;
     };
+    // The trust store needs no storage: answer before mounting the disk.
+    if sub == "trust" {
+        crate::platform::report_trust();
+        return;
+    }
     let Some(nvme) = crate::open_nvme() else {
         crate::serial_println!("pkg: no NVMe storage attached");
         return;
