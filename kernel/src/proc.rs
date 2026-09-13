@@ -178,6 +178,7 @@ fn run_scheduler(stop: impl Fn(usize) -> bool) -> usize {
                 // would stay unusable, and its queued datagrams unreadable,
                 // for the rest of the boot.
                 crate::net::socket::close_owner(pid);
+                crate::net::tcp::close_owner(pid);
                 process.space.teardown();
                 if let Some(s) = table.slots.get_mut(&pid) {
                     s.process = None;
@@ -207,6 +208,7 @@ pub fn reap(pid: u64) {
             if let Some(process) = slot.process {
                 crate::capability::revoke_owner(pid);
                 crate::net::socket::close_owner(pid);
+                crate::net::tcp::close_owner(pid);
                 process.space.teardown();
             }
         }
@@ -226,6 +228,7 @@ pub fn drain_all() -> usize {
             if let Some(process) = slot.process {
                 crate::capability::revoke_owner(pid);
                 crate::net::socket::close_owner(pid);
+                crate::net::tcp::close_owner(pid);
                 process.space.teardown();
                 n += 1;
             }

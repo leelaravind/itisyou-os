@@ -74,7 +74,13 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
 - SMEP, SMAP and UMIP are enabled when the CPU advertises them (the harness's
   CPU model does); W^X for user segments, a guard page below the user stack, and
   user-pointer validation are always on. Kernel task stacks and the double-fault
-  IST stack have no guard pages.
+  IST stack have no guard pages — and V0.9 hit exactly that: the first TCP
+  integration copied an 8 KB connection block by value often enough, in the
+  unoptimized build, to overflow the 32 KB syscall stack and silently corrupt
+  the capability table beside it (seen as a valid handle suddenly reading
+  `invalid_handle`). The TCP code now builds connections in place; the stacks
+  themselves still have no guard pages, so a future overflow would again be
+  silent corruption rather than a fault.
 - No hardware root of trust, no Secure Boot chain, no measured boot.
 
 ## Storage
@@ -95,7 +101,24 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
 
 - IPv4 over one e1000 NIC: ARP, ICMP echo (client and responder), UDP with
   capability-scoped Ring 3 sockets, and a DNS A-record resolver.
-- **No TCP** and **no IPv6** yet (V0.9, in progress). **DHCP** (V0.9) runs on
+- **IPv6** (V0.9) is foundations only, brought up on demand (`ipv6`): a
+  link-local address, SLAAC from a router's advertised /64, neighbour
+  discovery and ICMPv6 echo in both directions. No extension headers (a packet
+  carrying one is refused), no duplicate address detection, no DHCPv6, and no
+  IPv6 UDP/TCP or Ring 3 IPv6 sockets.
+- **TCP** (V0.9) is IPv4 only and client-side for Ring 3: programs can open a
+  connection (`tcp_connect`), stream both ways and close, but there is no
+  Ring 3 listen/accept yet (the state machine supports a passive open; it is not
+  exposed). At most 8 connections, 4 KB send and receive buffers each. Loss
+  recovery is a single retransmission timer (300 ms, doubling, 6 retries, then
+  the connection times out) — no RTT estimation, no congestion control beyond a
+  cap of four segments in flight, no SACK, window scaling, timestamps, fast
+  retransmit, delayed ACK, zero-window probe or FIN-WAIT-2 timeout. TIME-WAIT is
+  1 s (MSL 500 ms), a shortcut for the QEMU link. Initial sequence numbers mix
+  the TSC with the four-tuple but are not RFC 6528's keyed hash — there is no
+  per-boot secret yet. Timers run only when the stack is polled, so a finished
+  connection's TIME-WAIT slot is reclaimed at the next poll, not on the clock.
+- **DHCP** (V0.9) runs on
   demand (`dhcp`) and applies address, mask, router and DNS; it is not run
   automatically at boot and there is no background renewal at T1 — the lease
   is simply used until the next boot. Without it the static plan (10.0.2.15/24

@@ -89,3 +89,15 @@ initiates traffic on its own.
 - **DHCP as input**: replies are accepted only for this client's transaction
   and hardware address, from the server port, with options bounds-checked; a
   lease missing an address or server identity is refused rather than applied.
+- **TCP segments as input** (ADR-0020): every segment is checksummed against
+  the pseudo-header of the addresses it arrived between; options are
+  length-checked; a RST resets only at exactly `rcv_nxt` and a SYN or
+  in-window RST elsewhere draws a challenge ACK (RFC 5961), so an off-path
+  attacker must guess the sequence number exactly. Segments for no connection
+  get a RST, never to broadcast. Resources are bounded (8 connections, fixed
+  buffers, a fixed outbox). Residual risks, stated: initial sequence numbers
+  are TSC-mixed rather than keyed (RFC 6528), and challenge ACKs are not rate
+  limited.
+- **Kernel stack exhaustion**: V0.9 demonstrated that an overflow of a kernel
+  stack corrupts adjacent kernel data silently (it hit the capability table).
+  The trigger was removed; guard pages for kernel stacks remain future work.

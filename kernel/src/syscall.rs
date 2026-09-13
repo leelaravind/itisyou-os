@@ -86,6 +86,16 @@ pub const SYS_FS_WRITE: u64 = 26;
 pub const SYS_FS_DELETE: u64 = 27;
 /// List the persistent store's directory.
 pub const SYS_FS_LIST: u64 = 28;
+/// Open a TCP connection (V0.9); the destination port is the scoped resource.
+pub const SYS_TCP_CONNECT: u64 = 29;
+/// Queue bytes on a connection the caller owns.
+pub const SYS_TCP_SEND: u64 = 30;
+/// Read received bytes from a connection the caller owns.
+pub const SYS_TCP_RECV: u64 = 31;
+/// Orderly close (FIN after queued data).
+pub const SYS_TCP_CLOSE: u64 = 32;
+/// Connection state, for polling a non-blocking connect or close.
+pub const SYS_TCP_STATE: u64 = 33;
 
 pub const ERR_NOSYS: u64 = u64::MAX;
 pub const ERR_FAULT: u64 = u64::MAX - 1;
@@ -99,6 +109,9 @@ pub const ERR_PERM: u64 = u64::MAX - 7;
 /// Cap on a network request buffer copied from user memory: a full-MTU UDP
 /// payload plus the six-byte destination prefix.
 const NET_REQ_MAX: u64 = 6 + 1472;
+
+/// Cap on the bytes one `tcp_send` copies from user memory.
+const TCP_SEND_MAX: u64 = 2048;
 
 /// Cap on a single userspace filesystem write. Bounded so one call cannot ask
 /// the kernel to buffer an arbitrary amount of user memory.
@@ -438,6 +451,11 @@ extern "C" fn syscall_dispatch(a1: u64, a2: u64, a3: u64, nr: u64) -> u64 {
             Ok(()) => sys_fs_list(a1, a2),
             Err(e) => e,
         },
+        SYS_TCP_CONNECT => sys_tcp_connect(a1, a2),
+        SYS_TCP_SEND => sys_tcp_send(a1, a2, a3),
+        SYS_TCP_RECV => sys_tcp_recv(a1, a2, a3),
+        SYS_TCP_CLOSE => sys_tcp_close(a1),
+        SYS_TCP_STATE => sys_tcp_state(a1),
         SYS_CAP_LIST => sys_cap_list(a1, a2),
         SYS_CAP_CHECK => sys_cap_check(a1, a2, a3),
         SYS_CAP_REVOKE => sys_cap_revoke(a1),
@@ -594,6 +612,134 @@ fn sys_udp_recv(sock: u64, buf_ptr: u64, buf_len: u64) -> u64 {
 fn sys_udp_close(sock: u64) -> u64 {
     let pid = CURRENT_PID.load(Ordering::SeqCst);
     if crate::net::socket::close(sock as usize, pid) {
+        0
+    } else {
+        ERR_BADF
+    }
+}
+
+/// The connection's remote port, if `sock` belongs to the caller — after the
+/// class-level network check, and followed by a check scoped to that port, so
+/// a handle narrowed or revoked after the connect stops working at the next
+/// call (the same order as the UDP calls, for the same audit reasons).
+fn tcp_conn_port(sock: u64, action: &'static str) -> Result<u16, u64> {
+    use kernel_core::capability::{rights, CapabilityKind};
+    require_any(CapabilityKind::Network, rights::USE, action)?;
+    let pid = CURRENT_PID.load(Ordering::SeqCst);
+    let port = crate::net::tcp::remote_port(sock as usize, pid).ok_or(ERR_BADF)?;
+    require_scoped(CapabilityKind::Network, rights::USE, port as u64, action)?;
+    Ok(port)
+}
+
+/// tcp_connect(req_ptr, req_len): open a connection to `[ip:4, port:2]`.
+///
+/// Non-blocking: returns a descriptor at once with the SYN on its way; the
+/// caller polls `tcp_state` until it is established. Waiting here would spin
+/// with interrupts masked for a whole round trip.
+fn sys_tcp_connect(req_ptr: u64, req_len: u64) -> u64 {
+    if req_len != 6 {
+        return ERR_INVAL;
+    }
+    let req = match copy_from_user(req_ptr, req_len, 6) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let dst = kernel_core::net::ipv4::Ipv4Addr([req[0], req[1], req[2], req[3]]);
+    let port = u16::from_le_bytes([req[4], req[5]]);
+    if port == 0 {
+        return ERR_INVAL;
+    }
+    if let Err(e) = require_scoped(
+        kernel_core::capability::CapabilityKind::Network,
+        kernel_core::capability::rights::USE,
+        port as u64,
+        "tcp_connect",
+    ) {
+        return e;
+    }
+    if !crate::net::is_up() {
+        return ERR_NOENT;
+    }
+    let pid = CURRENT_PID.load(Ordering::SeqCst);
+    match crate::net::tcp::connect(pid, dst, port) {
+        Some(index) => {
+            let mut a = [0u8; 15];
+            crate::audit::allowed(
+                "tcp_connect",
+                kernel_core::caps::CAP_NETWORK,
+                Some(alloc::format!("dst={}:{port}", dst.format(&mut a))),
+            );
+            index as u64
+        }
+        None => ERR_AGAIN,
+    }
+}
+
+/// tcp_send(sock, ptr, len): queue bytes; returns how many were accepted
+/// (`ERR_AGAIN` when the send buffer is full or the connection is not open).
+///
+/// A stream write may be partial, so a long buffer is not an error: at most
+/// [`TCP_SEND_MAX`] bytes are copied per call and the count tells the caller
+/// where to resume — the kernel never buffers more user memory than that.
+fn sys_tcp_send(sock: u64, ptr: u64, len: u64) -> u64 {
+    if let Err(e) = tcp_conn_port(sock, "tcp_send") {
+        return e;
+    }
+    let data = match copy_from_user(ptr, len.min(TCP_SEND_MAX), TCP_SEND_MAX) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let pid = CURRENT_PID.load(Ordering::SeqCst);
+    crate::net::poll();
+    match crate::net::tcp::send(sock as usize, pid, &data) {
+        Some(0) => ERR_AGAIN,
+        Some(n) => n as u64,
+        None => ERR_BADF,
+    }
+}
+
+/// tcp_recv(sock, ptr, len): read received bytes. Returns the count, `0` once
+/// the peer has closed and everything was read, `ERR_AGAIN` when nothing yet.
+fn sys_tcp_recv(sock: u64, ptr: u64, len: u64) -> u64 {
+    if let Err(e) = tcp_conn_port(sock, "tcp_recv") {
+        return e;
+    }
+    crate::net::poll();
+    let pid = CURRENT_PID.load(Ordering::SeqCst);
+    let mut buf = [0u8; 1024];
+    let cap = core::cmp::min(len as usize, buf.len());
+    match crate::net::tcp::recv(sock as usize, pid, &mut buf[..cap]) {
+        Some(crate::net::tcp::Read::Data(n)) => match copy_to_user(ptr, &buf[..n]) {
+            Ok(n) => n,
+            Err(e) => e,
+        },
+        Some(crate::net::tcp::Read::Eof) => 0,
+        Some(crate::net::tcp::Read::Again) => ERR_AGAIN,
+        // Reset or timed out: the stream is gone, not merely empty.
+        Some(crate::net::tcp::Read::Failed) => ERR_NOENT,
+        None => ERR_BADF,
+    }
+}
+
+/// tcp_state(sock): 0 connecting, 1 established, 2 closing, 3 closed, 4 reset,
+/// 5 timed out.
+fn sys_tcp_state(sock: u64) -> u64 {
+    if let Err(e) = tcp_conn_port(sock, "tcp_state") {
+        return e;
+    }
+    crate::net::poll();
+    let pid = CURRENT_PID.load(Ordering::SeqCst);
+    crate::net::tcp::state_code(sock as usize, pid).unwrap_or(ERR_BADF)
+}
+
+/// tcp_close(sock): orderly close (FIN after queued data). The descriptor
+/// stays valid until the connection is fully closed, then is reclaimed.
+fn sys_tcp_close(sock: u64) -> u64 {
+    if let Err(e) = tcp_conn_port(sock, "tcp_close") {
+        return e;
+    }
+    let pid = CURRENT_PID.load(Ordering::SeqCst);
+    if crate::net::tcp::close(sock as usize, pid) {
         0
     } else {
         ERR_BADF

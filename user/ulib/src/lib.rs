@@ -410,3 +410,52 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     write("RING3-PANIC\n");
     exit(101)
 }
+
+// --- TCP (V0.9) ----------------------------------------------------------------
+
+pub const SYS_TCP_CONNECT: u64 = 29;
+pub const SYS_TCP_SEND: u64 = 30;
+pub const SYS_TCP_RECV: u64 = 31;
+pub const SYS_TCP_CLOSE: u64 = 32;
+pub const SYS_TCP_STATE: u64 = 33;
+
+/// `tcp_state` results.
+pub const TCP_CONNECTING: u64 = 0;
+pub const TCP_ESTABLISHED: u64 = 1;
+pub const TCP_CLOSING: u64 = 2;
+pub const TCP_CLOSED: u64 = 3;
+pub const TCP_RESET: u64 = 4;
+pub const TCP_TIMED_OUT: u64 = 5;
+
+/// Open a connection to `ip:port` (non-blocking; poll [`tcp_state`]).
+pub fn tcp_connect(ip: [u8; 4], port: u16) -> u64 {
+    let mut req = [0u8; 6];
+    req[..4].copy_from_slice(&ip);
+    req[4..].copy_from_slice(&port.to_le_bytes());
+    raw_syscall(SYS_TCP_CONNECT, req.as_ptr() as u64, req.len() as u64, 0)
+}
+
+/// Queue bytes on a connection; returns how many were accepted.
+pub fn tcp_send(sock: u64, data: &[u8]) -> u64 {
+    raw_syscall(SYS_TCP_SEND, sock, data.as_ptr() as u64, data.len() as u64)
+}
+
+/// Read received bytes: the count, 0 at end of stream, `ERR_AGAIN` if none yet.
+pub fn tcp_recv(sock: u64, buf: &mut [u8]) -> u64 {
+    raw_syscall(
+        SYS_TCP_RECV,
+        sock,
+        buf.as_mut_ptr() as u64,
+        buf.len() as u64,
+    )
+}
+
+/// Orderly close.
+pub fn tcp_close(sock: u64) -> u64 {
+    raw_syscall(SYS_TCP_CLOSE, sock, 0, 0)
+}
+
+/// Connection state (`TCP_CONNECTING` … `TCP_TIMED_OUT`).
+pub fn tcp_state(sock: u64) -> u64 {
+    raw_syscall(SYS_TCP_STATE, sock, 0, 0)
+}

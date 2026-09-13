@@ -36,11 +36,12 @@ pub struct TcpEcho {
 }
 
 impl TcpEcho {
-    /// Listen on an ephemeral loopback port and serve connections on a
-    /// background thread. `tx` carries `[HOST:TCP]` observations into the
-    /// serial stream.
-    pub fn start(tx: mpsc::Sender<String>) -> std::io::Result<TcpEcho> {
-        let listener = TcpListener::bind(("127.0.0.1", 0))?;
+    /// Listen on a loopback port (0 = ephemeral) and serve connections on a
+    /// background thread; `tx` carries `[HOST:TCP]` observations into the
+    /// serial stream. A fixed port exists because Ring 3 test programs take no
+    /// arguments and need a port they can know in advance.
+    pub fn start_on(port: u16, tx: mpsc::Sender<String>) -> std::io::Result<TcpEcho> {
+        let listener = TcpListener::bind(("127.0.0.1", port))?;
         let port = listener.local_addr()?.port();
         let tally = Arc::new(Mutex::new(Tally::default()));
         let shared = Arc::clone(&tally);
@@ -99,8 +100,11 @@ fn serve(mut stream: TcpStream, tx: &mpsc::Sender<String>, tally: &Arc<Mutex<Tal
     t.connections += 1;
     t.bytes_in += offset as u64;
     t.bytes_out += bytes_out;
-    t.pattern_ok = offset > 0 && pattern_ok;
-    t.clean_close = clean_close;
+    // The summary speaks for EVERY connection: one bad stream among several
+    // good ones must still fail it.
+    let first = t.connections == 1;
+    t.pattern_ok = (first || t.pattern_ok) && offset > 0 && pattern_ok;
+    t.clean_close = (first || t.clean_close) && clean_close;
     let _ = tx.send(format!(
         "[HOST:TCP] closed peer={peer} bytes_in={offset} bytes_out={bytes_out} pattern_ok={} clean_close={clean_close}",
         offset > 0 && pattern_ok
@@ -114,7 +118,7 @@ mod tests {
     #[test]
     fn echoes_and_checks_the_pattern_over_a_real_socket() {
         let (tx, rx) = mpsc::channel();
-        let echo = TcpEcho::start(tx).unwrap();
+        let echo = TcpEcho::start_on(0, tx).unwrap();
         let mut c = TcpStream::connect(("127.0.0.1", echo.port)).unwrap();
         let data: Vec<u8> = (0..5000).map(pattern_byte).collect();
         c.write_all(&data).unwrap();

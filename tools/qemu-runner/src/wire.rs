@@ -90,6 +90,13 @@ pub struct Observations {
     /// probe" would have flagged the guest's own unrelated traffic, which is
     /// not evidence of anything.
     pub replies_to_hostile: u64,
+    /// IPv6 (V0.9): our neighbour solicitation went out, the guest's
+    /// link-local address it targeted, and what the guest answered.
+    pub ns6_sent: bool,
+    pub guest_ll: Option<[u8; 16]>,
+    pub guest_na: u64,
+    pub guest_icmp6_replies: u64,
+    pub bad_icmp6_checksums: u64,
 }
 
 pub struct WirePeer {
@@ -191,7 +198,8 @@ impl WirePeer {
             "[HOST:NET] peer_summary frames_in={} frames_out={} arp_requests={} arp_replies={} \
 icmp_requests={} icmp_replies={} udp={} udp_echoed={} dns_queries={} dns_answers={} \
 guest_arp_replies={} guest_icmp_replies={} hostile_sent={} replies_to_hostile={} \
-bad_ip_csum={} bad_udp_csum={} bad_icmp_csum={} rejected={}",
+bad_ip_csum={} bad_udp_csum={} bad_icmp_csum={} rejected={} \
+guest_na={} guest_icmp6_replies={} bad_icmp6_csum={}",
             o.frames_in,
             o.frames_out,
             o.arp_requests,
@@ -210,6 +218,9 @@ bad_ip_csum={} bad_udp_csum={} bad_icmp_csum={} rejected={}",
             o.bad_udp_checksums,
             o.bad_icmp_checksums,
             o.rejected,
+            o.guest_na,
+            o.guest_icmp6_replies,
+            o.bad_icmp6_checksums,
         )
     }
 }
@@ -417,6 +428,7 @@ fn handle_frame(
     match be16(&frame[12..14]) {
         ETHERTYPE_ARP => handle_arp(&frame[14..], src_mac, o, arp_cache, out, log),
         ETHERTYPE_IPV4 => handle_ipv4(&frame[14..], src_mac, o, out, log),
+        ETHERTYPE_IPV6 => handle_ipv6(&frame[14..], src_mac, o, out, log),
         _ => o.rejected += 1,
     }
 }
@@ -745,6 +757,135 @@ fn dns_answer(query: &[u8], log: &Sender<String>) -> Option<Vec<u8>> {
         msg.extend_from_slice(&DNS_ANSWER);
     }
     Some(msg)
+}
+
+// --- IPv6 responder probes (V0.9) --------------------------------------------
+//
+// QEMU's user-mode network never solicits the guest, so it cannot exercise the
+// guest's IPv6 RESPONDER paths. This peer does, with its own byte-level code:
+// on the guest's first IPv6 frame (its router solicitation) it sends a
+// neighbour solicitation for the guest's link-local address to the guest's
+// solicited-node group; on the guest's neighbour advertisement it pings the
+// guest; and it checks every ICMPv6 checksum itself.
+
+const ETHERTYPE_IPV6: u16 = 0x86DD;
+const PEER_LL: [u8; 16] = [0xFE, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2];
+const PROBE6_ID: u16 = 0x6A6A;
+
+fn icmp6_checksum(src: &[u8; 16], dst: &[u8; 16], msg: &[u8]) -> u16 {
+    let mut pseudo = [0u8; 40];
+    pseudo[..16].copy_from_slice(src);
+    pseudo[16..32].copy_from_slice(dst);
+    pseudo[32..36].copy_from_slice(&(msg.len() as u32).to_be_bytes());
+    pseudo[39] = 58;
+    checksum(&[&pseudo, msg])
+}
+
+fn ipv6_frame(
+    dst_mac: [u8; 6],
+    src: [u8; 16],
+    dst: [u8; 16],
+    hop: u8,
+    mut msg: Vec<u8>,
+) -> Vec<u8> {
+    msg[2] = 0;
+    msg[3] = 0;
+    let sum = icmp6_checksum(&src, &dst, &msg);
+    msg[2..4].copy_from_slice(&sum.to_be_bytes());
+    let mut p = Vec::with_capacity(40 + msg.len());
+    p.extend_from_slice(&[0x60, 0, 0, 0]);
+    p.extend_from_slice(&(msg.len() as u16).to_be_bytes());
+    p.push(58);
+    p.push(hop);
+    p.extend_from_slice(&src);
+    p.extend_from_slice(&dst);
+    p.extend_from_slice(&msg);
+    eth_frame(dst_mac, ETHERTYPE_IPV6, &p)
+}
+
+fn fmt6(a: &[u8; 16]) -> String {
+    // Full, uncompressed groups: unambiguous, and independent of the guest's
+    // RFC 5952 formatter.
+    (0..8)
+        .map(|i| format!("{:x}", u16::from_be_bytes([a[2 * i], a[2 * i + 1]])))
+        .collect::<Vec<_>>()
+        .join(":")
+}
+
+fn handle_ipv6(
+    p: &[u8],
+    src_mac: [u8; 6],
+    o: &mut Observations,
+    out: &mut Vec<Vec<u8>>,
+    log: &Sender<String>,
+) {
+    if p.len() < 40 || p[0] >> 4 != 6 {
+        o.rejected += 1;
+        return;
+    }
+    let len = be16(&p[4..6]) as usize;
+    if p.len() < 40 + len || p[6] != 58 {
+        o.rejected += 1;
+        return;
+    }
+    let hop = p[7];
+    let src: [u8; 16] = p[8..24].try_into().unwrap();
+    let dst: [u8; 16] = p[24..40].try_into().unwrap();
+    let msg = &p[40..40 + len];
+    if msg.len() < 8 || icmp6_checksum(&src, &dst, msg) != 0 {
+        o.bad_icmp6_checksums += 1;
+        o.rejected += 1;
+        return;
+    }
+    match msg[0] {
+        // The guest's router solicitation: it has IPv6 up. Solicit its
+        // link-local address, exactly as a neighbour that wanted to talk to it
+        // would.
+        133 if !o.ns6_sent && src[0] == 0xFE && src[1] & 0xC0 == 0x80 => {
+            o.ns6_sent = true;
+            o.guest_ll = Some(src);
+            let mut group = [0xFF, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0xFF, 0, 0, 0];
+            group[13..].copy_from_slice(&src[13..]);
+            let group_mac = [0x33, 0x33, group[12], group[13], group[14], group[15]];
+            let mut ns = vec![135u8, 0, 0, 0, 0, 0, 0, 0];
+            ns.extend_from_slice(&src); // target
+            ns.extend_from_slice(&[1, 1]); // source link-layer address option
+            ns.extend_from_slice(&PEER_MAC);
+            let _ = log.send(format!("[HOST:NET6] ns_sent target={}", fmt6(&src)));
+            out.push(ipv6_frame(group_mac, PEER_LL, group, 255, ns));
+        }
+        // The guest's neighbour advertisement answering our solicitation.
+        136 if msg.len() >= 24 && hop == 255 => {
+            let flags = msg[4];
+            let target: [u8; 16] = msg[8..24].try_into().unwrap();
+            let solicited = flags & 0x40 != 0;
+            if Some(target) != o.guest_ll || dst != PEER_LL {
+                o.rejected += 1;
+                return;
+            }
+            o.guest_na += 1;
+            let _ = log.send(format!(
+                "[HOST:NET6] guest_na target={} solicited={solicited} override={}",
+                fmt6(&target),
+                flags & 0x20 != 0
+            ));
+            let mut echo = vec![128u8, 0, 0, 0];
+            echo.extend_from_slice(&PROBE6_ID.to_be_bytes());
+            echo.extend_from_slice(&1u16.to_be_bytes());
+            echo.extend_from_slice(b"host-probe-v6");
+            out.push(ipv6_frame(src_mac, PEER_LL, target, 64, echo));
+        }
+        // The guest's echo reply to our ping.
+        129 if be16(&msg[4..6]) == PROBE6_ID && dst == PEER_LL => {
+            o.guest_icmp6_replies += 1;
+            let _ = log.send(format!(
+                "[HOST:NET6] guest_echo6_reply from={} payload_ok={}",
+                fmt6(&src),
+                &msg[8..] == b"host-probe-v6"
+            ));
+        }
+        _ => {}
+    }
 }
 
 #[cfg(test)]

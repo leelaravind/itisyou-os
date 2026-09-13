@@ -184,6 +184,20 @@ impl E1000 {
         self.stats
     }
 
+    /// Accept frames for one multicast group (V0.9, IPv6 NDP).
+    ///
+    /// The card stays non-promiscuous: joining sets one bit in the 4096-bit
+    /// multicast table the card hashes destination addresses into (RCTL.MO = 0
+    /// selects address bits 47:36). A hash filter can admit other groups that
+    /// collide, so the IPv6 layer still checks the destination address itself.
+    pub fn join_multicast(&self, group: MacAddr) {
+        let m = group.0;
+        let hash = (((m[5] as u32) << 4) | ((m[4] as u32) >> 4)) & 0xFFF;
+        let reg = REG_MTA + ((hash >> 5) as u64) * 4;
+        let bit = 1u32 << (hash & 31);
+        self.write32(reg, self.read32(reg) | bit);
+    }
+
     /// Unmask the interrupt causes used to prove MSI delivery.
     ///
     /// Link-status-change and receive-timer are enough: both are raised by

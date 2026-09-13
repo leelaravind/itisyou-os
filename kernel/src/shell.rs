@@ -130,6 +130,9 @@ fn execute(line: &str) {
         "ping" => cmd_ping(args),
         "resolve" => cmd_resolve(args),
         "dhcp" => cmd_dhcp(),
+        "ipv6" => cmd_ipv6(),
+        "ping6" => cmd_ping6(args),
+        "tcp" => cmd_tcp(args),
         "svc" => cmd_svc(),
         "pkg" => cmd_pkg(args),
         "audit" => cmd_audit(args),
@@ -153,7 +156,7 @@ fn execute(line: &str) {
 
 fn cmd_help() {
     crate::serial_println!(
-        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path> [caps|-] [prefix]  run a Ring 3 ELF (optionally sandboxed)\n  bg <path> [caps]  run a Ring 3 ELF co-scheduled with the background services\n  svc               supervise the on-demand services; show all service state\n  pkg <op> ...      app packages: install/stage/launch/rollback/recover/list\n  xhciwait          wait for USB HID input through the xHCI controller\n  harden            CPU-enforced kernel/user separation (SMEP/SMAP/UMIP)\n  irq               interrupt routing (I/O APIC), delivery proofs and counters\n  acpi              ACPI tables found: MADT routes, FADT, S5\n  store <op> ...    persistent store: ls | put <name> <text> | cat <name> | rm <name>\n  net               interface address, counters and bound sockets\n  ping <ip> [n]     ICMP echo the given IPv4 address\n  resolve <name>    DNS A lookup through the configured server\n  dhcp              obtain and apply an address from a DHCP server\n  audit [save|verify|anchor <ip> <port>|check-anchor <ip> <port>]  privileged-action trail\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  usbwait           wait for USB HID input (keyboard/mouse)\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU (test-exit device)\n  poweroff          ACPI S5 soft power-off\n  reboot            8042 CPU reset"
+        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path> [caps|-] [prefix]  run a Ring 3 ELF (optionally sandboxed)\n  bg <path> [caps]  run a Ring 3 ELF co-scheduled with the background services\n  svc               supervise the on-demand services; show all service state\n  pkg <op> ...      app packages: install/stage/launch/rollback/recover/list\n  xhciwait          wait for USB HID input through the xHCI controller\n  harden            CPU-enforced kernel/user separation (SMEP/SMAP/UMIP)\n  irq               interrupt routing (I/O APIC), delivery proofs and counters\n  acpi              ACPI tables found: MADT routes, FADT, S5\n  store <op> ...    persistent store: ls | put <name> <text> | cat <name> | rm <name>\n  net               interface address, counters and bound sockets\n  ping <ip> [n]     ICMP echo the given IPv4 address\n  resolve <name>    DNS A lookup through the configured server\n  dhcp              obtain and apply an address from a DHCP server\n  ipv6              bring up IPv6: link-local, router solicitation, SLAAC\n  ping6 <addr> [n]  ICMPv6 echo\n  tcp [drop <n>]    TCP connections and counters; drop <n> discards the next n data segments (test)\n  audit [save|verify|anchor <ip> <port>|check-anchor <ip> <port>]  privileged-action trail\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  usbwait           wait for USB HID input (keyboard/mouse)\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU (test-exit device)\n  poweroff          ACPI S5 soft power-off\n  reboot            8042 CPU reset"
     );
 }
 
@@ -610,6 +613,26 @@ fn cmd_net() {
             );
         }
     });
+    // IPv6 (V0.9), only once it has been brought up.
+    if let Some((link_local, global, router)) = crate::net::ipv6::addresses() {
+        let (mut a, mut b, mut c) = ([0u8; 39], [0u8; 39], [0u8; 39]);
+        crate::serial_println!(
+            "net6: link_local={} global={} router={}",
+            link_local.format(&mut a),
+            global.map_or("-", |g| g.format(&mut b)),
+            router.map_or("-", |r| r.format(&mut c)),
+        );
+        let s = crate::net::ipv6::stats();
+        crate::serial_println!(
+            "net6: rx={} rx_malformed={} rx_unwanted={} router_adverts={} neighbor_adverts_sent={} echo_replies_sent={}",
+            s.rx,
+            s.rx_malformed,
+            s.rx_unwanted,
+            s.router_adverts,
+            s.neighbor_adverts_sent,
+            s.echo_replies_sent,
+        );
+    }
 }
 
 /// `ping <ip> [count]` — ICMP echo, reporting each probe individually so a
@@ -646,6 +669,143 @@ fn cmd_ping(args: &[&str]) {
 }
 
 /// `resolve <name>` — a DNS A lookup, printing the answer or the failure.
+/// Parse an IPv6 address in the textual forms this console accepts: eight
+/// groups, or fewer with one `::`. Anything else is refused, never guessed.
+fn parse_ipv6(text: &str) -> Option<kernel_core::net::ipv6::Ipv6Addr> {
+    let mut groups = [0u16; 8];
+    let (head, tail) = match text.split_once("::") {
+        Some((h, t)) => (h, Some(t)),
+        None => (text, None),
+    };
+    let parse_part = |part: &str, out: &mut [u16]| -> Option<usize> {
+        if part.is_empty() {
+            return Some(0);
+        }
+        let mut n = 0;
+        for g in part.split(':') {
+            if n == out.len() || g.is_empty() || g.len() > 4 {
+                return None;
+            }
+            out[n] = u16::from_str_radix(g, 16).ok()?;
+            n += 1;
+        }
+        Some(n)
+    };
+    let mut front = [0u16; 8];
+    let nf = parse_part(head, &mut front)?;
+    match tail {
+        None => {
+            if nf != 8 {
+                return None;
+            }
+            groups = front;
+        }
+        Some(t) => {
+            if t.contains("::") {
+                return None;
+            }
+            let mut back = [0u16; 8];
+            let nb = parse_part(t, &mut back)?;
+            if nf + nb > 7 {
+                return None;
+            }
+            groups[..nf].copy_from_slice(&front[..nf]);
+            groups[8 - nb..].copy_from_slice(&back[..nb]);
+        }
+    }
+    let mut octets = [0u8; 16];
+    for (i, g) in groups.iter().enumerate() {
+        octets[2 * i..2 * i + 2].copy_from_slice(&g.to_be_bytes());
+    }
+    Some(kernel_core::net::ipv6::Ipv6Addr(octets))
+}
+
+/// Bring IPv6 up and ask the local router for a prefix (V0.9).
+fn cmd_ipv6() {
+    let Some(link_local) = crate::net::ipv6::up() else {
+        crate::serial_println!("ipv6: no NIC");
+        return;
+    };
+    let mut a = [0u8; 39];
+    crate::serial_println!("ipv6: link_local={}", link_local.format(&mut a));
+    match crate::net::ipv6::solicit_router(4000) {
+        Some(global) => {
+            let mut g = [0u8; 39];
+            crate::serial_println!("IPV6-OK global={}", global.format(&mut g));
+        }
+        None => crate::serial_println!("IPV6-NO-ROUTER (link-local only)"),
+    }
+}
+
+fn cmd_tcp(args: &[&str]) {
+    use crate::net::tcp;
+    use core::sync::atomic::Ordering;
+    if let (Some(&"drop"), Some(n)) = (args.first(), args.get(1).and_then(|n| n.parse().ok())) {
+        tcp::drop_next_data_segments(n);
+        crate::serial_println!(
+            "tcp: dropping the next {n} outgoing data segments (loss injection)"
+        );
+        return;
+    }
+    let mut live = 0;
+    tcp::for_each(|c| {
+        live += 1;
+        let mut a = [0u8; 15];
+        crate::serial_println!(
+            "tcp: conn={} owner={} state={:?} local_port={} remote={}:{} snd_una={} rcv_nxt={}",
+            c.index,
+            c.owner,
+            c.state,
+            c.local_port,
+            c.remote.format(&mut a),
+            c.remote_port,
+            c.snd_una,
+            c.rcv_nxt
+        );
+    });
+    crate::serial_println!(
+        "tcp: live={live} segments_tx={} segments_rx={} retransmits={} injected_losses={} resets_sent={} malformed={}",
+        tcp::SEGMENTS_TX.load(Ordering::Relaxed),
+        tcp::SEGMENTS_RX.load(Ordering::Relaxed),
+        tcp::RETRANSMITS.load(Ordering::Relaxed),
+        tcp::DROPPED.load(Ordering::Relaxed),
+        tcp::RESETS_SENT.load(Ordering::Relaxed),
+        tcp::MALFORMED.load(Ordering::Relaxed)
+    );
+}
+
+fn cmd_ping6(args: &[&str]) {
+    let Some(dst) = args.first().and_then(|t| parse_ipv6(t)) else {
+        crate::serial_println!("ping6: usage: ping6 <ipv6-address> [count]");
+        return;
+    };
+    if crate::net::ipv6::up().is_none() {
+        crate::serial_println!("ping6: no NIC");
+        return;
+    }
+    let count: u16 = args
+        .get(1)
+        .and_then(|c| c.parse().ok())
+        .unwrap_or(3)
+        .clamp(1, 10);
+    let mut received = 0;
+    for seq in 1..=count {
+        let ok = crate::net::ipv6::ping(dst, 0x6666, seq, 1000);
+        crate::serial_println!(
+            "ping6: seq={seq} result={}",
+            if ok { "reply" } else { "timeout" }
+        );
+        if ok {
+            received += 1;
+        }
+    }
+    let mut a = [0u8; 39];
+    crate::serial_println!(
+        "PING6-SUMMARY target={} sent={count} received={received}",
+        dst.format(&mut a)
+    );
+}
+
 /// Configure the interface from a DHCP server (V0.9).
 fn cmd_dhcp() {
     match crate::net::dhcp_configure(5000) {
