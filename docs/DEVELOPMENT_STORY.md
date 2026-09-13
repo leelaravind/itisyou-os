@@ -795,3 +795,17 @@ payments had failed or its spending limit needed raising. That is outside
 anything this session can or should touch. The verification of record for the
 V0.9 checkpoints is therefore the full local gate, run in an isolated worktree
 at each exact commit; the V0.9 release waits for CI to run again.
+
+**Closing the hole the TCP bug fell through.** The stack overflow that
+corrupted the capability table was fixed where it happened, but the class of
+bug was still open: any future path that ran the syscall stack dry would do
+the same thing, silently. Both static kernel stacks now sit on a page-aligned
+guard page that is unmapped once the double-fault stack is live. The subtle
+part is where the fault lands: a page fault on the guard page cannot be
+delivered, because delivering it means pushing onto the stack that just ran
+out, so the CPU escalates to a double fault, which has its own stack; the
+handler reads CR2, sees the guard page, and names the stack that overflowed.
+The test does it on purpose — the console switches onto the syscall stack and
+recurses — and the leg requires the machine to stop with
+`kernel_stack_overflow stack=priv`. Heap-allocated task stacks are still
+unguarded, and the limitation says so.

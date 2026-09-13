@@ -357,6 +357,18 @@ jobs:
             --timeout-secs 300 --label trust-bios
           rm -f artifacts/trust-test.img
 
+      - name: QEMU kernel stack guard (BIOS)
+        run: |
+          cargo run -q -p qemu-runner -- \
+            --image target/images/itisyou-kernel-bios.img \
+            --expect B080 --expect B200 --send "panic-test stack-overflow" --expect-panic \
+            --require "stack_guard stack=priv" --require "stack_guard stack=ist_double_fault" \
+            --require "armed=true unmapped=true" --require "kernel_stack_overflow stack=priv" \
+            --require "guard_hit=true" \
+            --require "kernel stack overflow: stack=priv hit its guard page" \
+            --forbid "armed=false" \
+            --timeout-secs 120 --label stack-guard-bios
+
       - name: QEMU long-running background services (BIOS)
         run: |
           # V0.8 persistent services: tickd (IPC-only) and flapd (no caps)

@@ -451,6 +451,20 @@ extern "x86-interrupt" fn page_fault_handler(
 }
 
 extern "x86-interrupt" fn double_fault_handler(frame: InterruptStackFrame, error_code: u64) -> ! {
+    // A kernel stack overflow reaches here, not the page-fault handler: the
+    // #PF on the guard page cannot be delivered because delivering it means
+    // pushing onto the very stack that just ran out, so the CPU escalates to
+    // #DF, which runs on its own IST stack. CR2 still names the guard page.
+    let cr2 = x86_64::registers::control::Cr2::read_raw();
+    if let Some(stack) = crate::gdt::guard_hit(cr2) {
+        crate::serial_println!(
+            "[ITISYOU:FAULT] kernel_stack_overflow stack={stack} cr2={cr2:#x} guard_hit=true"
+        );
+        panic!(
+            "kernel stack overflow: stack={stack} hit its guard page (cr2={cr2:#x} rip={:#x})",
+            frame.instruction_pointer.as_u64()
+        );
+    }
     panic!(
         "double fault error_code={:#x} rip={:#x}",
         error_code,
