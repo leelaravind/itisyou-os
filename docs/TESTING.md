@@ -182,6 +182,13 @@ scripts\verify.ps1   # canonical full gate (adds doctor, fmt, both clippy gates,
   internal link, the 404 page, and the security headers. Screenshots and a JSON
   report go to `$ITISYOU_SCRATCH\browser-verify`. It is run against staging and
   then production for every release; HTTP status alone is not verification.
+- CI job `reproducibility` builds every image from two clean checkouts in two
+  different directories and fails if any SHA-256 differs; image-builder
+  normalizes the two sources of non-determinism found so far (random GPT GUIDs,
+  the embedded UEFI loader's link time and CodeView GUID).
+- `scripts/release-boot-test.ps1 -Dir <dir> -Version <v>` boots the exact
+  release files (UEFI + BIOS console, two-boot persistence, user-mode network)
+  and reports their digests afterwards, which must be unchanged.
 
 ## Rules
 

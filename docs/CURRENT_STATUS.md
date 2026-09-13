@@ -23,6 +23,29 @@
   Transport, Interrupt Cutover & Trust → V0.10 Userspace System (new) → V0.11
   AI-Native System Layer → V1.0; daily-driver hardware research moves after
   V1.0.
+- **First public download.** https://os.itisyou.app/download serves the
+  CI-built boot images (`itisyou-os-0.8.1-x86_64-uefi.img`,
+  `…-bios.img`) with SHA-256, sizes, tested environments, QEMU instructions,
+  a physical-hardware warning and known limitations. The images are
+  bit-reproducible (GPT GUIDs normalized), were booted byte for byte before
+  publication, and are unchanged by testing (`snapshot=on`).
+
+### v0.8.1 release evidence
+
+- Local gate `scripts/verify.ps1` → `VERIFY: OK` (24/24 QEMU legs, selftest
+  113/0 BIOS+UEFI, 297 host tests, website + consistency gate, secret scan).
+- CI run `34749240177` green for `397ab80`; `status/current.json` stamped to it.
+  The stamp commit `8af917c` failed CI at the format check (a late runner edit)
+  and was fixed in the next commit; the release tag sits on a green commit.
+- Release candidate 1 images: uefi `eb7d566c7fcafd9a4ee672b0ede9b3c3456b9577b799698fd982d2ff72c45571`,
+  bios `4a84705bec3c8a2ee0d80cceeb0b5b1562cf237936dc686035ff6f6494f410ea`. The UEFI
+  file was then found not to be reproducible from a clean build (embedded
+  loader link time) and is superseded by the final release images below;
+  `RELEASE-BOOT-TEST: OK` on the downloaded bytes (QEMU 11.1.0, Windows 11) and
+  the full matrix on the same bytes in CI (QEMU 8.2.2, ubuntu-24.04).
+- Staging `14f484fa-f622-412f-a4b8-ff4a18bbbe2d` → production
+  `2d6c739d-5818-45e6-aacb-aa62c830ca26`: `BROWSER-VERIFY: OK` and
+  `DOWNLOADS-VERIFY: OK` on both.
 
 ## V0.8 (v0.8.0) summary
 

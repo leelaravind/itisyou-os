@@ -3,6 +3,11 @@
 //! Usage: `cargo run -p image-builder -- [output-dir]` (default `target/images`).
 //! Produces `<variant>-bios.img` and `<variant>-uefi.img` plus a small
 //! manifest with sizes and SHA-256 checksums for release evidence.
+//!
+//! `cargo run -p image-builder -- normalize <in.img> <out.img>` applies the
+//! reproducibility normalization (embedded UEFI loader, then GPT) to an
+//! existing UEFI image — used to check two independently built images against
+//! each other.
 
 use anyhow::{bail, Context, Result};
 use bootloader::DiskImageBuilder;
@@ -12,6 +17,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 mod gpt_normalize;
+mod pe_normalize;
 
 const VARIANTS: [&str; 4] = [
     "itisyou-kernel",
@@ -20,7 +26,31 @@ const VARIANTS: [&str; 4] = [
     "itisyou-fs-persist",
 ];
 
+/// Make a freshly written UEFI image reproducible: the embedded loader's link
+/// metadata first (it feeds the content digest), then the GPT identities.
+fn normalize_uefi(image: &mut [u8], name: &str) -> Result<()> {
+    let loaders = pe_normalize::normalize_embedded(image, sha256)
+        .map_err(|e| anyhow::anyhow!("normalizing the UEFI loader in {name}: {e}"))?;
+    if loaders != 1 {
+        bail!("expected exactly one embedded UEFI loader in {name}, found {loaders}");
+    }
+    gpt_normalize::normalize(image, sha256)
+        .and_then(|()| gpt_normalize::verify(image))
+        .map_err(|e| anyhow::anyhow!("normalizing GPT of {name}: {e}"))
+}
+
 fn main() -> Result<()> {
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("normalize") {
+        let (Some(input), Some(output)) = (args.get(2), args.get(3)) else {
+            bail!("usage: image-builder normalize <in.img> <out.img>");
+        };
+        let mut image = fs::read(input)?;
+        normalize_uefi(&mut image, input)?;
+        fs::write(output, &image)?;
+        println!("{} sha256={}", output, sha256_hex(&image));
+        return Ok(());
+    }
     let out_dir = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "target/images".to_string());
@@ -73,13 +103,13 @@ fn main() -> Result<()> {
             builder
                 .create_uefi_image(&uefi)
                 .with_context(|| format!("building UEFI image for {name}"))?;
-            // The gpt crate stamps random GUIDs into every UEFI image; replace
-            // them with content-derived ones so a rebuild of the same commit
-            // is bit-identical (gpt_normalize.rs).
+            // The gpt crate stamps random GUIDs into every UEFI image and the
+            // linker stamps its link time into the embedded loader; both are
+            // replaced with fixed or content-derived values so a clean rebuild
+            // of the same commit is bit-identical (gpt_normalize.rs,
+            // pe_normalize.rs).
             let mut image = fs::read(&uefi)?;
-            gpt_normalize::normalize(&mut image, sha256)
-                .and_then(|()| gpt_normalize::verify(&image))
-                .map_err(|e| anyhow::anyhow!("normalizing GPT of {name}: {e}"))?;
+            normalize_uefi(&mut image, name)?;
             fs::write(&uefi, &image)?;
             record(&mut manifest, name, "uefi", &uefi)?;
         }

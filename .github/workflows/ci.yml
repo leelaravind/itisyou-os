@@ -346,6 +346,35 @@ jobs:
           path: artifacts/qemu/
           if-no-files-found: ignore
 
+  reproducibility:
+    # A release image is only independently checkable if rebuilding the same
+    # commit gives the same bytes. Two clean builds, from two checkouts in two
+    # different directories and with no shared cache, must produce identical
+    # digests for every image — or this job fails.
+    name: Reproducible boot images (two clean builds)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: a
+      - uses: actions/checkout@v4
+        with:
+          path: b
+      - name: Install pinned Rust toolchain
+        working-directory: a
+        run: rustup show
+      - name: Clean build from checkout a
+        working-directory: a
+        run: cargo run -q -p image-builder -- target/images
+      - name: Clean build from checkout b
+        working-directory: b
+        run: cargo run -q -p image-builder -- target/images
+      - name: Compare every image digest
+        run: |
+          cat a/target/images/manifest.txt
+          diff a/target/images/manifest.txt b/target/images/manifest.txt
+          echo "REPRODUCIBLE: identical digests for every image across two clean builds"
+
   website:
     name: Website check + build
     runs-on: ubuntu-24.04

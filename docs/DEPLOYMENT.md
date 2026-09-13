@@ -1,9 +1,31 @@
 # Deployment — os.itisyou.app
 
-**Last release:** V0.8 — `status/current.json` stamped to CI-verified commit
-`e6e3496` (run `33987853808`); staging version
-`edaab8e1-37e3-4c3a-a13b-398494ab988c`, production version
-`a3544b0a-5fe1-44ab-8dfc-b2bd4a3dda0d`.
+**Last release:** v0.8.1 — `status/current.json` stamped to CI-verified commit
+`397ab80` (run `34749240177`); staging version
+`14f484fa-f622-412f-a4b8-ff4a18bbbe2d`, production version
+`2d6c739d-5818-45e6-aacb-aa62c830ca26`; release images served from
+`/downloads/v0.8.1/`. (V0.8.0: commit `e6e3496`, run `33987853808`, production
+`a3544b0a-5fe1-44ab-8dfc-b2bd4a3dda0d`.)
+
+## Release downloads
+
+Boot images are static assets of the same Worker (each well under the 25 MiB
+asset limit), so publishing them needs no new infrastructure or cost:
+
+```powershell
+gh run download <ci-run> -n boot-images -D <dir>          # the CI-built bytes
+# rename to itisyou-os-<ver>-x86_64-{uefi,bios}.img, then:
+scripts\release-boot-test.ps1 -Dir <dir> -Version <ver>    # boot those exact files
+# record file/bytes/sha256 in website/src/data/downloads.json, then:
+cd website; npm run verify
+node scripts/downloads.mjs stage <dir>                      # refuses any mismatch
+npx wrangler deploy --env staging
+node scripts/downloads.mjs verify https://os-itisyou-app-staging.kpleelaaravind.workers.dev
+```
+
+`public/_headers` serves `/downloads/*` as `application/octet-stream`,
+`Content-Disposition: attachment`, immutable. A fix is a new version under a new
+path, never an overwritten file.
 
 ## Topology
 

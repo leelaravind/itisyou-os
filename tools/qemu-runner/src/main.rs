@@ -429,7 +429,10 @@ fn build_command(
     // booted release image no longer matched its published SHA-256).
     // Persistent state belongs on the separate NVMe disks, never here.
     cmd.arg("-drive")
-        .arg(format!("format=raw,file={},snapshot=on", opts.image.display()))
+        .arg(format!(
+            "format=raw,file={},snapshot=on",
+            opts.image.display()
+        ))
         .arg("-serial")
         .arg(format!("tcp:127.0.0.1:{serial_port},nodelay"))
         // The default `qemu64` model advertises neither SMEP nor SMAP, so the
