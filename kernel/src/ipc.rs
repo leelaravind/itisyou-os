@@ -14,7 +14,9 @@ use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 
 /// Number of channels and per-channel/message bounds (kept tiny on purpose).
-const CHANNELS: usize = 4;
+/// V0.11: 8 - channels 6 and 7 carry `/bin/inferd`'s requests and replies
+/// (`kernel_core::infer`).
+const CHANNELS: usize = 8;
 const MSG_MAX: u64 = 256;
 const QUEUE_MAX: usize = 8;
 

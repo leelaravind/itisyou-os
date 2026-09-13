@@ -61,6 +61,7 @@ fn main() {
         "sh",
         "gui-echo",
         "ai-probe",
+        "inferd",
     ] {
         println!(
             "cargo::rerun-if-changed={}",
@@ -192,6 +193,8 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
             "user-gui-echo",
             "-p",
             "user-ai-probe",
+            "-p",
+            "user-inferd",
         ])
         .arg("--target-dir")
         .arg(&target_dir)
@@ -257,6 +260,7 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
         ("user-sh", "bin/sh"),
         ("user-gui-echo", "bin/gui-echo"),
         ("user-ai-probe", "bin/ai-probe"),
+        ("user-inferd", "bin/inferd"),
     ];
     entries.push(("bin/".to_string(), Vec::new(), true));
     entries.push(("sbin/".to_string(), Vec::new(), true));

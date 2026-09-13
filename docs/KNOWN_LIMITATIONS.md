@@ -78,9 +78,12 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
   a foreground program ran alone and both returned at once); `run` has no
   timeout — the console waits until the program ends — while `bg` gives up
   after 30 s.
-- IPC: bounded kernel message channels (4 channels, ≤256 B, ≤8 queued),
-  non-blocking, addressed by integer id. No shared-memory or synchronous
-  rendezvous IPC.
+- IPC: bounded kernel message channels (8 channels since V0.11 - 6 and 7
+  are `/bin/inferd`'s - ≤256 B, ≤8 queued), non-blocking, addressed by
+  integer id. Channels carry no sender identity and are not scoped: any
+  holder of the IPC capability can read or write any channel, so a reply is
+  a claim (inferd's clients check a nonce; the kernel recomputes what it
+  relies on). No shared-memory or synchronous rendezvous IPC.
 - The kernel heap is a fixed **32 MiB** range; no growth. Physical memory above
   4 GiB is ignored by the frame allocator (`ignored_high_frames`).
 - Syscalls run with interrupts masked (`SFMASK` clears IF); blocking waits inside

@@ -1167,7 +1167,7 @@ Write-Output '=== QEMU userspace init: configuration and supervision (BIOS) ==='
     '--send', 'run /bin/tick-client',
     '--send', 'shutdown',
     '--require', 'service tickd /bin/tickd caps=ipc restart=always',
-    '--require', 'INIT-CONFIG-OK path=/etc/init.conf services=2 order=tickd,flapd',
+    '--require', 'INIT-CONFIG-OK path=/etc/init.conf services=3 order=tickd,flapd,inferd',
     '--require', 'INIT-CONFIG-ERROR path=/etc/init-tests/cycle.conf line=0 reason=cycle',
     '--require', 'INIT-CONFIG-ERROR path=/etc/init-tests/badcap.conf line=2 reason=unknown_capability',
     '--require', 'INIT-CONFIG-ERROR path=/etc/init.conf line=0 reason=read_denied',
@@ -1186,12 +1186,13 @@ Write-Output '=== QEMU userspace init: configuration and supervision (BIOS) ==='
     '--forbid', 'INIT-USAGE',
     '--forbid', 'INIT-REPORT-REFUSED',
     '--require', '[ITISYOU:INIT] start pid=1 path=/sbin/init caps=0x413 sandbox=/etc',
-    '--require', 'INIT-CONFIG path=/etc/init.conf services=2 order=tickd,flapd',
+    '--require', 'INIT-CONFIG path=/etc/init.conf services=3 order=tickd,flapd,inferd',
     '--require', 'pid=1 action=spawn cap=0x2 result=ok',
     '--require', 'pid=1 action=spawn cap=0x0 result=ok',
     '--require', 'bg_start name=tickd pid=2 caps=0x2 long_running=true supervisor=1',
     '--require', 'bg_start name=flapd pid=3 caps=0x0 long_running=true supervisor=1',
-    '--require', '[ITISYOU:INIT] ready pid=1 services=2',
+    '--require', 'bg_start name=inferd pid=4 caps=0x12 long_running=true supervisor=1',
+    '--require', '[ITISYOU:INIT] ready pid=1 services=3',
     '--require', '[ITISYOU:INIT] settled ready=true',
     '--require', '  pid=1 ppid=0 path=/sbin/init state=',
     '--require', '  pid=2 ppid=1 path=/bin/tickd state=runnable',
@@ -1503,6 +1504,44 @@ Write-Output '=== QEMU V0.11: the approved system view (BIOS) ==='
     '--forbid', 'AIPROBE-FAILED',
     '--forbid', 'RING3-PANIC',
     '--timeout-secs', '180', '--label', 'ai-view-bios')
+
+Write-Output '=== QEMU V0.11: inference in Ring 3 (BIOS) ==='
+# INFER11-001 (ADR-0024). /sbin/init starts /bin/inferd as its third service
+# (tickd and flapd keep pids 2 and 3); it loads the model the build trained
+# and answers over IPC channels 6 and 7. Its check mode refuses each hostile
+# fixture for its own reason. The probe asks it about the real view and
+# recomputes the answer from the model file itself: Ring 3 inference is
+# exactly the host-tested arithmetic on the shipped bytes. Job-wait slices
+# run while the scheduler is paused, so inferd answers then too.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B210',
+    '--send', '@pause 1500',
+    '--send', 'run /bin/inferd fs_read /etc -- check /etc/ai/diag.model',
+    '--send', 'run /bin/inferd fs_read /etc -- check /etc/ai/fixtures/bad-magic.model',
+    '--send', 'run /bin/inferd fs_read /etc -- check /etc/ai/fixtures/truncated.model',
+    '--send', 'run /bin/inferd fs_read /etc -- check /etc/ai/fixtures/wrong-dims.model',
+    '--send', 'run /bin/inferd fs_read /etc -- check /etc/ai/fixtures/absurd-weight.model',
+    '--send', 'run /bin/ai-probe sys_view,ipc,fs_read /etc -- infer',
+    '--send', 'sched pause',
+    '--send', 'run /bin/ai-probe sys_view,ipc,fs_read /etc -- infer',
+    '--send', 'sched resume',
+    '--send', 'shutdown',
+    '--require', 'bg_start name=inferd pid=4 caps=0x12 long_running=true supervisor=1',
+    '--require', 'INFERD-READY model=e0fc6642563aba99 channel=6',
+    '--require', 'INFERD-MODEL-OK path=/etc/ai/diag.model sha256=e0fc6642563aba99',
+    '--require', 'INFERD-MODEL-REFUSED path=/etc/ai/fixtures/bad-magic.model reason=bad_magic',
+    '--require', 'INFERD-MODEL-REFUSED path=/etc/ai/fixtures/truncated.model reason=bad_length',
+    '--require', 'INFERD-MODEL-REFUSED path=/etc/ai/fixtures/wrong-dims.model reason=bad_dimensions',
+    '--require', 'INFERD-MODEL-REFUSED path=/etc/ai/fixtures/absurd-weight.model reason=weight_out_of_range',
+    '--require', 'AIPROBE-INFER conditions=service_failed match=true model_match=true ',
+    '--require', 'AIPROBE-INFER conditions=service_failed,scheduler_paused match=true model_match=true ',
+    '--require', 'INFERD-SERVED n=2',
+    '--forbid', 'match=false',
+    '--forbid', 'AIPROBE-INFER-TIMEOUT',
+    '--forbid', 'AIPROBE-FAILED',
+    '--forbid', 'INFERD-BAD-REQUEST',
+    '--forbid', 'RING3-PANIC',
+    '--timeout-secs', '180', '--label', 'ai-infer-bios')
 
 if ($anyFailed) { Write-Output 'TEST: FAILED'; exit 1 }
 Write-Output 'TEST: OK'

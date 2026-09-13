@@ -540,20 +540,22 @@ mod tests {
     }
 
     #[test]
-    fn shipped_init_conf_is_v08_background() {
+    fn shipped_init_conf_is_v08_background_plus_inferd() {
         let config = parse(SHIPPED).unwrap();
-        assert_eq!(config.len, 2);
+        assert_eq!(config.len, 3);
         let got: Vec<(&str, &str, u64, Restart)> = config
             .services()
             .map(|s| (s.name, s.path, s.caps, s.restart))
             .collect();
-        // Exactly the V0.8 kernel BACKGROUND table: tickd holds IPC only,
-        // flapd holds nothing; both are long-running.
+        // The V0.8 kernel BACKGROUND table - tickd holds IPC only, flapd
+        // holds nothing - and, third so their pids stay 2 and 3, V0.11's
+        // inferd with IPC and reads (under init's /etc sandbox).
         assert_eq!(
             got,
             [
                 ("tickd", "/bin/tickd", 0x2, Restart::Always),
                 ("flapd", "/bin/flapd", 0x0, Restart::Always),
+                ("inferd", "/bin/inferd", 0x12, Restart::Always),
             ]
         );
         assert_eq!(CAP_IPC, 0x2);
@@ -561,7 +563,7 @@ mod tests {
         assert!(config
             .services()
             .all(|s| s.n_after == 0 && s.args.is_empty()));
-        assert_eq!(order_of(SHIPPED), [0, 1]);
+        assert_eq!(order_of(SHIPPED), [0, 1, 2]);
         // Also valid when handed over as raw bytes, as init reads it.
         assert_eq!(parse_bytes(SHIPPED.as_bytes()).unwrap(), config);
     }

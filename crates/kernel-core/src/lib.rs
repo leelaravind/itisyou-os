@@ -17,6 +17,7 @@ pub mod cosched;
 pub mod ed25519;
 pub mod elf;
 pub mod font;
+pub mod infer;
 pub mod initconf;
 pub mod itfs;
 pub mod linebuf;
