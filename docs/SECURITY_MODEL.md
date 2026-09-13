@@ -103,7 +103,14 @@ only through narrow, deterministic, auditable paths).
   covers the previous one, the chain is extended before the bounded ring drops
   anything, and it continues across boots from the head recovered at startup.
   It detects editing; it does not defend against an attacker who can rewrite
-  the whole file including its head. Signing the head is the missing step.
+  the whole file including its head — the V0.9 witness anchor is what catches
+  that. Found during V0.11, true of v0.8.0–v0.10.0 (see KNOWN_LIMITATIONS):
+  the stored trail verifies only when saved once, in the first boot, before
+  the ring drops a record (AUDIT11-001); the trail and the package store are
+  reachable through the filesystem syscalls by any program holding the
+  filesystem capabilities (SEC11-001); and the kernel echoes program-chosen
+  file names and contents unescaped, so a line break in one can pose as a
+  kernel marker (AUDIT11-002). All three are fixed on the V0.11 branch.
 - The network stack refuses more than it accepts: fragments, VLAN tags, ICMP
   types other than echo, and packets addressed elsewhere are counted and
   dropped. It generates no ICMP errors, so it cannot be used as a reflector.

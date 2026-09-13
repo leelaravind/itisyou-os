@@ -14,6 +14,20 @@ their live SHA256SUMS). Verified after deploy on both: `downloads.mjs verify`,
 a direct digest check of both archives, `browser-verify.mjs` (26 page loads,
 0 console errors, 0 failed requests).
 
+**Latest deploy:** 2026-09-13 23:50, disclosure of three audit-trail defects
+in v0.10.0 and every release since v0.8.0, found during V0.11 and fixed on
+the V0.11 branch — AUDIT11-001 (an untouched trail reads as TAMPERED),
+SEC11-001 (programs can rewrite the trail or a package's commit marker),
+AUDIT11-002 (forged kernel lines through echoed file names) — and the stale
+"(in progress)" heading of the V0.10 requirements — staging
+`37c0c1d2-e7e5-4937-b544-69383f93e547`, production
+`24574ae3-ff25-4ae7-931a-5313b96c686b`. Verified on both: `downloads.mjs
+verify` (v0.10.0 byte-exact), the v0.9.0 and v0.8.1 archives downloaded and
+checked against their SHA256SUMS, `browser-verify.mjs` (26 page loads, 0
+console errors, 0 failed requests), and the disclosure present on
+`/security`, `/download`, `/changelog`, `/engineering` and the
+known-limitations, threat-model and security-model docs pages.
+
 **Earlier deploy:** 2026-09-13 20:07, disclosure of SEC10-001 (any program can
 panic the v0.9.0 kernel through `cap_list` into its own read-only memory;
 fixed on the V0.10 branch) — staging `52ee44d7-cde6-43c3-91d5-cd1d35611329`,

@@ -118,6 +118,35 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
   check-anchor`), the witness must be reachable, and in the harness the witness
   is a test peer, not a hardened service. Persisting is explicit (`audit
   save`), not automatic on every record.
+- **Three audit-trail defects in v0.10.0 and every release since v0.8.0**,
+  found during V0.11 development (fixed on the V0.11 branch, shipping in
+  v0.11.0; the published images are unchanged — a release is never rebuilt
+  in place):
+  - AUDIT11-001 — **false TAMPERED.** `audit save` stores only the current
+    boot's in-memory ring (at most 64 records) under a head that covers every
+    record ever made, and recovery verifies from genesis. So a trail saved by
+    any boot after the first, or once the ring has dropped a record, or after
+    a mid-boot `audit verify` (which re-runs boot recovery), is reported
+    `TAMPERED` on the next boot although nobody touched it — and the earlier
+    boots' records are no longer on the disk. Reproduced on the published
+    v0.10.0 image: boot 1 saves 5 records, boot 2 recovers them (`verified`)
+    and saves, boot 3 reports `TAMPERED`. Only a trail saved once, in the
+    first boot, with fewer than 64 records, verifies.
+  - SEC11-001 — **programs can rewrite the evidence.** The filesystem
+    syscalls reach every name in the store, including `/data/audit.log` and
+    the package store's `<app>.<v>.pkg`/`.ok` files, so a program holding
+    `fs_write` with no sandbox (the console's default for `run`) can replace
+    the audit trail — in the limit with a valid empty one, which verifies;
+    only the V0.9 anchor catches that — or delete an application's commit
+    marker, rolling it back without anyone approving it. No program in the
+    image does this.
+  - AUDIT11-002 — **forged kernel lines through the kernel's own output.**
+    File names may contain line breaks, and the kernel echoes names raw (in
+    the audit detail of every `fs_write`/`fs_delete`, `store ls`, `pkg list`
+    and package recovery) and file contents raw (`store cat`). A program with
+    `fs_write` can create `/data/a` + line break + `[ITISYOU:AUDIT] …` and the
+    kernel itself prints a line that reads as a kernel marker; in a saved
+    trail the same line break also triggers AUDIT11-001.
 - SMEP, SMAP and UMIP are enabled when the CPU advertises them (the harness's
   CPU model does); W^X for user segments, a guard page below the user stack, and
   user-pointer validation are always on — since V0.10 the validation also
