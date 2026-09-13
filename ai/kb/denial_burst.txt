@@ -1,0 +1,6 @@
+denial_burst: many recent capability denials
+meaning: a large share of the newest audit records are refusals - programs asking for authority they were not given
+likely causes: a program started with fewer capabilities than it needs; a sandbox narrower than its paths; or a program probing what it can reach
+action: none - the agent reports it and proposes nothing; a person reads the audit trail (audit) and decides
+risk: none
+reversible: not applicable

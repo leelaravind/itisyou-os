@@ -1543,6 +1543,41 @@ Write-Output '=== QEMU V0.11: inference in Ring 3 (BIOS) ==='
     '--forbid', 'RING3-PANIC',
     '--timeout-secs', '180', '--label', 'ai-infer-bios')
 
+Write-Output '=== QEMU V0.11: the diagnostic agent on real situations (BIOS) ==='
+# AGENT11-001 and KB11-001 (ADR-0024). /bin/agent reads the view, asks inferd,
+# looks up each condition's runbook in /etc/ai/kb and prints the diagnosis and
+# the action the runbook names - it files nothing yet and holds no authority.
+# Three situations the leg constructs, each with its EXACT condition set: the
+# booted system (flapd failed), the scheduler paused, and a burst of denials
+# (sandbox-probe run with no capabilities). Without the view capability the
+# agent is refused.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B210',
+    '--send', '@pause 1500',
+    '--send', 'run /bin/agent sys_view,ipc,fs_read /etc/ai -- diagnose',
+    '--send', 'sched pause',
+    '--send', 'run /bin/agent sys_view,ipc,fs_read /etc/ai -- diagnose',
+    '--send', 'sched resume',
+    '--send', 'run /bin/sandbox-probe -',
+    '--send', 'run /bin/agent sys_view,ipc,fs_read /etc/ai -- diagnose',
+    '--send', 'run /bin/agent - /etc/ai -- diagnose',
+    '--send', 'shutdown',
+    '--require', 'AGENT-DIAGNOSIS conditions=service_failed model=e0fc6642563aba99 ',
+    '--require', 'AGENT-DIAGNOSIS conditions=service_failed,scheduler_paused model=e0fc6642563aba99 ',
+    '--require', 'AGENT-DIAGNOSIS conditions=service_failed,denial_burst model=e0fc6642563aba99 ',
+    '--require', 'AGENT-RUNBOOK id=service_failed sha=',
+    '--require', 'AGENT-RUNBOOK id=scheduler_paused sha=',
+    '--require', 'AGENT-RUNBOOK id=denial_burst sha=',
+    '--require', 'AGENT-ACTION id=service_failed action=retry-service target=flapd',
+    '--require', 'AGENT-ACTION id=scheduler_paused action=resume-scheduler',
+    '--require', 'AGENT-ACTION id=denial_burst action=none',
+    '--require', 'AGENT-VIEW-DENIED err=perm',
+    '--forbid', 'AGENT-INFER-TIMEOUT',
+    '--forbid', 'conditions=none ',
+    '--forbid', 'AGENT-RUNBOOK-MISSING',
+    '--forbid', 'RING3-PANIC',
+    '--timeout-secs', '180', '--label', 'ai-diagnose-bios')
+
 if ($anyFailed) { Write-Output 'TEST: FAILED'; exit 1 }
 Write-Output 'TEST: OK'
 exit 0

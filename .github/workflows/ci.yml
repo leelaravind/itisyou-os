@@ -1094,6 +1094,33 @@ jobs:
             --forbid "INFERD-BAD-REQUEST" --forbid "RING3-PANIC" \
             --timeout-secs 240 --label ai-infer-bios
 
+      - name: QEMU V0.11 the diagnostic agent on real situations (BIOS)
+        run: |
+          # AGENT11-001, KB11-001 (ADR-0024): the agent's exact condition sets
+          # in three constructed situations - booted (flapd failed), paused,
+          # and after a denial burst - with each runbook and the action it
+          # names; refused without the view capability.
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
+            --expect B210 --send "@pause 1500" \
+            --send "run /bin/agent sys_view,ipc,fs_read /etc/ai -- diagnose" \
+            --send "sched pause" --send "run /bin/agent sys_view,ipc,fs_read /etc/ai -- diagnose" \
+            --send "sched resume" --send "run /bin/sandbox-probe -" \
+            --send "run /bin/agent sys_view,ipc,fs_read /etc/ai -- diagnose" \
+            --send "run /bin/agent - /etc/ai -- diagnose" --send "shutdown" \
+            --require "AGENT-DIAGNOSIS conditions=service_failed model=e0fc6642563aba99 " \
+            --require "AGENT-DIAGNOSIS conditions=service_failed,scheduler_paused model=e0fc6642563aba99 " \
+            --require "AGENT-DIAGNOSIS conditions=service_failed,denial_burst model=e0fc6642563aba99 " \
+            --require "AGENT-RUNBOOK id=service_failed sha=" \
+            --require "AGENT-RUNBOOK id=scheduler_paused sha=" \
+            --require "AGENT-RUNBOOK id=denial_burst sha=" \
+            --require "AGENT-ACTION id=service_failed action=retry-service target=flapd" \
+            --require "AGENT-ACTION id=scheduler_paused action=resume-scheduler" \
+            --require "AGENT-ACTION id=denial_burst action=none" \
+            --require "AGENT-VIEW-DENIED err=perm" \
+            --forbid "AGENT-INFER-TIMEOUT" --forbid "conditions=none " \
+            --forbid "AGENT-RUNBOOK-MISSING" --forbid "RING3-PANIC" \
+            --timeout-secs 240 --label ai-diagnose-bios
+
       - name: Upload QEMU evidence
         if: always()
         uses: actions/upload-artifact@v4

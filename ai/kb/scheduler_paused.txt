@@ -1,0 +1,6 @@
+scheduler_paused: background scheduling is paused
+meaning: the always-on scheduler gives background processes no slices at the prompt or at busy points; services such as tickd and inferd run only while the console waits for a job it started
+likely causes: an operator ran sched pause (it is a diagnostic switch) and did not run sched resume
+action: resume-scheduler - turn background slices back on
+risk: low - it restores the default state of the system
+reversible: yes - sched pause, or the verification failing, pauses it again

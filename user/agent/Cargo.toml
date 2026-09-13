@@ -1,0 +1,18 @@
+cargo-features = ["per-package-target"]
+
+[package]
+name = "user-agent"
+version.workspace = true
+edition.workspace = true
+description = "/bin/agent: the diagnostic agent (V0.11) - intelligence without authority."
+forced-target = "x86_64-unknown-none"
+
+[dependencies]
+ulib = { path = "../ulib" }
+kernel-core = { path = "../../crates/kernel-core" }
+
+[[bin]]
+name = "user-agent"
+path = "src/main.rs"
+test = false
+bench = false

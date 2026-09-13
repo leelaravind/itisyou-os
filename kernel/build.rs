@@ -62,6 +62,7 @@ fn main() {
         "gui-echo",
         "ai-probe",
         "inferd",
+        "agent",
     ] {
         println!(
             "cargo::rerun-if-changed={}",
@@ -195,6 +196,8 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
             "user-ai-probe",
             "-p",
             "user-inferd",
+            "-p",
+            "user-agent",
         ])
         .arg("--target-dir")
         .arg(&target_dir)
@@ -261,6 +264,7 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
         ("user-gui-echo", "bin/gui-echo"),
         ("user-ai-probe", "bin/ai-probe"),
         ("user-inferd", "bin/inferd"),
+        ("user-agent", "bin/agent"),
     ];
     entries.push(("bin/".to_string(), Vec::new(), true));
     entries.push(("sbin/".to_string(), Vec::new(), true));
@@ -510,6 +514,38 @@ fn add_ai_material(workspace: &Path, out_dir: &Path, entries: &mut Vec<(String, 
         ("absurd-weight.model", absurd.to_vec()),
     ] {
         entries.push((format!("etc/ai/fixtures/{name}"), data, false));
+    }
+    // The knowledge base (KB11-001): one runbook per condition - a closed
+    // table, so the build refuses a missing entry or a stray file.
+    let kb = ai.join("kb");
+    println!("cargo:rerun-if-changed={}", kb.display());
+    let mut names: Vec<String> = fs::read_dir(&kb)
+        .expect("reading ai/kb")
+        .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+        .collect();
+    names.sort();
+    let mut want: Vec<String> = scenario::Condition::ALL
+        .iter()
+        .map(|c| format!("{}.txt", c.name()))
+        .collect();
+    want.sort();
+    assert_eq!(
+        names, want,
+        "ai/kb must hold exactly one runbook per condition"
+    );
+    entries.push(("etc/ai/kb/".to_string(), Vec::new(), true));
+    for name in names {
+        let path = kb.join(&name);
+        println!("cargo:rerun-if-changed={}", path.display());
+        let text = fs::read(&path).unwrap();
+        assert!(
+            text.len() <= 2048
+                && text
+                    .iter()
+                    .all(|&b| b == b'\n' || (0x20..0x7f).contains(&b)),
+            "ai/kb/{name}: at most 2048 bytes of printable ASCII"
+        );
+        entries.push((format!("etc/ai/kb/{name}"), text, false));
     }
 }
 
