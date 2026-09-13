@@ -43,9 +43,15 @@
   loader link time) and is superseded by the final release images below;
   `RELEASE-BOOT-TEST: OK` on the downloaded bytes (QEMU 11.1.0, Windows 11) and
   the full matrix on the same bytes in CI (QEMU 8.2.2, ubuntu-24.04).
-- Staging `14f484fa-f622-412f-a4b8-ff4a18bbbe2d` → production
-  `2d6c739d-5818-45e6-aacb-aa62c830ca26`: `BROWSER-VERIFY: OK` and
-  `DOWNLOADS-VERIFY: OK` on both.
+- Final release images (CI run `34750316003`, commit `bf32b53`, reproducible
+  across two clean checkouts): uefi
+  `93750593a7b56d149e1b90e023d111a8aac4fea401fa3a7ce6249b78212cbd88`, bios
+  `4a84705bec3c8a2ee0d80cceeb0b5b1562cf237936dc686035ff6f6494f410ea`.
+- Final deployment: staging `5ad339cd-bd0b-4752-862b-7dcc79a37c0f` → production
+  `5436979f-5e4c-42ea-af02-32dbcf5b364a`: `BROWSER-VERIFY: OK` and
+  `DOWNLOADS-VERIFY: OK` on both, and the files re-downloaded from production
+  pass `RELEASE-BOOT-TEST: OK`. (Release-candidate deployment: staging
+  `14f484fa…`, production `2d6c739d…`.)
 
 ## V0.8 (v0.8.0) summary
 

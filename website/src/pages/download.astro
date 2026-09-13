@@ -97,6 +97,13 @@ const description = published
             </div>
           </section>
 
+          {downloads.notice && (
+            <section class="panel p-gutter" aria-labelledby="notice-title">
+              <h2 id="notice-title" class="font-mono text-mono-label text-ink tracking-widest mb-3">NOTICE</h2>
+              <p class="text-sm text-meta-bright max-w-3xl break-words">{downloads.notice}</p>
+            </section>
+          )}
+
           <section aria-labelledby="files-title">
             <h2 id="files-title" class="font-mono text-mono-label text-ink tracking-widest mb-6">01 // FILES</h2>
             <ul class="grid grid-cols-1 md:grid-cols-2 gap-px bg-line border border-line list-none">

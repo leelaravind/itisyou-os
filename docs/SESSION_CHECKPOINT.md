@@ -14,12 +14,16 @@ left committed, pushed and described here.
   deployed). The 2026-09-13 audit re-ran the full gate on that commit:
   `VERIFY: OK`, 24/24 QEMU legs, selftest 113/0 (BIOS and UEFI), 292 host
   tests, secret scan clean. The engineering reproduces.
-- **V0.8.1 (release-integrity closeout) is in progress.** The `v0.8.0` kernel
-  reported `0.7.0-dev`; two requirement rows used "NOT DONE"; the public site
-  and several docs made V0.1-era claims. V0.8.1 fixes all of it and adds
-  `website/scripts/check-consistency.mjs` (version + requirement-state gate)
-  and `website/scripts/browser-verify.mjs` (headless Chromium over CDP). See
-  `docs/REQUIREMENTS.md` § V0.8.1 for the rows and their state.
+- **V0.8.1 (release-integrity closeout) is released.** It fixed the `v0.8.0`
+  version drift, the invalid requirement states and the stale public claims;
+  added `website/scripts/check-consistency.mjs` (version + requirement-state
+  gate, `--release` before tags), `website/scripts/browser-verify.mjs`
+  (headless Chromium over CDP) and the first public download: CI-built,
+  bit-reproducible (GPT + embedded-PE normalization, CI job `reproducibility`),
+  boot-tested byte for byte (`scripts/release-boot-test.ps1`) and served from
+  https://os.itisyou.app/download (`website/scripts/downloads.mjs`). All rows in
+  `docs/REQUIREMENTS.md` § V0.8.1 are terminal. Content commit `bf32b53`
+  (CI `34750316003`); production `5436979f-5e4c-42ea-af02-32dbcf5b364a`.
 - **Next milestone: V0.9 — Transport, Interrupt Cutover & Trust**
   (`docs/ROADMAP.md`, including the 2026-09-13 amendment that inserts V0.10
   Userspace System before the AI layer, moves AI to V0.11, and moves daily-

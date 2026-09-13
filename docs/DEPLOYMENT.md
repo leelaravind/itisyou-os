@@ -1,9 +1,9 @@
 # Deployment — os.itisyou.app
 
 **Last release:** v0.8.1 — `status/current.json` stamped to CI-verified commit
-`397ab80` (run `34749240177`); staging version
-`14f484fa-f622-412f-a4b8-ff4a18bbbe2d`, production version
-`2d6c739d-5818-45e6-aacb-aa62c830ca26`; release images served from
+`bf32b53` (run `34750316003`); staging version
+`5ad339cd-bd0b-4752-862b-7dcc79a37c0f`, production version
+`5436979f-5e4c-42ea-af02-32dbcf5b364a`; release images served from
 `/downloads/v0.8.1/`. (V0.8.0: commit `e6e3496`, run `33987853808`, production
 `a3544b0a-5fe1-44ab-8dfc-b2bd4a3dda0d`.)
 

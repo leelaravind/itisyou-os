@@ -22,10 +22,10 @@ export interface Release {
 export const RELEASES: Release[] = [
   {
     tag: 'v0.8.1',
-    commit: '397ab80',
+    commit: 'bf32b53',
     date: '2026-09-13',
     milestone: 'V0.8 — release-integrity closeout',
-    ciRun: '34749240177',
+    ciRun: '34750316003',
     summary:
       'No new kernel function. Corrects v0.8.0, whose kernel reported 0.7.0-dev: the version is now consistent everywhere and a build gate fails on any future drift between the kernel, the status metadata and the requirement matrix. Stale public claims corrected; the site is verified in a real browser. First public download: reproducible, checksummed UEFI and BIOS boot images built by CI and boot-tested byte for byte.',
     download: '/download',
