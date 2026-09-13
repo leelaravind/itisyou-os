@@ -1,0 +1,32 @@
+# ai/scenarios.txt - the training data of the diagnostic model (V0.11,
+# MODEL11-001, ADR-0024). The model is trained ONLY on examples generated
+# from these lines (kernel_core::scenario, splitmix64 from a fixed seed):
+# every example is synthetic, and the ranges are the author's assumptions
+# about what each condition looks like in the system view - the model can be
+# no better than they are.
+#
+# One line per scenario: the conditions that hold (`healthy` for none, or a
+# comma-separated set of service_failed, scheduler_paused, denial_burst) and
+# 16 inclusive ranges, one per feature of kernel_core::sysview::features, in
+# this order and these units (each scaled into 0..1000):
+#
+#   0 processes x50            1 runnable x100           2 waiting x100
+#   3 ended x300               4 services x200           5 services running x200
+#   6 services failed x500     7 most restarts x300      8 scheduler paused (0/1000)
+#   9 always-on (0/1000)      10 longest gap, ms        11 denials in the audit ring x15
+#  12 records in the ring x15 13 denial share, per mille 14 frames refused x10
+#  15 uptime, s
+#
+# Every boot of the image has one failed service (flapd, restarts=3), so the
+# combinations with service_failed matter as much as the single conditions.
+#
+#        conditions                         0        1       2       3       4       5       6         7       8          9          10      11      12      13        14      15
+scenario healthy                          100..600 0..600  0..600  0..600  200..800 200..800 0..0      0..600  0..0       1000..1000 0..1000 0..45   0..960  0..200    0..500  1..1000
+scenario healthy                          100..600 0..600  0..600  0..300  200..800 200..800 0..0      0..300  0..0       1000..1000 0..300  0..30   0..300  0..150    0..100  1..1000
+scenario service_failed                   100..600 0..600  0..600  0..600  400..800 0..600   500..1000 900..900 0..0      1000..1000 0..1000 0..45   0..960  0..200    0..500  1..1000
+scenario scheduler_paused                 100..600 0..600  0..600  0..600  200..800 200..800 0..0      0..600  1000..1000 1000..1000 0..1000 0..45   0..960  0..200    0..500  1..1000
+scenario denial_burst                     100..600 0..600  0..600  0..600  200..800 200..800 0..0      0..600  0..0       1000..1000 0..1000 90..960 90..960 300..1000 0..500  1..1000
+scenario service_failed,scheduler_paused  100..600 0..600  0..600  0..600  400..800 0..600   500..1000 900..900 1000..1000 1000..1000 0..1000 0..45   0..960  0..200    0..500  1..1000
+scenario service_failed,denial_burst      100..600 0..600  0..600  0..600  400..800 0..600   500..1000 900..900 0..0      1000..1000 0..1000 90..960 90..960 300..1000 0..500  1..1000
+scenario scheduler_paused,denial_burst    100..600 0..600  0..600  0..600  200..800 200..800 0..0      0..600  1000..1000 1000..1000 0..1000 90..960 90..960 300..1000 0..500  1..1000
+scenario service_failed,scheduler_paused,denial_burst 100..600 0..600 0..600 0..600 400..800 0..600 500..1000 900..900 1000..1000 1000..1000 0..1000 90..960 90..960 300..1000 0..500 1..1000
