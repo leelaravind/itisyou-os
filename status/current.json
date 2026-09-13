@@ -1,12 +1,12 @@
 {
-  "version": "0.10.0",
+  "version": "0.11.0-dev",
   "maturity": "pre-alpha",
   "architecture": "x86_64",
   "environment": "QEMU",
-  "milestone": "V0.10 — Userspace System (v0.10.0)",
-  "commit": "c936bc78379bbeb379f4f3b90186242c3aee4fb7",
-  "lastVerifiedAt": "2026-09-13T21:06:36Z",
-  "verification": "verified",
+  "milestone": "V0.11 — AI-Native System Layer (in development)",
+  "commit": null,
+  "lastVerifiedAt": null,
+  "verification": "in-development",
   "modules": [
     {
       "id": "boot",

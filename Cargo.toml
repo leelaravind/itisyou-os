@@ -65,7 +65,7 @@ default-members = [
 # `status/current.json` `version`; `website/scripts/check-consistency.mjs`
 # fails the build when they drift. Development builds carry `-dev`; the
 # release commit drops it.
-version = "0.10.0"
+version = "0.11.0-dev"
 edition = "2021"
 authors = ["leelaravind"]
 
