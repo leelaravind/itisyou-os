@@ -1,5 +1,10 @@
 # Deployment — os.itisyou.app
 
+**Latest deploy:** 2026-09-13 15:25, commit `8fafda5` (four overstated claims
+corrected after adversarial review) — staging `dbc396a6-eca5-4f14-8b9f-68dd8730fe5b`,
+production `cf7a7a97-b55a-4b45-885f-74e3e1f00caf`; downloads and browser
+verification repeated (v0.9.0 byte-exact, v0.8.1 archive byte-exact).
+
 **Last release:** v0.9.0 (2026-09-13) — release commit `f06673e`, CI run
 `34760629701`; staging `896ebfe6-1504-4aeb-9c7b-6f978944584f`, production
 `1ba155b6-30e9-4f51-bd2e-5414ea29a968`; images under `/downloads/v0.9.0/`,
