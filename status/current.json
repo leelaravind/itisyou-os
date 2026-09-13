@@ -1,5 +1,5 @@
 {
-  "version": "0.9.0-dev",
+  "version": "0.9.0",
   "maturity": "pre-alpha",
   "architecture": "x86_64",
   "environment": "QEMU",

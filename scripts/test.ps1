@@ -72,7 +72,7 @@ Write-Output '=== QEMU shell interaction (BIOS) ==='
     '--send', 'panic-test', '--send', 'shutdown',
     # The running kernel must name the version the release claims
     # (Cargo workspace version == status/current.json; check-consistency.mjs).
-    '--require', 'itisyou-os 0.9.0-dev',
+    '--require', 'itisyou-os 0.9.0',
     '--require', 'task 0: kmain',
     '--require', 'RING3-DONE',
     '--require', 'run: /bin/init: Exit(0)',
