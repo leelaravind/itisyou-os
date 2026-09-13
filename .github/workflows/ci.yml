@@ -283,7 +283,8 @@ jobs:
           # checked by the peer's independent code.
           cargo run -q -p qemu-runner -- \
             --image target/images/itisyou-kernel-bios.img --net \
-            --expect B200 --send "ipv6" --send "net" --send "shutdown" \
+            --expect B200 --send "ipv6" --send "net poll 3000" --send "net" --send "shutdown" \
+            --require "net: polled ms=3000" \
             --require "IPV6-NO-ROUTER (link-local only)" \
             --require "[HOST:NET6] guest_na target=fe80:0:0:0:5054:ff:fe12:3456 solicited=true override=true" \
             --require "[HOST:NET6] guest_echo6_reply from=fe80:0:0:0:5054:ff:fe12:3456 payload_ok=true" \
@@ -402,7 +403,7 @@ jobs:
             --send "run /bin/flags-probe" --send "run /bin/flags-probe - - -- fault" \
             --send "harden" --send "shutdown" \
             --require "FLAGSPROBE-SPIN df=1 ac=1" --require "FLAGSPROBE-SPUN" \
-            --require "FLAGSPROBE-FAULT-ARMED df=1 ac=1" --require "user_fault pid=4 vector=13" \
+            --require "FLAGSPROBE-FAULT-ARMED df=1 ac=1" --require "vector=13 addr=0x0 contained=true" \
             --require "dirty_timer=0 dirty_landing=0" --forbid "ring3_entry_flag_checks=0 " \
             --timeout-secs 240 --label flags-hygiene-bios
 

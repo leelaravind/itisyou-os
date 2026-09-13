@@ -449,9 +449,13 @@ Write-Output '=== QEMU IPv6 responder paths against the harness peer (BIOS) ==='
     '--net',
     '--expect', 'B200',
     '--send', 'ipv6',
+    # The peer solicits and pings the guest once it has seen it; poll for a
+    # fixed window so the answers do not depend on when those frames land.
+    '--send', 'net poll 3000',
     '--send', 'net',
     '--send', 'shutdown',
     '--require', 'IPV6-NO-ROUTER (link-local only)',
+    '--require', 'net: polled ms=3000',
     '--require', '[HOST:NET6] guest_na target=fe80:0:0:0:5054:ff:fe12:3456 solicited=true override=true',
     '--require', '[HOST:NET6] guest_echo6_reply from=fe80:0:0:0:5054:ff:fe12:3456 payload_ok=true',
     '--require', 'neighbor_adverts_sent=1 echo_replies_sent=1',
@@ -977,7 +981,7 @@ Write-Output '=== QEMU Ring 3 DF/AC never reach kernel code (BIOS) ==='
     '--require', 'FLAGSPROBE-SPIN df=1 ac=1',
     '--require', 'FLAGSPROBE-SPUN',
     '--require', 'FLAGSPROBE-FAULT-ARMED df=1 ac=1',
-    '--require', 'user_fault pid=4 vector=13',
+    '--require', 'vector=13 addr=0x0 contained=true',
     '--require', 'dirty_timer=0 dirty_landing=0',
     '--forbid', 'ring3_entry_flag_checks=0 ',
     '--timeout-secs', '180', '--label', 'flags-hygiene-bios')
