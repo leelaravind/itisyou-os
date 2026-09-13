@@ -1046,6 +1046,43 @@ Write-Output '=== QEMU process model: parent-only wait, wait_nohang, sleep, orph
     '--forbid', 'init=true reason=',
     '--timeout-secs', '180', '--label', 'proc-model-bios')
 
+Write-Output '=== QEMU userspace init: configuration and supervision (BIOS) ==='
+# V0.10 INIT10-002: /sbin/init parses /etc/init.conf with the host-tested
+# grammar (check mode: the shipped file, a dependency cycle, an unknown
+# capability, and no filesystem capability), then starts and supervises a
+# service from a test config (once mode), reporting it to the kernel's
+# service table through svc_report.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B210',
+    '--send', 'cat /etc/init.conf',
+    '--send', 'run /sbin/init fs_read - -- check /etc/init.conf',
+    '--send', 'run /sbin/init fs_read - -- check /etc/init-tests/cycle.conf',
+    '--send', 'run /sbin/init fs_read - -- check /etc/init-tests/badcap.conf',
+    '--send', 'run /sbin/init - - -- check /etc/init.conf',
+    '--send', 'bg /sbin/init spawn,service,fs_read -- once /etc/init-tests/demo.conf',
+    '--send', 'svc',
+    '--send', 'shutdown',
+    '--require', 'service tickd /bin/tickd caps=ipc restart=always',
+    '--require', 'INIT-CONFIG-OK path=/etc/init.conf services=2 order=tickd,flapd',
+    '--require', 'INIT-CONFIG-ERROR path=/etc/init-tests/cycle.conf line=0 reason=cycle',
+    '--require', 'INIT-CONFIG-ERROR path=/etc/init-tests/badcap.conf line=2 reason=unknown_capability',
+    '--require', 'INIT-CONFIG-ERROR path=/etc/init.conf line=0 reason=read_denied',
+    '--require', 'run: /sbin/init: Exit(2)',
+    '--require', 'INIT-CONFIG path=/etc/init-tests/demo.conf services=1 order=demo',
+    '--require', 'bg_start name=demo pid=',
+    '--require', 'long_running=false supervisor=',
+    '--require', 'ARGS-ITEM i=0 value=from-config',
+    '--require', 'INIT-DONE name=demo',
+    '--require', 'bg_done name=demo restarts=0 supervisor=',
+    '--require', 'INIT-ONCE-DONE services=1',
+    '--require', 'bg: /sbin/init: exit=0',
+    '--require', 'demo  Done',
+    '--require', 'shutting down (QEMU exit)',
+    '--forbid', 'ARGS-FAILED',
+    '--forbid', 'INIT-USAGE',
+    '--forbid', 'INIT-REPORT-REFUSED',
+    '--timeout-secs', '180', '--label', 'init-bios')
+
 Write-Output '=== QEMU always-on co-scheduling (BIOS) ==='
 # V0.10 SCHED10-001: background processes run in bounded slices at the
 # audited safe points - the idle prompt (held idle by @pause), job waits,

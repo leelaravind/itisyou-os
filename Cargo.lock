@@ -787,6 +787,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "user-sysinit"
+version = "0.10.0-dev"
+dependencies = [
+ "kernel-core",
+ "ulib",
+]
+
+[[package]]
 name = "user-tcp-probe"
 version = "0.10.0-dev"
 dependencies = [
