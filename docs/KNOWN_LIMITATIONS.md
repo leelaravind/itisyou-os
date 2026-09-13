@@ -1,6 +1,6 @@
 # Known limitations — honest current state
 
-Updated continuously; last full revision: 2026-09-13 (V0.8.1 release-integrity
+Updated continuously; last full revision: 2026-09-13 (v0.9.0 release; earlier: V0.8.1 release-integrity
 closeout). Each item says what is true of the current build, not what was true
 when the subsystem first landed. Items that later milestones address name the
 milestone; the sequence lives in `docs/ROADMAP.md`.

@@ -20,7 +20,7 @@ export interface JournalEntry {
 export const JOURNAL: JournalEntry[] = [
   {
     date: '2026-09-13',
-    time: '14:43',
+    time: '15:10',
     session: 'Session 4 — V0.9 release',
     title: 'v0.9.0: V0.9 — Transport, Interrupt Cutover & Trust is released',
     what:
