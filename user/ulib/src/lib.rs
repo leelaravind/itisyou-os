@@ -140,6 +140,15 @@ pub fn sleep_ticks(ticks: u64) -> u64 {
     raw_syscall(SYS_SLEEP, ticks, 0, 0)
 }
 
+pub const SYS_SVC_REPORT: u64 = 39;
+
+/// Report one service lifecycle event to the kernel's service table: the
+/// 32-byte record of `kernel_core::svcreport`. Needs the Service capability
+/// with ADMIN (`CAP_SERVICE`). Returns 0 or an error.
+pub fn svc_report(req: &[u8; 32]) -> u64 {
+    raw_syscall(SYS_SVC_REPORT, req.as_ptr() as u64, 32, 0)
+}
+
 /// Send a message on a channel. Returns bytes queued or ERR_*.
 pub fn msg_send(channel: u64, data: &[u8]) -> u64 {
     raw_syscall(

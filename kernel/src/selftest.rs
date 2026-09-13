@@ -159,6 +159,35 @@ fn proc_tree_tests(suite: &mut Suite) {
     suite.check("proc_kill_live_process", ok);
     proc::drain_all();
 
+    // svc_report (V0.10, SVC10-001): refused at the gate without the Service
+    // capability; with it, only reports about the reporter's own child are
+    // accepted, never a reserved name or `ready` from a non-init.
+    for (name, caps, block) in [
+        (
+            "svc_report_needs_service_admin",
+            kernel_core::caps::CAP_SPAWN,
+            &b"svc-denied\0"[..],
+        ),
+        (
+            "svc_report_child_only",
+            kernel_core::caps::CAP_SPAWN | kernel_core::caps::CAP_SERVICE,
+            &b"svc-basic\0"[..],
+        ),
+    ] {
+        let ok = crate::user::load_with("/bin/proc-probe", caps, None)
+            .ok()
+            .and_then(|mut p| {
+                p.args = crate::user::Args::new(block).ok()?;
+                Some(proc::admit(p))
+            })
+            .is_some_and(|pid| {
+                proc::run_until_idle();
+                proc::state_of(pid) == Some(ProcState::Exited(0))
+            });
+        suite.check(name, ok);
+        proc::drain_all();
+    }
+
     let free_after = memory::stats().map(|(f, _)| f).unwrap_or(0);
     suite.check(
         "proc_tree_no_frame_leaks",

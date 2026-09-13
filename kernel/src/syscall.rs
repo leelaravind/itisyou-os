@@ -118,6 +118,11 @@ pub const SYS_WAIT_NOHANG: u64 = 37;
 /// Park the caller for a number of ticks (V0.10). No capability, like
 /// `yield`: a process can only ever delay itself.
 pub const SYS_SLEEP: u64 = 38;
+/// A supervisor reports one service lifecycle event (V0.10): a strict
+/// 32-byte record (`kernel_core::svcreport`). The Service capability with
+/// ADMIN rights; the kernel verifies what it can know itself (the child, its
+/// caps, row ownership) — see `services::sys_svc_report`.
+pub const SYS_SVC_REPORT: u64 = 39;
 
 pub const ERR_NOSYS: u64 = u64::MAX;
 pub const ERR_FAULT: u64 = u64::MAX - 1;
@@ -442,6 +447,10 @@ extern "C" fn syscall_dispatch(a1: u64, a2: u64, a3: u64, nr: u64) -> u64 {
             Err(e) => e,
         },
         SYS_SLEEP => crate::proc::sys_sleep(a1),
+        SYS_SVC_REPORT => match require_any(CapabilityKind::Service, rights::ADMIN, "svc_report") {
+            Ok(()) => crate::services::sys_svc_report(a1, a2),
+            Err(e) => e,
+        },
         // The channel id is the scoped resource: a service handed a
         // channel-scoped handle cannot talk on any other channel.
         SYS_MSG_SEND => {
