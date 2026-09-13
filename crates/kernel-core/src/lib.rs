@@ -31,6 +31,7 @@ pub mod net;
 pub mod path;
 pub mod pci;
 pub mod pkg;
+pub mod policy;
 pub mod procstatus;
 pub mod proctree;
 pub mod progargs;
