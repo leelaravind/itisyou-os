@@ -38,9 +38,13 @@ Ring 3 process after a fixed quantum (V0.4), saving its full trap frame; a
 naked timer ISR saves/restores all GPRs and long-jumps to the run-loop on
 preemption. `yield`/`wait` also save context and return to it. The strict ELF64 loader (`kernel-core::elf` + `user.rs`)
 accepts only static ET_EXEC images. Syscalls: write, exit, yield, getpid,
-uptime, spawn, wait, msg_send, msg_recv — user buffers validated against the
-active CR3 before any access. The first five convey no authority and are
-ungated; everything else is default-deny behind a capability handle. `user/ulib` is the Ring 3 ABI side; evidence programs
+uptime, args, spawn, wait, msg_send, msg_recv (and later additions listed in
+`kernel/src/syscall.rs`) — user buffers validated against the active CR3
+before any access. The first six convey no authority and are ungated;
+everything else is default-deny behind a capability handle. Program
+arguments (V0.10) are an immutable per-process block validated by
+`kernel_core::progargs` at creation and read back with `args`; the console
+passes them after `--` and a parent through `spawn_args`. `user/ulib` is the Ring 3 ABI side; evidence programs
 `/bin/{init,gp-test,pf-test,child,parent}` are baked into the initramfs.
 
 ## Devices & storage (V0.3, ADR-0008)
