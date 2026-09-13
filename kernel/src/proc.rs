@@ -9,10 +9,10 @@
 //!
 //! Preemptive user scheduling is out of V0.3 scope (KNOWN_LIMITATIONS).
 
+use crate::sync::Mutex;
 use crate::syscall::{ERR_2BIG, ERR_AGAIN, ERR_NOENT};
 use crate::user::{self, Process, UserExit};
 use alloc::collections::{BTreeMap, VecDeque};
-use spin::Mutex;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProcState {

@@ -19,7 +19,7 @@ use kernel_core::capability::{
     ResourceScope,
 };
 
-use spin::Mutex;
+use crate::sync::Mutex;
 
 /// One slot per resource kind; slot index IS the kind index (also the ABI
 /// value userspace uses to address its own handles).

@@ -191,14 +191,14 @@ pub static CURRENT_CAPS: AtomicU64 = AtomicU64::new(0);
 
 /// FS sandbox of the currently running process: reads allowed only under
 /// these prefixes. `None` = unrestricted (trusted launch).
-static CURRENT_SANDBOX: spin::Mutex<
+static CURRENT_SANDBOX: crate::sync::Mutex<
     Option<alloc::sync::Arc<alloc::vec::Vec<alloc::string::String>>>,
-> = spin::Mutex::new(None);
+> = crate::sync::Mutex::new(None);
 /// The running process's handle set, indexed by `CapabilityKind::index()`.
 /// Published for the quantum's duration; every privileged syscall resolves its
 /// authority from here and revalidates it in the kernel capability table.
-static CURRENT_HANDLES: spin::Mutex<crate::capability::HandleSet> =
-    spin::Mutex::new(crate::capability::EMPTY_HANDLES);
+static CURRENT_HANDLES: crate::sync::Mutex<crate::capability::HandleSet> =
+    crate::sync::Mutex::new(crate::capability::EMPTY_HANDLES);
 
 pub fn set_current_handles(handles: &crate::capability::HandleSet) {
     *CURRENT_HANDLES.lock() = *handles;
@@ -228,7 +228,7 @@ pub fn set_current_sandbox(
 
 /// The running process's argument block (V0.10), published for the quantum
 /// the same way as its handles and sandbox. `None` between quanta.
-static CURRENT_ARGS: spin::Mutex<Option<crate::user::Args>> = spin::Mutex::new(None);
+static CURRENT_ARGS: crate::sync::Mutex<Option<crate::user::Args>> = crate::sync::Mutex::new(None);
 
 pub fn set_current_args(args: Option<crate::user::Args>) {
     *CURRENT_ARGS.lock() = args;

@@ -8,10 +8,10 @@
 
 pub mod compositor;
 
+use crate::sync::Mutex;
 use alloc::vec;
 use alloc::vec::Vec;
 use bootloader_api::info::{FrameBuffer, PixelFormat};
-use spin::Mutex;
 
 /// Framebuffer geometry (queried from the bootloader; never hardcoded).
 #[derive(Debug, Clone, Copy)]

@@ -8,10 +8,10 @@
 //! bounded queues are the shape a later capability handle will wrap. No
 //! ambient authority beyond "a process that knows a channel id".
 
+use crate::sync::Mutex;
 use crate::syscall::{copy_from_user, copy_to_user, ERR_AGAIN, ERR_INVAL};
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
-use spin::Mutex;
 
 /// Number of channels and per-channel/message bounds (kept tiny on purpose).
 const CHANNELS: usize = 4;

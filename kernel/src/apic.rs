@@ -25,10 +25,10 @@
 
 use crate::memory::paging;
 use crate::serial_println;
+use crate::sync::Mutex;
 use core::sync::atomic::{AtomicU64, Ordering};
 use kernel_core::acpi::Madt;
 use kernel_core::pci::Bar;
-use spin::Mutex;
 use x86_64::registers::model_specific::Msr;
 
 /// `IA32_APIC_BASE`: bit 11 enables the local APIC, bits 12..51 hold its

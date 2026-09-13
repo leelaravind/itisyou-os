@@ -18,10 +18,10 @@ pub mod pci;
 pub mod uhci;
 pub mod xhci;
 
+use crate::sync::Mutex;
 use alloc::vec::Vec;
 use kernel_core::pci::{Bar, CapabilityId, PciId};
 use pci::PciDevice;
-use spin::Mutex;
 
 /// A fully-probed hardware device.
 pub struct Device {

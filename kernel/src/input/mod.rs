@@ -7,11 +7,11 @@
 //! machine-parseable `[ITISYOU:INPUT]` marker so an automated test can drive
 //! input through the QEMU monitor and assert the OS received it.
 
+use crate::sync::Mutex;
 use alloc::collections::VecDeque;
 use core::sync::atomic::{AtomicI32, AtomicU64, Ordering};
 use kernel_core::mouse::{Mouse, MouseEvent};
 use kernel_core::scancode::{KeyEvent, Keyboard};
-use spin::Mutex;
 use x86_64::instructions::interrupts::without_interrupts;
 use x86_64::instructions::port::Port;
 

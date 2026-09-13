@@ -53,6 +53,22 @@ impl AddressSpace {
         })
     }
 
+    /// True when this space's top-level entry `idx` is present and equal to
+    /// the boot (kernel) table's — i.e. the kernel region it covers is shared.
+    pub fn shares_kernel_l4_entry(&self, idx: usize) -> bool {
+        if idx >= 512 {
+            return false;
+        }
+        // SAFETY: both frames are live L4 tables owned by the kernel; read only.
+        let (mine, boot) = unsafe {
+            (
+                table_mut(self.l4_phys)[idx].clone(),
+                table_mut(paging::boot_l4_frame())[idx].clone(),
+            )
+        };
+        !mine.is_unused() && mine.addr() == boot.addr() && mine.flags() == boot.flags()
+    }
+
     pub fn l4_phys(&self) -> u64 {
         self.l4_phys
     }

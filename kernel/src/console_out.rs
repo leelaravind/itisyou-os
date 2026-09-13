@@ -12,8 +12,8 @@
 //! Every `[ITISYOU:` a process prints becomes `[RING3-U:`: the kernel's
 //! evidence prefix belongs to the kernel.
 
+use crate::sync::Mutex;
 use kernel_core::linebuf::{neutralize_markers, LineBuf};
-use spin::Mutex;
 
 /// Bytes of partial line held per process.
 const LINE: usize = 256;

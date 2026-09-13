@@ -4,8 +4,8 @@
 //! panic, and test event goes through here. It must work before any memory
 //! management exists, so it is allocation-free.
 
+use crate::sync::Mutex;
 use core::fmt;
-use spin::Mutex;
 use uart_16550::SerialPort;
 
 pub const COM1_PORT: u16 = 0x3F8;

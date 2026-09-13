@@ -4,10 +4,11 @@
 //! on the serial panic path; never continue with known corruption. The
 //! breakpoint handler is the only resumable exception (used by selftests).
 
+use crate::sync::Mutex;
 use core::arch::naked_asm;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use pic8259::ChainedPics;
-use spin::{Lazy, Mutex};
+use spin::Lazy;
 use x86_64::instructions::port::Port;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 use x86_64::PrivilegeLevel;

@@ -8,11 +8,11 @@
 mod context;
 pub mod stack;
 
+use crate::sync::Mutex;
 use alloc::boxed::Box;
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicUsize, Ordering};
-use spin::Mutex;
 
 pub const STACK_SIZE: usize = 32 * 1024;
 pub(crate) const MAX_TASKS: usize = 16;

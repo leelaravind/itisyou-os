@@ -36,6 +36,7 @@ pub mod selftest;
 pub mod serial;
 pub mod services;
 pub mod shell;
+pub mod sync;
 pub mod syscall;
 pub mod task;
 pub mod user;
@@ -158,6 +159,12 @@ pub fn init_subsystems(boot_info: &'static mut BootInfo) {
 
     // B100: scheduler (boot context becomes task 0).
     task::init();
+    // Before any process address space can copy the kernel's L4 (V0.10).
+    if let Err(e) = task::stack::init() {
+        crate::serial_println!(
+            "[ITISYOU:HARDEN] task_stack_window shared_before_processes=false reason={e:?}"
+        );
+    }
     bootstage::emit(Stage::B100SchedulerReady);
 
     // B110: VFS + embedded initramfs.

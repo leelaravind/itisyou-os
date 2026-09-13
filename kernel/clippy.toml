@@ -1,0 +1,10 @@
+# Kernel-only lint configuration (V0.10, SYNC10-001).
+# Every kernel lock must be counted, so a scheduling safe point can refuse to
+# run Ring 3 code while the kernel holds one (ADR-0022). The raw spin mutex is
+# allowed only inside kernel/src/sync.rs.
+disallowed-types = [
+    { path = "spin::Mutex", reason = "use crate::sync::Mutex (counted; ADR-0022)" },
+    { path = "spin::mutex::Mutex", reason = "use crate::sync::Mutex (counted; ADR-0022)" },
+    { path = "spin::MutexGuard", reason = "use crate::sync::MutexGuard (counted; ADR-0022)" },
+    { path = "spin::RwLock", reason = "no uncounted locks in the kernel (ADR-0022)" },
+]

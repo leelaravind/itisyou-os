@@ -84,7 +84,7 @@ const TRUST_ROOT: [u8; kernel_core::ed25519::PUBLIC_KEY_LEN] =
 pub const TRUST_EPOCH: u32 = 9;
 
 /// The trust store, built from `/etc/trust` on first use.
-static TRUST: spin::Mutex<Option<TrustStore>> = spin::Mutex::new(None);
+static TRUST: crate::sync::Mutex<Option<TrustStore>> = crate::sync::Mutex::new(None);
 /// Certificates refused while loading (not signed by the root, malformed, ...).
 static CERTS_REJECTED: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
 
