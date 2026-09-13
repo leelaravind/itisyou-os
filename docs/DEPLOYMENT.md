@@ -1,8 +1,13 @@
 # Deployment — os.itisyou.app
 
 **Latest release:** v0.10.0 (2026-09-13) — release commit `c936bc7`, CI run
-`34782271250`; staging `bed566ad-39ee-4c34-a695-0429cd6e2f0b`, production
-`239a2140-e685-4595-bd9f-089c78f4e60b`; images under `/downloads/v0.10.0/`
+`34782271250`; first published from the release content at staging
+`bed566ad-39ee-4c34-a695-0429cd6e2f0b` / production
+`239a2140-e685-4595-bd9f-089c78f4e60b`, then redeployed from the stamp commit
+`96f5d68` (so the rendered docs pages carry the stamped text) at staging
+`7d140288-eb36-4740-aa84-1239db9960e2` / production
+`b56300a5-ceec-4e72-b9d1-3936f4f31b01`, both re-verified; tag `v0.10.0` on
+`96f5d68` (CI `34783340401` green); images under `/downloads/v0.10.0/`
 (staged from the CI artifact after `release-boot-test.ps1`), v0.9.0 and v0.8.1
 kept under their own paths (copied in by hand after `sha256sum -c` against
 their live SHA256SUMS). Verified after deploy on both: `downloads.mjs verify`,

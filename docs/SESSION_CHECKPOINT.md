@@ -1,9 +1,22 @@
 # Session checkpoint — resumable state
 
-**Timestamp:** 2026-09-13 14:37 Europe/London (session 4, wind-up)
+**Timestamp:** 2026-09-13 22:30 Europe/London (session 4, V0.10 released)
 **Repository:** `E:\Project\itisyou-os` · branch `main` · remote
 https://github.com/leelaravind/itisyou-os (private)
-**Tags:** `v0.1.0` … `v0.9.0` (all on green-CI commits).
+**Tags:** `v0.1.0` … `v0.10.0` (all on green-CI commits).
+
+**V0.10 RELEASED — read first.** `v0.10.0`: release commit `c936bc7` (CI
+`34782271250`, all four jobs green; reproducible images), stamp commit
+`96f5d68` (CI `34783340401` green) carrying the tag. Production
+`b56300a5-ceec-4e72-b9d1-3936f4f31b01` serves the CI-built images (UEFI
+`f98f5cbe…a792`, BIOS `d8416a58…f098`), boot-tested byte for byte; v0.9.0 and
+v0.8.1 stay downloadable. The repository was public for the release runs
+(history scanned first) and is PRIVATE again after this commit's CI run.
+`v0.10/integration` equals `main` at the release. NEXT: V0.11 — AI-Native
+System Layer (docs/ROADMAP.md): design first (it adds Ring 3 services under the
+existing capability/audit/approval paths), then implement step by step with
+negative controls, as V0.10 was. CI again needs the billing fix or another
+short public window. Signing keys stay on the owner's offline USB drive.
 **Owner deadline for this session:** hard stop **15:44 BST 2026-09-13**
 (6 hours from 09:44); wind-up started 14:44 at the latest.
 
