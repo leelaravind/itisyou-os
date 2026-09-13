@@ -1,12 +1,17 @@
-# Current status — V0.9 in progress (latest release: v0.8.1)
+# Current status — v0.9.0 released (V0.9 — Transport, Interrupt Cutover & Trust)
 
 **Timestamp:** 2026-09-13 (Europe/London)
 **Branch:** `main` · **Repository:** `E:\Project\itisyou-os`
-**Latest release:** `v0.8.1` (V0.8 — Networking, Authenticity & Hardening,
-release-integrity closeout), live at https://os.itisyou.app with its download.
-**In development:** `0.9.0-dev` — V0.9 Transport, Interrupt Cutover & Trust.
+**Latest release:** `v0.9.0` — V0.9 Transport, Interrupt Cutover & Trust.
+Release commit `f06673e` (CI run `34760629701`, all jobs green, images
+reproduced bit-for-bit by the run's two clean builds); download live at
+https://os.itisyou.app/download (UEFI
+`3d252547926ba497559d7419e2d77803c2af69148cec45ba5a83d6cdddfc443e`, BIOS
+`eb3ceb46782b9d04cd40dc61aecce12a8cdbc4ed089b556675f1623c01dd8232`). The
+previous release `v0.8.1` stays downloadable.
+**Next:** V0.10 — Userspace System (started on branch `v0.10/integration`).
 
-## V0.9 (in progress)
+## V0.9 (released as v0.9.0)
 
 Verified so far (QEMU + host evidence in `docs/REQUIREMENTS.md` § V0.9): ACPI
 discovery; the I/O APIC cutover with the 8259 PIC retired, including the PIT
@@ -23,10 +28,10 @@ offline root, certified signing keys limited by name scope and release-epoch
 window, a signed revocation list (ADR-0021); Ring 3 TCP listen; and guard
 pages under the kernel's static stacks (HARD09-001). Every V0.9 feature is
 verified locally — last full gate `7367b89`: VERIFY OK, 36/36 QEMU legs, 366
-host tests. The release (CI, tag, new download) is pending: GitHub Actions is
-refusing to start jobs on this account for a billing reason. The website
-(deployed 13:36, `b0c4d05`) shows V0.9 as in development with that evidence;
-the download is still `v0.8.1`.
+host tests. Released as v0.9.0: release commit `f06673e`, CI run
+`34760629701` green (all four jobs), tag on the stamp commit `997dbb4` (CI
+`34761869462` green); production `1ba155b6` serves the v0.9.0 images and keeps
+v0.8.1 downloadable.
 
 ## V0.10 (started on a branch)
 

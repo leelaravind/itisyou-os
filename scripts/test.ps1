@@ -72,7 +72,7 @@ Write-Output '=== QEMU shell interaction (BIOS) ==='
     '--send', 'panic-test', '--send', 'shutdown',
     # The running kernel must name the version the release claims
     # (Cargo workspace version == status/current.json; check-consistency.mjs).
-    '--require', 'itisyou-os 0.9.0-dev',
+    '--require', 'itisyou-os 0.9.0',
     '--require', 'task 0: kmain',
     '--require', 'RING3-DONE',
     '--require', 'run: /bin/init: Exit(0)',
@@ -499,7 +499,7 @@ Write-Output '=== QEMU TCP stream against the host OS TCP stack (BIOS) ==='
     '--require', 'TCPSERVER-DENIED call=tcp_listen',
     '--require', 'exchanges=2 attempts=2 echo_ok=true bytes=5000',
     '--forbid', 'TCPSERVER-FAILED',
-    '--require', '[ITISYOU:TCP] owner_exit pid=3 orphaned=1 aborted=0',
+    '--forbid', 'owner=3 state=',
     '--require', '[ITISYOU:TCP] injected_loss seq=',
     '--require', '[ITISYOU:TCP] retransmit seq=',
     '--require', 'injected_losses=2',
