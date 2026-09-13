@@ -873,3 +873,18 @@ is the first item of V0.10. The same review found a second latent flaw: the
 naked timer interrupt path does not clear the direction and alignment-check
 flags a Ring 3 program may have set before kernel code runs after a
 preemption; that is also scheduled for V0.10, with a negative control.
+
+**A denial of service in every release so far.** Writing V0.10's
+`wait_nohang`, which returns a status into a buffer the program names, the
+question "what if that buffer is read-only?" led back to the kernel's one
+user-copy helper. It checked that each page of the buffer was mapped, never
+that the program could write it. A program that points `cap_list` — which
+needs no capability — at its own code makes the kernel write there in Ring 0;
+the write-protect bit turns that into a page fault, and a kernel-mode page
+fault panics. A small probe showed it on the V0.10 kernel before the
+fix: `[ITISYOU:PANIC] page fault … PROTECTION_VIOLATION | CAUSED_BY_WRITE`.
+v0.9.0 has the same code. The fix walks all four levels of the page tables
+and requires the user bit everywhere, and the writable bit everywhere for a
+kernel write, so the same probe now gets `ERR_FAULT`; the leg that shows it
+is part of the V0.10 gate. The site and the limitations page say so for
+v0.9.0, which stays as released: a release is never rebuilt in place.

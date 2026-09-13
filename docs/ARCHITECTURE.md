@@ -167,7 +167,9 @@ except in three declared windows (the two user-copy helpers and `write`), each
 bracketed by a guard whose `Drop` closes the window on every path. W^X is
 enforced at load (a segment both writable and executable is refused), the user
 stack is bounded by unmapped memory, and every user pointer is validated
-against the ACTIVE address space.
+against the ACTIVE address space — in v0.9.0 only for being mapped, not for
+being writable by the program: a kernel write into a program's read-only
+pages faults in Ring 0 (SEC10-001, found after the release, fixed in V0.10).
 
 ## Crate boundaries
 
