@@ -126,7 +126,7 @@ fn execute(line: &str) {
         "harden" => cmd_harden(),
         "irq" => cmd_irq(),
         "store" => cmd_store(args),
-        "net" => cmd_net(),
+        "net" => cmd_net(args),
         "ping" => cmd_ping(args),
         "resolve" => cmd_resolve(args),
         "dhcp" => cmd_dhcp(),
@@ -632,9 +632,27 @@ fn cmd_store(args: &[&str]) {
     }
 }
 
-fn cmd_net() {
+fn cmd_net(args: &[&str]) {
     if !crate::net::is_up() {
         crate::serial_println!("net: interface down (no NIC bound)");
+        return;
+    }
+    // `net poll <ms>`: keep draining the NIC for a fixed window. The stack is
+    // polled — a frame is received only while something polls — so a peer that
+    // speaks to the guest between commands needs a window to be answered in.
+    // Tests use it instead of hoping a reply lands inside another command.
+    if let (Some(&"poll"), Some(ms)) = (
+        args.first(),
+        args.get(1).and_then(|m| m.parse::<u64>().ok()),
+    ) {
+        let ms = ms.clamp(1, 60_000);
+        let mut deadline = crate::interrupts::Deadline::after_ms(ms);
+        let mut frames = 0usize;
+        while deadline.pending() {
+            frames += crate::net::poll();
+            core::hint::spin_loop();
+        }
+        crate::serial_println!("net: polled ms={ms} frames={frames}");
         return;
     }
     let (ip, mask, gw, dns) = crate::net::address();
