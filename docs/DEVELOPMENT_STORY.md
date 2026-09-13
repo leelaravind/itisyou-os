@@ -603,3 +603,61 @@ in QEMU and needs a per-device hardware authorization. Recorded in
 **Left alone deliberately.** Draft PR #1 (`W0-01: Freeze normative inputs`)
 proposes a different architecture chain whose source documents are not in the
 repository; it is unmerged and owner-gated, so this session did not touch it.
+
+### The first public download, and what publishing it exposed
+
+The owner's brief asks for a real downloadable image, so V0.8.1 publishes one —
+and each step of doing it properly found something:
+
+- **Two builds, two different UEFI images.** The BIOS image rebuilt
+  bit-identically; the UEFI image did not. The partitioning crate the
+  bootloader uses stamps a *random* disk GUID and partition GUID into every
+  GPT. A checksum that changes on every rebuild cannot be independently
+  checked, so `tools/image-builder/src/gpt_normalize.rs` now derives both GUIDs
+  from the image's own content and recomputes every GPT CRC (five host tests,
+  including one proving that two images with different random GUIDs normalize
+  to the same bytes). All eight images now rebuild identically.
+- **A Windows build is not a Linux build.** Rust embeds panic-location paths,
+  and on this host those include the local rustup `rust-src` path and `\`
+  separators. Cross-OS byte identity would need path remapping the toolchain
+  does not fully offer, so the published bytes are the CI-built ones: the
+  workflow prints their digests before any QEMU leg runs and uploads them as the
+  `boot-images` artifact, and the release downloads exactly those, compares
+  the hashes, and boots them. A new CI job builds the images twice from two
+  clean checkouts in different directories and fails if any digest differs.
+- **Booting an image changed it.** After the first release boot test the UEFI
+  file no longer matched its SHA-256. OVMF with no writable variable store
+  writes an `NvVars` file into the EFI partition on every boot — so every UEFI
+  test leg had been quietly modifying the image it was testing. The runner now
+  attaches the boot image with `snapshot=on`, the release boot test checks the
+  files are unchanged afterwards, and the download page tells users to verify
+  *before* booting and uses `snapshot=on` in its commands.
+- **The network instructions were tested before being written down.** On QEMU's
+  user-mode network the image resolves the gateway and gets echo replies. DNS
+  through QEMU's forwarder did not work on this host (no UDP reply at all), so
+  the page says UDP and DNS are verified only against the harness's own peer —
+  and the failure is carried into the V0.9 network work rather than hidden.
+- **The stamp commit failed CI.** `8af917c` changed the runner after the local
+  format check had run, and the new line was over rustfmt's width. CI refused it
+  at the first step. The fix is the formatting; the lesson is that a partial
+  re-check after a late edit is not the gate.
+
+The site was then deployed to staging, verified by the new headless-Chromium
+verifier (28 page loads across both widths, 24 internal links, zero console
+errors or failed requests) and by re-downloading both images and checking their
+bytes and headers, and only then deployed to production and verified again the
+same way.
+
+**Reproducible, second attempt.** The GPT fix made two builds in one tree
+identical, which turned out to prove less than it seemed: both builds reused the
+same cached UEFI loader binary. Two clean builds from two fresh clones still
+disagreed — in exactly ten bytes, all inside the embedded `BOOTX64.EFI`: the
+link time in its COFF header and debug directory, and a CodeView GUID derived
+from it. `pe_normalize.rs` now zeroes those fields and derives the GUID from
+the file's content; the two real, independently built images normalize to the
+same bytes and still boot under OVMF. The UEFI image already uploaded as
+release candidate 1 could not be reproduced from source, so it is superseded
+before the tag rather than left as the release — and the download page says so
+instead of swapping the file silently. A new CI job builds every image from two
+clean checkouts in different directories and fails on any difference, so the
+property is now checked on every push rather than asserted once.
