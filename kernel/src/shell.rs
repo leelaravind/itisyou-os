@@ -1509,13 +1509,14 @@ fn cmd_panic_test(args: &[&str]) {
     }
 }
 
-/// Deliberately overflow the RSP0 (syscall) stack to prove its guard page
-/// (V0.9). Switches onto that stack and recurses until it runs out; the guard
-/// must turn the overflow into a reported double fault rather than silent
-/// corruption. Never returns — the machine is meant to stop.
+/// Deliberately overflow the RSP0 stack (interrupts and exceptions from
+/// Ring 3) to prove its guard page (V0.9). Switches onto that stack and
+/// recurses until it runs out; the guard must turn the overflow into a
+/// reported double fault rather than silent corruption. Never returns — the
+/// machine is meant to stop.
 fn overflow_priv_stack() -> ! {
     let top = crate::gdt::priv_stack_top().as_u64();
-    crate::serial_println!("panic-test: overflowing the syscall stack (top={top:#x})");
+    crate::serial_println!("panic-test: overflowing the RSP0 stack (top={top:#x})");
     // SAFETY: test-only and terminal. The RSP0 stack is idle (the console is
     // not inside a syscall), `top` is its 16-byte-aligned end, and `call`
     // leaves the ABI's entry alignment. Nothing returns from here.

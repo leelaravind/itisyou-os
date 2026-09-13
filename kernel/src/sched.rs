@@ -42,8 +42,10 @@ static JOB: AtomicU64 = AtomicU64::new(0);
 /// TSC of the last background quantum, and the longest gap seen (ms).
 static LAST_OTHER_TSC: AtomicU64 = AtomicU64::new(0);
 static MAX_GAP_MS: AtomicU64 = AtomicU64::new(0);
-/// The command (first 8 bytes) running when [`MAX_GAP_MS`] was set; 0 = the
-/// prompt.
+/// The command (first 8 bytes) running when the longest gap ENDED — the
+/// first background quantum after it; 0 = the prompt. A gap that spans
+/// several commands is reported by the one it ended in; each command's own
+/// window (`sched last`) measures the gaps inside it.
 static MAX_GAP_CMD: AtomicU64 = AtomicU64::new(0);
 /// The command whose window is open (first 8 bytes); 0 = none.
 static WIN_CMD: AtomicU64 = AtomicU64::new(0);

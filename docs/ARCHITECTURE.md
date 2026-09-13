@@ -47,6 +47,27 @@ arguments (V0.10) are an immutable per-process block validated by
 passes them after `--` and a parent through `spawn_args`. `user/ulib` is the Ring 3 ABI side; evidence programs
 `/bin/{init,gp-test,pf-test,child,parent}` are baked into the initramfs.
 
+## Always-on scheduling, the process tree and init (V0.10, ADR-0022/0023)
+
+The kernel is still not preemptible and the timer interrupt still does not
+schedule. Instead, background processes get **bounded slices** (1 tick, 32
+quanta or 20 ms) at a few audited **safe points** in kernel code: the idle
+prompt, the console's job waits (`run`, `bg`, `pkg launch`, `rsh`), every
+network poll, the desktop and `usbwait` loops. A host-tested gate
+(`kernel_core::cosched`) refuses a slice with interrupts masked, inside a
+run-loop, during a Ring 3 quantum, with a counted kernel lock held, or with
+the NVMe store open; `sched` measures what the background got and whether a
+command starved it. Every process has a parent; only the parent may collect
+a child (`wait`, `wait_nohang`); `sleep` parks a process; one `finish` path
+ends every process (exit, fault, `kill`) and hands its children to init or
+reaps them. The kernel starts **`/sbin/init` as pid 1** with fixed authority;
+init reads `/etc/init.conf` (host-tested grammar), starts and supervises the
+services, and reports them to the kernel's service table through a strict,
+kernel-checked record (`svc_report`); the kernel restarts a dead init, ending
+its tree first, at most three times. A Ring 3 shell (`/bin/sh`) can borrow
+the console's input (`console_read`); Ring 3 desktop apps receive focus, key
+and click events for their windows (`gui_event`).
+
 ## Devices & storage (V0.3, ADR-0008)
 
 PCI enumeration (`device::pci`, decoding in host-tested `kernel-core::pci`)
@@ -171,7 +192,11 @@ except in three declared windows (the two user-copy helpers and `write`), each
 bracketed by a guard whose `Drop` closes the window on every path. W^X is
 enforced at load (a segment both writable and executable is refused), the user
 stack is bounded by unmapped memory, and every user pointer is validated
-against the ACTIVE address space.
+against the ACTIVE address space — since V0.10 (SEC10-001) for being
+user-accessible at every level of the walk, and writable at every level when
+the kernel writes, not merely mapped. RFLAGS.DF and AC are cleared on every
+entry from Ring 3, and the RSP0, double-fault, syscall and kernel-task stacks
+all sit on unmapped guard pages (V0.9–V0.10).
 
 ## Crate boundaries
 
@@ -209,10 +234,12 @@ Marker grammar: `[ITISYOU:<TAG>] payload` with tags `B###`, `PANIC`,
 `SELFTEST`, `TEST`, `INFO`, `MODE` — single source of truth in
 `kernel-core::marker`, shared by emitter and asserter.
 
-## Security posture (V0.1 reality)
+## Security posture
 
-- Everything runs ring 0 inside QEMU; isolation research starts at the
-  *boundary definitions*, not premature claims. See `docs/SECURITY_MODEL.md`.
+- The kernel runs in Ring 0 and every program in Ring 3, each in its own
+  address space, with only the capabilities it was granted (V0.2–V0.10). The
+  boundaries and what verifies each are in `docs/SECURITY_MODEL.md`; the
+  risks and residuals in `docs/THREAT_MODEL.md`.
 - Panic on violated invariants; panics emit `[ITISYOU:PANIC]` and, in test
   mode, fail the QEMU run deterministically.
 - The AI-authority principle (intelligence ≠ authority) constrains future
@@ -222,6 +249,6 @@ Marker grammar: `[ITISYOU:<TAG>] payload` with tags `B###`, `PANIC`,
 
 ## Planned next boundaries
 
-Physical memory manager → paging abstraction → heap → descriptors/interrupts
-→ scheduler → VFS/initramfs → shell (dependency order, plan §20 Phase 2).
-Each lands with host tests and QEMU selftests before the next begins.
+V0.11 adds the AI boundary as ordinary Ring 3 services under the existing
+capability, audit and approval paths (`docs/ROADMAP.md`): an agent gets no
+entry point a program does not have.

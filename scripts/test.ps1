@@ -940,9 +940,10 @@ Write-Output '=== QEMU intentional panic (BIOS) ==='
     '--timeout-secs', '60', '--label', 'panic-test-bios')
 
 Write-Output '=== QEMU kernel stack guard: overflow is caught, not silent (BIOS) ==='
-# V0.9: both static kernel stacks (RSP0 for syscalls/interrupts, and the
-# double-fault IST) have an unmapped guard page. The console deliberately
-# overflows the RSP0 stack; the guard must turn that into a double fault that
+# V0.9: the RSP0 stack (interrupts and exceptions from Ring 3) and the
+# double-fault IST have an unmapped guard page (the syscall stack's guard is
+# V0.10's, next leg but one). The console deliberately overflows the RSP0
+# stack; the guard must turn that into a double fault that
 # names the stack — the first TCP integration showed that without it an
 # overflow silently corrupted the capability table.
 & $runner @('--image', 'target/images/itisyou-kernel-bios.img',

@@ -28,10 +28,14 @@ only through narrow, deterministic, auditable paths).
    syscalls; user pointers checked before any kernel dereference; no user
    mapping of kernel pages; per-process page tables; GUI window ownership;
    mediated device access.
-4. **Privileged system-service boundary** *(V0.7, verified)* — services are
-   ordinary Ring 3 processes supervised by the kernel with EXACTLY their
-   declared capabilities; no hidden privileged daemons; every state
-   transition diagnosed and the supervisor's actions audited.
+4. **Privileged system-service boundary** *(V0.7, verified; V0.10 init)* —
+   services are ordinary Ring 3 processes with EXACTLY their declared
+   capabilities; no hidden privileged daemons. Since V0.10 the persistent ones
+   are started by `/sbin/init` (pid 1) from `/etc/init.conf`: init's own
+   authority is fixed by the kernel (spawn, IPC, `fs_read` under `/etc`,
+   service reporting — 0x413), a service gets at most that, and the kernel
+   checks every report init makes (the pid is init's own child, the caps
+   printed are the kernel's record) and attributes it (`supervisor=`).
 5. **Untrusted application boundary** *(V0.7, verified)* — apps launch only
    through the platform with `manifest ∩ launcher` capabilities (default
    deny) under an FS sandbox (normalized-path prefixes; traversal-proof);
@@ -39,7 +43,12 @@ only through narrow, deterministic, auditable paths).
 6. **AI/agent boundary** *(future — see principle above)* — the V0.7
    request → capability check → deterministic service → action → audit path
    IS the pipeline an agent will use; agents get no other entry point.
-7. **External network boundary** *(V0.8–V0.9, verified)*: IPv4 (ARP, ICMP,
+7. **Console and desktop input** *(V0.10, verified)*: one owner of the
+   console's input at a time, granted only by the kernel (`rsh`), returned on
+   every exit path; a Ring 3 app reads events only for windows it owns, and
+   keys go only to the focused window's owner. A process holds at most four
+   windows.
+8. **External network boundary** *(V0.8–V0.9, verified)*: IPv4 (ARP, ICMP,
    UDP, DNS, TCP), a DHCP client and IPv6 foundations over one e1000 NIC; every
    received byte is parsed as hostile, and Ring 3 network access is a
    capability scoped to a port, re-checked on every call (NET08-*, NET09-*).

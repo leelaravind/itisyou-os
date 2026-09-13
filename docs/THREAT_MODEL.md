@@ -65,6 +65,11 @@ only network this OS has ever been attached to is a test harness on localhost.
 | Evidence tampering | editing the persisted trail | records hash-chained, chain extended before the bounded ring drops anything, verified on every boot. Does NOT cover an attacker who rewrites the file including its head |
 | Kernel dereferencing a user pointer by accident | a logic bug | SMAP: forbidden by default, permitted only inside three declared windows |
 | Ring 3 leaking kernel addresses | `sgdt`/`sidt`/`sldt`/`str`/`smsw` | UMIP; verified by a probe whose success marker is forbidden from the log |
+| A program crashing the kernel through a syscall buffer | a pointer to the program's own read-only memory | V0.10 (SEC10-001): kernel writes require the page to be writable by the program at every level of the walk; before, a write-protect fault in Ring 0 panicked the kernel (v0.9.0 and earlier) |
+| A process collecting or killing another's children, or claiming its services | `wait`/`wait_nohang` on a foreign pid; `svc_report` for a foreign pid or name | parent-only collection (audited `wait_foreign`); `svc_report` refuses a pid that is not the reporter's child, a reserved name and a row another live supervisor owns (audited); only the console can `kill` |
+| A program starving the system | a CPU-bound program | preemption (V0.4) plus bounded background slices at every console wait (V0.10); residual: inside a non-schedulable region (a syscall, `irq`, `xhciwait`, storage commands) the background waits, measured up to 5 s for `xhciwait` |
+| A program stealing input or another program's window | reading the console or another window's events; presenting another's window | console input has one owner, granted by the kernel; `gui_event` and `gui_present` are owner-only (V0.9's `gui_present` checked only existence); keys go to the focused window's owner only |
+| Forged kernel evidence lines | a program printing `[ITISYOU:…]` | Ring 3 output is line-atomic and the marker prefix is rewritten (`[RING3-U:…]`) before it reaches the log (OUT10-002) |
 
 ### Explicit non-threats — V0.8 (superseded by the V0.9 additions below)
 

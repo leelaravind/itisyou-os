@@ -104,8 +104,9 @@ static TSS: Lazy<TaskStateSegment> = Lazy::new(|| {
     tss.interrupt_stack_table[DOUBLE_FAULT_IST_INDEX as usize] =
         VirtAddr::new(stack_base(&raw const IST_STACK) + GUARD_LEN + IST_STACK_SIZE as u64);
     // RSP0: stack the CPU switches to when an interrupt/exception arrives
-    // while running in Ring 3, and the stack every syscall runs on. Single
-    // CPU, non-nested handlers.
+    // while running in Ring 3. Single CPU, non-nested handlers. (Syscalls do
+    // NOT run here: `syscall` does not switch stacks, and the entry stub moves
+    // to its own guarded stack — `syscall::SYSCALL_STACK`, V0.10 HARD10-003.)
     tss.privilege_stack_table[0] = priv_stack_top();
     tss
 });
