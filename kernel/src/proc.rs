@@ -73,6 +73,23 @@ pub fn state_of(pid: u64) -> Option<ProcState> {
     guard.as_ref()?.slots.get(&pid).map(|s| s.state)
 }
 
+/// What owns a resource, as the `tcp` listing reports it (V0.10): the
+/// console, an orphan (its process died and the connection is closing on
+/// its own), a live process, or — which must never happen, because every
+/// exit path releases what the process owned — a dead one.
+pub fn owner_state(owner: u64) -> &'static str {
+    if owner == 0 {
+        return "console";
+    }
+    if owner == crate::net::tcp::ORPHAN {
+        return "orphan";
+    }
+    match state_of(owner) {
+        Some(ProcState::Runnable) | Some(ProcState::Blocked { .. }) => "live",
+        _ => "dead",
+    }
+}
+
 fn encode_status(state: ProcState) -> u64 {
     match state {
         ProcState::Exited(code) => code & 0xFFFF_FFFF,

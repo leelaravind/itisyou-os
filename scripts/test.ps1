@@ -503,7 +503,7 @@ Write-Output '=== QEMU TCP stream against the host OS TCP stack (BIOS) ==='
     '--require', 'TCPSERVER-DENIED call=tcp_listen',
     '--require', 'exchanges=2 attempts=2 echo_ok=true bytes=5000',
     '--forbid', 'TCPSERVER-FAILED',
-    '--forbid', 'owner=3 state=',
+    '--forbid', 'owner_state=dead',
     '--require', '[ITISYOU:TCP] injected_loss seq=',
     '--require', '[ITISYOU:TCP] retransmit seq=',
     '--require', 'injected_losses=2',
@@ -972,6 +972,71 @@ Write-Output '=== QEMU line-atomic Ring 3 output; kernel markers unforgeable (BI
     '--forbid', '[ITISYOU:SVC] spoofed-by-ring3',
     '--forbid', 'LINEPROBE-FAILED',
     '--timeout-secs', '180', '--label', 'line-atomic-bios')
+
+Write-Output '=== QEMU always-on co-scheduling (BIOS) ==='
+# V0.10 SCHED10-001: background processes run in bounded slices at the
+# audited safe points - the idle prompt (held idle by @pause), job waits,
+# busy kernel waits (busy, net poll), between quanta of a foreground
+# program - never in an ISR or a syscall. In-leg control: with scheduling
+# paused, `busy` starves the background (others_progressed=false).
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img', '--net-user',
+    '--expect', 'B210',
+    '--send', '@pause 1500',
+    '--send', 'sched',
+    '--send', 'sched pause',
+    '--send', 'busy 1000',
+    '--send', 'sched last',
+    '--send', 'sched resume',
+    '--send', 'busy 2000',
+    '--send', 'sched last',
+    '--send', 'run /bin/tick-client',
+    '--send', 'run /bin/burn - - -- 150',
+    '--send', 'sched last',
+    '--send', 'net poll 1500',
+    '--send', 'sched last',
+    '--send', 'bg /bin/line-probe spawn',
+    '--send', 'sched',
+    '--send', 'shutdown',
+    '--require', '[ITISYOU:SCHED] enabled period_ticks=5',
+    '--require', '[ITISYOU:SCHED] always_on=true paused=false period_ticks=5',
+    '--require', 'busy: ms=1000 paused=true others_progressed=false other_quanta=0',
+    '--require', '[ITISYOU:SCHED] window cmd=busy paused=true judged=true starved=true',
+    '--require', 'busy: ms=2000 paused=false others_progressed=true',
+    '--require', '[ITISYOU:SCHED] window cmd=busy paused=false judged=true starved=false',
+    '--require', 'TICKC-OK passes=',
+    '--require', 'run: /bin/tick-client: Exit(0)',
+    '--require', 'BURN-OK ticks=150 yields=0',
+    '--require', 'run: /bin/burn: Exit(0)',
+    '--require', '[ITISYOU:SCHED] window cmd=run paused=false judged=true starved=false',
+    '--require', 'net: polled ms=1500',
+    '--require', '[ITISYOU:SCHED] window cmd=net paused=false judged=true starved=false',
+    '--require', 'LINEPROBE-A-0123456789abcdefghijklmnopqrstuv',
+    '--require', 'LINEPROBE-OK',
+    '--require', 'lock_skips=0 ',
+    '--require', 'stack_margin_ok=true',
+    '--require', 'shutting down (QEMU exit)',
+    '--forbid', 'paused=false judged=true starved=true',
+    '--forbid', 'idle_slices=0 ',
+    '--forbid', 'TICKC-RECV-TIMEOUT',
+    '--forbid', 'TICKC-SEND-TIMEOUT',
+    '--forbid', 'stack_margin_ok=false',
+    '--forbid', 'LINEPROBE-FAILED',
+    '--timeout-secs', '240', '--label', 'sched-always-on-bios')
+
+Write-Output '=== QEMU always-on co-scheduling, paused control (BIOS) ==='
+# Control on the same image: with scheduling paused, a foreground client of
+# a service gets no reply, because the service is never scheduled while the
+# console runs the client - the pre-V0.10 behaviour.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B200',
+    '--send', 'sched pause',
+    '--send', 'run /bin/tick-client',
+    '--send', 'shutdown',
+    '--require', '[ITISYOU:SCHED] paused=true',
+    '--require', 'TICKC-RECV-TIMEOUT',
+    '--require', 'run: /bin/tick-client: Exit(2)',
+    '--forbid', 'TICKC-OK',
+    '--timeout-secs', '180', '--label', 'sched-always-on-negative')
 
 Write-Output '=== QEMU kernel SYSCALL stack guard (BIOS) ==='
 # V0.10 HARD10-003: the stack every syscall runs on (the one V0.9's TCP bug

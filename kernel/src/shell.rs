@@ -11,11 +11,6 @@ use kernel_core::shellparse;
 
 const MAX_LINE: usize = 256;
 
-/// How long the shell hands the CPU to background services when no input is
-/// pending. One tick (10 ms at 100 Hz) keeps the console responsive while
-/// still letting a daemon run a full quantum.
-const SHELL_IDLE_SLICE_TICKS: u64 = 1;
-
 /// Ceiling on a co-scheduled `bg` job (30 s at 100 Hz), so a client that never
 /// completes reports a timeout instead of taking the console with it.
 const BG_JOB_MAX_TICKS: u64 = 3_000;
@@ -57,11 +52,11 @@ fn read_line(buf: &mut [u8; MAX_LINE]) -> Option<&str> {
     let mut overflow = false;
     loop {
         let Some(byte) = serial::try_read_byte() else {
-            // Idle time belongs to the background services (V0.8): the shell
-            // is waiting on a human, so hand the CPU to the persistent Ring 3
-            // daemons instead of burning it in a spin loop. The slice is
-            // bounded in real time, so keystroke latency stays bounded too.
-            crate::services::pump(SHELL_IDLE_SLICE_TICKS);
+            // Idle time belongs to the background (V0.8; always-on since
+            // V0.10): the shell is waiting on a human, so whatever is
+            // runnable gets a bounded slice. The slice is bounded in real
+            // time, so keystroke latency stays bounded too.
+            crate::sched::idle_point();
             continue;
         };
         match byte {
@@ -108,6 +103,9 @@ fn execute(line: &str) {
         return;
     };
     let args = parsed.args();
+    // V0.10: measure what the background got while this command ran (not
+    // for `sched` itself, so `sched last` reports the command before it).
+    let _window = (command != "sched").then(|| crate::sched::CommandWindow::begin(command));
     match command {
         "help" => cmd_help(),
         "version" => cmd_version(),
@@ -134,6 +132,8 @@ fn execute(line: &str) {
         "ping6" => cmd_ping6(args),
         "tcp" => cmd_tcp(args),
         "svc" => cmd_svc(),
+        "sched" => cmd_sched(args),
+        "busy" => cmd_busy(args),
         "pkg" => cmd_pkg(args),
         "audit" => cmd_audit(args),
         "lsdev" => cmd_lsdev(),
@@ -156,7 +156,7 @@ fn execute(line: &str) {
 
 fn cmd_help() {
     crate::serial_println!(
-        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path> [caps|-] [prefix|-] [-- args...]  run a Ring 3 ELF (optionally sandboxed, with arguments)\n  bg <path> [caps|-] [-- args...]  run a Ring 3 ELF co-scheduled with the background services\n  svc               supervise the on-demand services; show all service state\n  pkg <op> ...      app packages: install/stage/launch/rollback/recover/list\n  xhciwait          wait for USB HID input through the xHCI controller\n  harden            CPU-enforced kernel/user separation (SMEP/SMAP/UMIP)\n  irq               interrupt routing (I/O APIC), delivery proofs and counters\n  acpi              ACPI tables found: MADT routes, FADT, S5\n  store <op> ...    persistent store: ls | put <name> <text> | cat <name> | rm <name> | df\n  net               interface address, counters and bound sockets\n  ping <ip> [n]     ICMP echo the given IPv4 address\n  resolve <name>    DNS A lookup through the configured server\n  dhcp              obtain and apply an address from a DHCP server\n  ipv6              bring up IPv6: link-local, router solicitation, SLAAC\n  ping6 <addr> [n]  ICMPv6 echo\n  tcp [drop <n>]    TCP connections and counters; drop <n> discards the next n data segments (test)\n  audit [save|verify|anchor <ip> <port>|check-anchor <ip> <port>]  privileged-action trail\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  usbwait           wait for USB HID input (keyboard/mouse)\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU (test-exit device)\n  poweroff          ACPI S5 soft power-off\n  reboot            8042 CPU reset"
+        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path> [caps|-] [prefix|-] [-- args...]  run a Ring 3 ELF (optionally sandboxed, with arguments)\n  bg <path> [caps|-] [-- args...]  run a Ring 3 ELF co-scheduled with the background services\n  svc               supervise the on-demand services; show all service state\n  sched [last|pause|resume]  always-on scheduling: counters, the last command's window, pause/resume\n  busy <ms>         keep the console busy for <ms> (safe points only): does the background still run?\n  pkg <op> ...      app packages: install/stage/launch/rollback/recover/list\n  xhciwait          wait for USB HID input through the xHCI controller\n  harden            CPU-enforced kernel/user separation (SMEP/SMAP/UMIP)\n  irq               interrupt routing (I/O APIC), delivery proofs and counters\n  acpi              ACPI tables found: MADT routes, FADT, S5\n  store <op> ...    persistent store: ls | put <name> <text> | cat <name> | rm <name> | df\n  net               interface address, counters and bound sockets\n  ping <ip> [n]     ICMP echo the given IPv4 address\n  resolve <name>    DNS A lookup through the configured server\n  dhcp              obtain and apply an address from a DHCP server\n  ipv6              bring up IPv6: link-local, router solicitation, SLAAC\n  ping6 <addr> [n]  ICMPv6 echo\n  tcp [drop <n>]    TCP connections and counters; drop <n> discards the next n data segments (test)\n  audit [save|verify|anchor <ip> <port>|check-anchor <ip> <port>]  privileged-action trail\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  usbwait           wait for USB HID input (keyboard/mouse)\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU (test-exit device)\n  poweroff          ACPI S5 soft power-off\n  reboot            8042 CPU reset"
     );
 }
 
@@ -365,10 +365,19 @@ fn cmd_bg(args: &[&str]) {
     };
     process.args = prog_args;
     let pid = crate::proc::admit(process);
+    // The job is what the console waits for, so its quanta are not
+    // "background" when starvation is judged.
+    crate::sched::set_job(pid);
+    bg_wait(pid, path);
+    crate::sched::clear_job();
+}
+
+/// Wait for a `bg` job, giving it (and everything else runnable) slices.
+fn bg_wait(pid: u64, path: &str) {
     // Bounded: a client that never finishes must not wedge the console.
     let deadline = crate::interrupts::ticks() + BG_JOB_MAX_TICKS;
     loop {
-        crate::services::pump(1);
+        crate::sched::console_wait_step(pid);
         match crate::proc::state_of(pid) {
             Some(crate::proc::ProcState::Exited(code)) => {
                 crate::proc::reap(pid);
@@ -854,7 +863,7 @@ fn cmd_tcp(args: &[&str]) {
         live += 1;
         let mut a = [0u8; 15];
         crate::serial_println!(
-            "tcp: conn={} owner={} state={:?} local_port={} remote={}:{} snd_una={} rcv_nxt={}",
+            "tcp: conn={} owner={} state={:?} local_port={} remote={}:{} snd_una={} rcv_nxt={} owner_state={}",
             c.index,
             c.owner,
             c.state,
@@ -862,7 +871,8 @@ fn cmd_tcp(args: &[&str]) {
             c.remote.format(&mut a),
             c.remote_port,
             c.snd_una,
-            c.rcv_nxt
+            c.rcv_nxt,
+            crate::proc::owner_state(c.owner)
         );
     });
     crate::serial_println!(
@@ -1106,7 +1116,6 @@ fn cmd_audit(args: &[&str]) {
 }
 
 fn cmd_pkg(args: &[&str]) {
-    use crate::fs_disk::FileSystem;
     let Some(&sub) = args.first() else {
         crate::serial_println!(
             "pkg: subcommands: install <vfs.pkg> | stage <vfs.pkg> | launch <app> | rollback <app> | recover | list | trust"
@@ -1118,20 +1127,38 @@ fn cmd_pkg(args: &[&str]) {
         crate::platform::report_trust();
         return;
     }
+    // V0.10 (R7): an open store is a non-schedulable region, so the store is
+    // closed BEFORE the app runs — otherwise the app's whole run would be
+    // one, and nothing else could get the CPU while it ran.
+    if let (true, Some(app)) = (sub == "launch", args.get(1)) {
+        let prepared = {
+            let Some(nvme) = crate::open_nvme() else {
+                crate::serial_println!("pkg: no NVMe storage attached");
+                return;
+            };
+            let Some(fs) = mount_store(&nvme) else {
+                return;
+            };
+            crate::platform::prepare_launch(&fs, app, kernel_core::caps::CAP_LEGACY_FULL)
+        };
+        match prepared.map(|p| crate::user::run(p.process)) {
+            Ok(crate::user::UserExit::Exit(code)) => {
+                crate::serial_println!("pkg: launch {app}: exit={code}")
+            }
+            Ok(_) => crate::serial_println!(
+                "pkg: launch {app}: {:?}",
+                crate::platform::PlatformError::LaunchFailed
+            ),
+            Err(e) => crate::serial_println!("pkg: launch {app}: {e:?}"),
+        }
+        return;
+    }
     let Some(nvme) = crate::open_nvme() else {
         crate::serial_println!("pkg: no NVMe storage attached");
         return;
     };
-    // Mount the persistent store; a fresh disk is formatted on first use.
-    let mut fs = match FileSystem::mount(&nvme) {
-        Ok(fs) => fs,
-        Err(_) => match FileSystem::format(&nvme) {
-            Ok(fs) => fs,
-            Err(e) => {
-                crate::serial_println!("pkg: storage unusable: {e:?}");
-                return;
-            }
-        },
+    let Some(mut fs) = mount_store(&nvme) else {
+        return;
     };
     match (sub, args.get(1)) {
         ("install", Some(src)) | ("stage", Some(src)) => {
@@ -1150,12 +1177,6 @@ fn cmd_pkg(args: &[&str]) {
             match result {
                 Ok((app, v)) => crate::serial_println!("pkg: {sub} {app} -> store v{v}"),
                 Err(e) => crate::serial_println!("pkg: {sub} refused: {e:?}"),
-            }
-        }
-        ("launch", Some(app)) => {
-            match crate::platform::launch(&fs, app, kernel_core::caps::CAP_LEGACY_FULL) {
-                Ok(code) => crate::serial_println!("pkg: launch {app}: exit={code}"),
-                Err(e) => crate::serial_println!("pkg: launch {app}: {e:?}"),
             }
         }
         ("rollback", Some(app)) => match crate::platform::rollback(&mut fs, app) {
@@ -1179,6 +1200,60 @@ fn cmd_pkg(args: &[&str]) {
         }
         _ => crate::serial_println!("pkg: bad arguments (try `pkg`)"),
     }
+}
+
+/// Mount the persistent store; a fresh disk is formatted on first use.
+fn mount_store(nvme: &crate::device::nvme::Nvme) -> Option<crate::fs_disk::FileSystem<'_>> {
+    use crate::fs_disk::FileSystem;
+    match FileSystem::mount(nvme) {
+        Ok(fs) => Some(fs),
+        Err(_) => match FileSystem::format(nvme) {
+            Ok(fs) => Some(fs),
+            Err(e) => {
+                crate::serial_println!("pkg: storage unusable: {e:?}");
+                None
+            }
+        },
+    }
+}
+
+/// `sched [last|pause|resume]` — always-on scheduling (V0.10, SCHED10-001).
+fn cmd_sched(args: &[&str]) {
+    match args.first().copied() {
+        None => crate::sched::report(),
+        Some("last") => crate::sched::report_last(),
+        Some("pause") => {
+            crate::sched::pause();
+            crate::serial_println!("[ITISYOU:SCHED] paused=true");
+        }
+        Some("resume") => {
+            crate::sched::resume();
+            crate::serial_println!("[ITISYOU:SCHED] paused=false");
+        }
+        Some(other) => crate::serial_println!("sched: unknown option \"{other}\" (try `sched`)"),
+    }
+}
+
+/// `busy <ms>` — keep the console busy in kernel code that reaches only
+/// safe points, and report whether the background still ran (V0.10).
+fn cmd_busy(args: &[&str]) {
+    let ms = args
+        .first()
+        .and_then(|a| a.parse::<u64>().ok())
+        .unwrap_or(1000)
+        .clamp(1, 10_000);
+    let before = crate::sched::other_quanta_total();
+    let end = interrupts::tsc() + interrupts::cycles_for_ms(ms);
+    while interrupts::tsc() < end {
+        crate::sched::safe_point();
+        core::hint::spin_loop();
+    }
+    let others = crate::sched::other_quanta_total() - before;
+    crate::serial_println!(
+        "busy: ms={ms} paused={} others_progressed={} other_quanta={others}",
+        crate::sched::paused(),
+        others > 0
+    );
 }
 
 fn cmd_usbwait() {
@@ -1226,6 +1301,7 @@ fn cmd_usbwait() {
                 break;
             }
         }
+        crate::sched::safe_point();
         x86_64::instructions::hlt();
     }
     if got {

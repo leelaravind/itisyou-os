@@ -30,7 +30,7 @@ pub const MAX_CONNS: usize = 8;
 
 /// Owner of a connection its process abandoned mid-close: it is driven to
 /// `Closed` by the timers and then freed, never handed to anyone.
-const ORPHAN: u64 = u64::MAX;
+pub const ORPHAN: u64 = u64::MAX;
 
 /// Outgoing data segments still to be discarded (loss injection).
 static DROP_DATA: AtomicU32 = AtomicU32::new(0);
