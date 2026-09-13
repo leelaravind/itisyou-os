@@ -352,6 +352,19 @@ fn finish(
     if let Some(p) = process {
         p.space.teardown();
     }
+    // Init died (V0.10, INIT10-003): every process below it ends too — the
+    // new init starts its services afresh — and the kernel restarts init
+    // from the next background slice.
+    if pid != 0 && pid == ADOPT_PID.load(Ordering::SeqCst) {
+        if let Some(s) = table.slots.get_mut(&pid) {
+            s.process = None;
+            s.state = state;
+            s.fault_addr = fault_addr;
+        }
+        let ended = kill_tree_locked(table, pid);
+        crate::initd::on_death(pid, encode_status(state), ended);
+        return;
+    }
     let parent = match table.slots.get_mut(&pid) {
         Some(s) => {
             s.process = None;
@@ -471,6 +484,38 @@ fn wake_waiters(table: &mut Table, child: u64, status: u64) {
             table.runq.push_back(wpid);
         }
     }
+}
+
+/// End every descendant of `root` (by parent links) and remove their slots:
+/// no waiter is woken and nothing is adopted — the whole tree goes. None of
+/// them can be mid-quantum (the caller holds the table between quanta).
+/// Returns how many processes ended.
+fn kill_tree_locked(table: &mut Table, root: u64) -> u64 {
+    let mut ended = 0;
+    let mut frontier: Vec<u64> = alloc::vec![root];
+    while let Some(parent) = frontier.pop() {
+        let children: Vec<u64> = table
+            .slots
+            .iter()
+            .filter(|(_, s)| s.parent == parent)
+            .map(|(&pid, _)| pid)
+            .collect();
+        for child in children {
+            if let Some(slot) = table.slots.remove(&child) {
+                crate::console_out::flush_owner(child);
+                if let Some(p) = slot.process {
+                    release_owned(child);
+                    p.space.teardown();
+                }
+                ended += 1;
+                frontier.push(child);
+            }
+        }
+    }
+    if ended > 0 {
+        crate::serial_println!("[ITISYOU:PROC] ended descendants of pid={root} count={ended}");
+    }
+    ended
 }
 
 /// Hand the children of `dying` on (V0.10): to the adopter if one is

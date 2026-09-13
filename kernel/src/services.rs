@@ -57,187 +57,35 @@ pub static REGISTRY: &[ServiceDef] = &[
     },
 ];
 
-/// Services started at boot and supervised for the life of the system (V0.8),
-/// as opposed to [`REGISTRY`], whose members are run to completion on demand.
-///
-/// These are ordinary Ring 3 processes holding only the capabilities named
-/// here — there is still no privileged daemon. They are co-scheduled with the
-/// interactive shell (see [`pump`]), so the system does real background work
-/// while remaining responsive.
-pub static BACKGROUND: &[ServiceDef] = &[
-    ServiceDef {
-        name: "tickd",
-        path: "/bin/tickd",
-        deps: &[],
-        // IPC only: tickd answers status requests and does nothing else. It
-        // cannot spawn, touch the filesystem, or reach any device.
-        caps: CAP_IPC,
-        long_running: true,
-    },
-    ServiceDef {
-        name: "flapd",
-        path: "/bin/flapd",
-        deps: &[],
-        // Zero authority: a service that only proves the failure path needs
-        // none, and giving it any would weaken the test.
-        caps: 0,
-        long_running: true,
-    },
-];
-
-/// Bounded restart policy for background services. A daemon that dies is
-/// restarted, but a crash loop must terminate rather than burn the machine —
-/// after this many restarts the service is marked Failed and left alone.
-///
-/// Aliased to the host-tested [`service::RESTART_LIMIT`] rather than restated:
-/// two independently written ceilings would eventually disagree, and the
-/// on-demand and background supervisors must apply the same policy.
-pub const BACKGROUND_MAX_RESTARTS: u32 = service::RESTART_LIMIT;
-
-/// Live supervision state for the background services, parallel to
-/// [`BACKGROUND`].
-struct Background {
-    pids: [u64; MAX_BACKGROUND],
-    restarts: [u32; MAX_BACKGROUND],
-    /// Slot is no longer supervised: the service reached a terminal state
-    /// (Failed at the restart ceiling, or Done for a non-daemon).
-    retired: [bool; MAX_BACKGROUND],
-    started: bool,
-}
-
-const MAX_BACKGROUND: usize = 8;
-
-static BG: Mutex<Background> = Mutex::new(Background {
-    pids: [0; MAX_BACKGROUND],
-    restarts: [0; MAX_BACKGROUND],
-    retired: [false; MAX_BACKGROUND],
-    started: false,
-});
-
-/// Start the persistent services. Called once during boot, before the shell
-/// takes over the console.
-pub fn start_background() {
-    let mut bg = BG.lock();
-    if bg.started {
-        return;
-    }
-    bg.started = true;
-    for (idx, def) in BACKGROUND.iter().enumerate().take(MAX_BACKGROUND) {
-        match user::load_with(def.path, def.caps, None) {
-            Ok(p) => {
-                let pid = proc::admit(p);
-                bg.pids[idx] = pid;
-                crate::serial_println!(
-                    "[ITISYOU:SVC] bg_start name={} pid={pid} caps={:#x} long_running={}",
-                    def.name,
-                    def.caps,
-                    def.long_running,
-                );
-                set_state(def.name, ServiceState::Running, pid, 0);
-            }
-            Err(_) => {
-                bg.retired[idx] = true;
-                set_state(def.name, ServiceState::Failed { restarts: 0 }, 0, 0);
-                crate::serial_println!("[ITISYOU:SVC] bg_start name={} result=failed", def.name);
-            }
-        }
-    }
-}
-
-/// Give the background services a bounded slice of CPU, then apply the
-/// restart policy to any that died.
-///
-/// Called from the shell's idle path, which previously just span waiting for
-/// the next serial byte. That spin is the natural place for background work:
-/// the shell stays responsive because the slice is bounded in real time, and
-/// services make progress whenever the operator is not typing.
-pub fn pump(max_ticks: u64) {
-    if !BG.lock().started {
-        return;
-    }
-    proc::run_until_pid_idle_bounded(max_ticks);
-    supervise_background();
-}
-
-/// One bounded always-on slice (V0.10), then the restart policy. Unlike
-/// [`pump`] the slice runs whether or not the V0.8 background set was
-/// started: whatever is runnable gets the CPU.
+/// One bounded always-on slice (V0.10), then init's own supervision: a dead
+/// `/sbin/init` is restarted from here, outside any lock. (The V0.8 kernel
+/// supervised a static background set here; since V0.10 `/sbin/init` does,
+/// from `/etc/init.conf`.)
 pub fn pump_slice() {
     proc::run_slice(
         kernel_core::cosched::SLICE_TICKS,
         kernel_core::cosched::SLICE_QUANTA,
         kernel_core::cosched::SLICE_MAX_MS,
     );
-    if BG.lock().started {
-        supervise_background();
-    }
+    crate::initd::supervise();
 }
 
-/// The V0.8 background restart policy (moved verbatim out of [`pump`]).
-fn supervise_background() {
-    let mut bg = BG.lock();
-    for (idx, def) in BACKGROUND.iter().enumerate().take(MAX_BACKGROUND) {
-        if bg.retired[idx] {
-            continue;
-        }
-        let pid = bg.pids[idx];
-        let died = match proc::state_of(pid) {
-            Some(proc::ProcState::Exited(code)) => Some(code == 0),
-            Some(proc::ProcState::Faulted { .. }) | Some(proc::ProcState::Killed) => Some(false),
-            // Still runnable/blocked, or the slot is gone (already reaped).
-            Some(_) => None,
-            None => Some(false),
-        };
-        let Some(clean) = died else {
-            continue;
-        };
-        proc::reap(pid);
-        // For a long-running service even a clean exit counts as a failure:
-        // it was supposed to still be running.
-        let treat_as_success = clean && !def.long_running;
-        let next = on_exit(treat_as_success, bg.restarts[idx]);
-        match next {
-            ServiceState::Restarting { restarts } if restarts <= BACKGROUND_MAX_RESTARTS => {
-                bg.restarts[idx] = restarts;
-                match user::load_with(def.path, def.caps, None) {
-                    Ok(p) => {
-                        let new_pid = proc::admit(p);
-                        bg.pids[idx] = new_pid;
-                        crate::serial_println!(
-                            "[ITISYOU:SVC] bg_restart name={} pid={new_pid} restarts={restarts} clean_exit={clean}",
-                            def.name,
-                        );
-                        set_state(def.name, ServiceState::Running, new_pid, restarts);
-                    }
-                    Err(_) => {
-                        bg.retired[idx] = true;
-                        set_state(def.name, ServiceState::Failed { restarts }, 0, restarts);
-                    }
-                }
-            }
-            // A background service that is NOT long-running finished the work it
-            // was started for. Stop supervising it, but say `done` — calling a
-            // completed task a failure would make the diagnostics lie.
-            ServiceState::Done => {
-                bg.retired[idx] = true;
-                let restarts = bg.restarts[idx];
-                crate::serial_println!(
-                    "[ITISYOU:SVC] bg_done name={} restarts={restarts}",
-                    def.name,
-                );
-                set_state(def.name, ServiceState::Done, 0, restarts);
-            }
-            other => {
-                bg.retired[idx] = true;
-                let restarts = bg.restarts[idx];
-                crate::serial_println!(
-                    "[ITISYOU:SVC] bg_failed name={} restarts={restarts}",
-                    def.name,
-                );
-                set_state(def.name, other, 0, restarts);
-            }
-        }
+/// Let init start its services before the console starts (V0.10): slices
+/// until init reports `ready` or `max_ticks` pass. Settling first makes the
+/// boot deterministic — init is pid 1 and its services come next, in the
+/// config's order — even though the test harness types every command the
+/// moment the console is up.
+pub fn settle(max_ticks: u64) -> bool {
+    let start = crate::interrupts::ticks();
+    while !crate::initd::ready() && crate::interrupts::ticks() - start < max_ticks {
+        pump_slice();
     }
+    let ready = crate::initd::ready();
+    crate::serial_println!(
+        "[ITISYOU:INIT] settled ready={ready} ticks={}",
+        crate::interrupts::ticks() - start
+    );
+    ready
 }
 
 /// Live status of one supervised service (queryable via `svc`).
@@ -315,9 +163,9 @@ pub struct RunReport {
 /// policy to abnormal exits. `max_ticks` bounds each scheduling slice so a
 /// misbehaving service cannot hang the supervisor.
 pub fn run_supervised(max_ticks: u64) -> Result<RunReport, service::OrderError> {
-    // Reset only the on-demand services' rows. The persistent [`BACKGROUND`]
-    // services keep running across an `svc` run, so clearing the whole table
-    // would erase live state and make the supervised daemons invisible to the
+    // Reset only the on-demand services' rows. The persistent services
+    // (init's, since V0.10) keep running across an `svc` run, so clearing the
+    // whole table would erase live state and make them invisible to the
     // operator for the rest of the session.
     STATUS
         .lock()

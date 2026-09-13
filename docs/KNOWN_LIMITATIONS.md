@@ -41,8 +41,17 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
   timer masked), `xhciwait` (up to 5 s), `beep`, and every command that holds
   the NVMe store (`store`, `pkg install/stage/rollback/recover`,
   `audit save/verify`). A background process's effective quantum is 10–20 ms
-  of Ring 3 time; syscall time is not charged to it. There is **no userspace
-  `init`** yet — the console is still a kernel component.
+  of Ring 3 time; syscall time is not charged to it.
+- **Userspace init** (V0.10, ADR-0023): `/sbin/init` (pid 1) starts and
+  supervises the services in `/etc/init.conf`, which lives in the initramfs —
+  there is no persistent configuration and no reload. Its authority is fixed
+  (spawn, IPC, `fs_read` under `/etc`, service reporting), every service
+  inherits its `/etc` filesystem sandbox, and only init and its configured
+  services have deterministic pids. If init dies the kernel ends its whole
+  tree and restarts it at most 3 times. `svc_report` trust: the kernel
+  verifies pid, parentage, caps and row ownership; a service's name and
+  policy are init's claim, attributed with `supervisor=`. The console is still
+  a kernel component (a Ring 3 shell is the next V0.10 increment).
 - Process model (V0.10): spawn, wait and a non-blocking `wait_nohang`, only by
   the parent; `sleep`; orphans reaped automatically (no adopter until
   `/sbin/init` runs); the console's `ps` and `kill`. No fork/exec, no process

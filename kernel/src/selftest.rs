@@ -43,6 +43,13 @@ pub fn run_all(suite: &mut Suite) {
     // V0.10 (SYNC10-001): no counted lock is held between tests, so a
     // scheduling safe point here would be allowed to slice.
     suite.check("sync_depth_zero_at_rest", crate::sync::depth() == 0);
+    // V0.10 (INIT10-001): the selftest image starts no init — its process
+    // table is quiescent and nothing adopts orphans.
+    suite.check(
+        "selftest_process_table_quiescent",
+        crate::proc::live_count() == 0
+            && crate::proc::ADOPT_PID.load(core::sync::atomic::Ordering::SeqCst) == 0,
+    );
     // V0.10 (TASK10-001): a process created before any kernel task exists
     // must already share the task-stack window with the kernel.
     let window_shared = match crate::memory::aspace::AddressSpace::new() {
