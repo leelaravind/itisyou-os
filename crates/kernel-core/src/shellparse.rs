@@ -4,7 +4,19 @@
 //! tokens. Anything beyond the bound is an explicit error, never silent
 //! truncation.
 
-pub const MAX_ARGS: usize = 8;
+/// Token bound for one console line.
+///
+/// V0.10 raised it from 8 so `run <path> [caps|-] [prefix|-] -- <args>` can
+/// carry a full program argument list: five tokens of launch options plus
+/// `crate::progargs::MAX_ARGS` (16) arguments is 21, and the console must be
+/// able to send one MORE than the argument limit so that limit is enforced by
+/// the argument validator — with a clear message — rather than hidden behind
+/// the tokenizer's. The line itself stays bounded at 256 bytes by the shell.
+pub const MAX_ARGS: usize = 24;
+
+// `run <path> <caps> <prefix> --` plus one argument past the program limit
+// must still reach the argument validator (checked at compile time).
+const _: () = assert!(5 + crate::progargs::MAX_ARGS < MAX_ARGS);
 
 /// Parse failure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,9 +89,14 @@ mod tests {
 
     #[test]
     fn enforces_arg_bound() {
-        let ok = "c 1 2 3 4 5 6 7";
-        assert_eq!(parse(ok).unwrap().args().len(), 7);
-        let too_many = "c 1 2 3 4 5 6 7 8";
-        assert_eq!(parse(too_many), Err(ParseError::TooManyArgs));
+        // Exactly MAX_ARGS tokens parse; one more is an error, not a
+        // truncation.
+        let mut ok = String::from("c");
+        for i in 1..MAX_ARGS {
+            ok.push_str(&format!(" {i}"));
+        }
+        assert_eq!(parse(&ok).unwrap().args().len(), MAX_ARGS - 1);
+        let too_many = format!("{ok} {MAX_ARGS}");
+        assert_eq!(parse(&too_many), Err(ParseError::TooManyArgs));
     }
 }

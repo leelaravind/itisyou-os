@@ -466,3 +466,72 @@ pub fn tcp_close(sock: u64) -> u64 {
 pub fn tcp_state(sock: u64) -> u64 {
     raw_syscall(SYS_TCP_STATE, sock, 0, 0)
 }
+
+// --- Program arguments (V0.10) ------------------------------------------------
+
+pub const SYS_ARGS: u64 = 35;
+pub const SYS_SPAWN_ARGS: u64 = 36;
+
+/// Most arguments a process can carry (mirrors `kernel_core::progargs`).
+pub const ARGS_MAX: usize = 16;
+/// Largest argument block in bytes, terminators included — a buffer this
+/// size always holds the whole block.
+pub const ARGS_BLOCK_MAX: usize = 512;
+
+/// Copy this process's argument block into `buf`: the arguments in order,
+/// each followed by one NUL byte. Returns the block length (0 when launched
+/// without arguments), `ERR_2BIG` — with NOTHING written — when `buf` is
+/// shorter than the block, or `ERR_FAULT` for a bad buffer. Needs no
+/// capability. Split the result with [`split_args`].
+pub fn args(buf: &mut [u8]) -> u64 {
+    raw_syscall(SYS_ARGS, buf.as_mut_ptr() as u64, buf.len() as u64, 0)
+}
+
+/// Iterate over the arguments in a block returned by [`args`].
+pub fn split_args(block: &[u8]) -> ArgIter<'_> {
+    ArgIter { rest: block }
+}
+
+/// Iterator returned by [`split_args`] (same splitting rule as
+/// `kernel_core::progargs::split` — keep in lockstep).
+pub struct ArgIter<'a> {
+    rest: &'a [u8],
+}
+
+impl<'a> Iterator for ArgIter<'a> {
+    type Item = &'a [u8];
+
+    fn next(&mut self) -> Option<&'a [u8]> {
+        if self.rest.is_empty() {
+            return None;
+        }
+        match self.rest.iter().position(|&b| b == 0) {
+            Some(i) => {
+                let arg = &self.rest[..i];
+                self.rest = &self.rest[i + 1..];
+                Some(arg)
+            }
+            None => {
+                let arg = self.rest;
+                self.rest = &[];
+                Some(arg)
+            }
+        }
+    }
+}
+
+/// Spawn a child with delegated capabilities (as [`spawn_caps`]) and an
+/// argument block in the [`args`] encoding. The kernel validates the block
+/// with the same rules as the console: more than [`ARGS_MAX`] arguments or
+/// [`ARGS_BLOCK_MAX`] bytes is `ERR_2BIG`; an empty argument, a space or
+/// non-printable byte, or a missing final terminator is `ERR_INVAL`. Nothing
+/// is loaded for a refused block. Requires the Process capability.
+pub fn spawn_args(path: &str, requested: u64, block: &[u8]) -> u64 {
+    let req: [u64; 3] = [requested, block.as_ptr() as u64, block.len() as u64];
+    raw_syscall(
+        SYS_SPAWN_ARGS,
+        path.as_ptr() as u64,
+        path.len() as u64,
+        req.as_ptr() as u64,
+    )
+}

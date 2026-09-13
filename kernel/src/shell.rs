@@ -156,7 +156,7 @@ fn execute(line: &str) {
 
 fn cmd_help() {
     crate::serial_println!(
-        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path> [caps|-] [prefix]  run a Ring 3 ELF (optionally sandboxed)\n  bg <path> [caps]  run a Ring 3 ELF co-scheduled with the background services\n  svc               supervise the on-demand services; show all service state\n  pkg <op> ...      app packages: install/stage/launch/rollback/recover/list\n  xhciwait          wait for USB HID input through the xHCI controller\n  harden            CPU-enforced kernel/user separation (SMEP/SMAP/UMIP)\n  irq               interrupt routing (I/O APIC), delivery proofs and counters\n  acpi              ACPI tables found: MADT routes, FADT, S5\n  store <op> ...    persistent store: ls | put <name> <text> | cat <name> | rm <name>\n  net               interface address, counters and bound sockets\n  ping <ip> [n]     ICMP echo the given IPv4 address\n  resolve <name>    DNS A lookup through the configured server\n  dhcp              obtain and apply an address from a DHCP server\n  ipv6              bring up IPv6: link-local, router solicitation, SLAAC\n  ping6 <addr> [n]  ICMPv6 echo\n  tcp [drop <n>]    TCP connections and counters; drop <n> discards the next n data segments (test)\n  audit [save|verify|anchor <ip> <port>|check-anchor <ip> <port>]  privileged-action trail\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  usbwait           wait for USB HID input (keyboard/mouse)\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU (test-exit device)\n  poweroff          ACPI S5 soft power-off\n  reboot            8042 CPU reset"
+        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path> [caps|-] [prefix|-] [-- args...]  run a Ring 3 ELF (optionally sandboxed, with arguments)\n  bg <path> [caps|-] [-- args...]  run a Ring 3 ELF co-scheduled with the background services\n  svc               supervise the on-demand services; show all service state\n  pkg <op> ...      app packages: install/stage/launch/rollback/recover/list\n  xhciwait          wait for USB HID input through the xHCI controller\n  harden            CPU-enforced kernel/user separation (SMEP/SMAP/UMIP)\n  irq               interrupt routing (I/O APIC), delivery proofs and counters\n  acpi              ACPI tables found: MADT routes, FADT, S5\n  store <op> ...    persistent store: ls | put <name> <text> | cat <name> | rm <name>\n  net               interface address, counters and bound sockets\n  ping <ip> [n]     ICMP echo the given IPv4 address\n  resolve <name>    DNS A lookup through the configured server\n  dhcp              obtain and apply an address from a DHCP server\n  ipv6              bring up IPv6: link-local, router solicitation, SLAAC\n  ping6 <addr> [n]  ICMPv6 echo\n  tcp [drop <n>]    TCP connections and counters; drop <n> discards the next n data segments (test)\n  audit [save|verify|anchor <ip> <port>|check-anchor <ip> <port>]  privileged-action trail\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  usbwait           wait for USB HID input (keyboard/mouse)\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU (test-exit device)\n  poweroff          ACPI S5 soft power-off\n  reboot            8042 CPU reset"
     );
 }
 
@@ -251,15 +251,57 @@ fn cmd_echo(args: &[&str]) {
     crate::serial_println!();
 }
 
+/// Split a launch command's tokens at a literal `--` (V0.10): tokens before it
+/// are launch options, tokens after it are the program's own arguments.
+///
+/// The arguments are encoded and validated HERE, before anything is loaded,
+/// by the same `kernel_core::progargs` code that validates a parent's
+/// `spawn_args` request — one format, one validator. Returns `None` after
+/// printing why the list was refused. With no `--` the program gets no
+/// arguments, so every pre-V0.10 command line means exactly what it did.
+fn split_launch<'a>(
+    cmd: &str,
+    path: &str,
+    tokens: &'a [&'a str],
+) -> Option<(&'a [&'a str], crate::user::Args)> {
+    use kernel_core::progargs::{encode, MAX_ARGS, MAX_BLOCK};
+    let Some(sep) = tokens.iter().position(|t| *t == "--") else {
+        return Some((tokens, crate::user::Args::empty()));
+    };
+    let mut block = [0u8; MAX_BLOCK];
+    let parsed =
+        encode(&tokens[sep + 1..], &mut block).and_then(|n| crate::user::Args::new(&block[..n]));
+    match parsed {
+        Ok(args) => Some((&tokens[..sep], args)),
+        Err(e) => {
+            crate::serial_println!(
+                "{cmd}: {path}: arguments rejected: {} (limit {MAX_ARGS} arguments, {MAX_BLOCK} bytes, printable ASCII without spaces)",
+                e.name()
+            );
+            None
+        }
+    }
+}
+
 fn cmd_run(args: &[&str]) {
     let Some(path) = args.first() else {
         crate::serial_println!("run: missing program path (e.g. run /bin/init)");
         return;
     };
-    // Optional V0.7 sandboxing: `run <path> [caps|-] [prefix]` — "-" means
-    // NO capabilities; a prefix restricts fs_read to that subtree. Without
-    // the extra args the trusted legacy-full launch is unchanged.
-    let caps = match args.get(1) {
+    let Some((options, prog_args)) = split_launch("run", path, &args[1..]) else {
+        return;
+    };
+    if let Some(extra) = options.get(2) {
+        crate::serial_println!(
+            "run: unexpected argument \"{extra}\" (program arguments go after --)"
+        );
+        return;
+    }
+    // Optional V0.7 sandboxing: `run <path> [caps|-] [prefix|-] [-- args]` —
+    // "-" for caps means NO capabilities; a prefix restricts fs_read to that
+    // subtree ("-" = no sandbox, so arguments can follow without one). Without
+    // the extra tokens the trusted legacy-full launch is unchanged.
+    let caps = match options.first() {
         None => kernel_core::caps::CAP_LEGACY_FULL,
         Some(&"-") => 0,
         Some(list) => match kernel_core::caps::parse(list) {
@@ -270,10 +312,11 @@ fn cmd_run(args: &[&str]) {
             }
         },
     };
-    let sandbox = args
-        .get(2)
+    let sandbox = options
+        .get(1)
+        .filter(|p| **p != "-")
         .map(|p| alloc::sync::Arc::new(alloc::vec![alloc::string::String::from(*p)]));
-    match crate::user::run_path_with(path, caps, sandbox) {
+    match crate::user::run_path_with_args(path, caps, sandbox, prog_args) {
         Ok(exit) => crate::serial_println!("run: {path}: {exit:?}"),
         Err(err) => crate::serial_println!("run: {path}: load failed: {err:?}"),
     }
@@ -293,7 +336,16 @@ fn cmd_bg(args: &[&str]) {
         crate::serial_println!("bg: missing program path (e.g. bg /bin/tick-client)");
         return;
     };
-    let caps = match args.get(1) {
+    let Some((options, prog_args)) = split_launch("bg", path, &args[1..]) else {
+        return;
+    };
+    if let Some(extra) = options.get(1) {
+        crate::serial_println!(
+            "bg: unexpected argument \"{extra}\" (program arguments go after --)"
+        );
+        return;
+    }
+    let caps = match options.first() {
         None => kernel_core::caps::CAP_LEGACY_FULL,
         Some(&"-") => 0,
         Some(list) => match kernel_core::caps::parse(list) {
@@ -304,13 +356,14 @@ fn cmd_bg(args: &[&str]) {
             }
         },
     };
-    let process = match crate::user::load_with(path, caps, None) {
+    let mut process = match crate::user::load_with(path, caps, None) {
         Ok(p) => p,
         Err(err) => {
             crate::serial_println!("bg: {path}: load failed: {err:?}");
             return;
         }
     };
+    process.args = prog_args;
     let pid = crate::proc::admit(process);
     // Bounded: a client that never finishes must not wedge the console.
     let deadline = crate::interrupts::ticks() + BG_JOB_MAX_TICKS;

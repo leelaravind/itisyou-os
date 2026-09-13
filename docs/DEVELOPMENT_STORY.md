@@ -809,3 +809,34 @@ The test does it on purpose — the console switches onto the syscall stack and
 recurses — and the leg requires the machine to stop with
 `kernel_stack_overflow stack=priv`. Heap-allocated task stacks are still
 unguarded, and the limitation says so.
+
+## 2026-09-13 — V0.10: program arguments (PROC10-001)
+
+Until V0.10 a Ring 3 program could not be told anything at launch: every
+variation was a separate binary in `/bin`. Each process now carries one
+immutable argument block — at most 16 arguments and 512 bytes, each argument
+printable ASCII without spaces, each followed by a NUL — validated once by
+`kernel_core::progargs` when the process is built and never changed after.
+The narrow alphabet is deliberate: an argument is exactly one console token, so
+there are no quoting rules to get wrong, and no control byte a program could be
+handed to replay onto the console. A program reads its block with `args`
+(syscall 35), which needs no capability because it returns only what the
+launcher chose to give it; the copy is all-or-nothing — a buffer one byte
+short gets `ERR_2BIG` and is left untouched, since a truncated block could end
+mid-argument and read as a shorter, different list. The user-entry path was not
+touched: arguments travel through a syscall, not the initial stack.
+
+Two launch paths, one validator. The console takes `run <path> [caps|-]
+[prefix|-] -- <args>` (and the same after `bg`); a parent uses `spawn_args`
+(syscall 36), which is `spawn_caps` plus a block and keeps its capability gate
+and delegation rule exactly. Two things had to move for the console path to be
+testable at all: the tokenizer's bound was eight tokens, which would have
+refused 17 arguments before the argument validator ever saw them, so it is now
+24 and a compile-time assertion keeps it above the argument limit; and the
+parent→child proof has to use `bg`, because `run` executes one program alone
+and a `wait` there returns 0 before the child has run — so the child exits 42
+only after checking its arguments, and the parent requires 42 rather than
+trusting any zero. The QEMU leg also hands `spawn_args` six hostile blocks
+(too many, too long, a control byte, a space, an empty argument, no
+terminator); each is refused with its own error before anything is loaded, and
+the leg forbids any sign that a child was created.

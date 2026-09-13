@@ -62,9 +62,13 @@ only through narrow, deterministic, auditable paths).
   restarted under the same bounded policy and then left Failed rather than
   restarted forever.
 - A syscall is ungated only when it conveys no authority: `write`, `exit`,
-  `yield`, `getpid` and (V0.8) `uptime`, a free-running tick counter with no
-  wall clock and nothing about any other process. Everything else is
-  default-deny behind a capability handle.
+  `yield`, `getpid`, (V0.8) `uptime`, a free-running tick counter with no
+  wall clock and nothing about any other process, and (V0.10) `args`, which
+  returns only the caller's own argument block — data its launcher chose to
+  hand it. Everything else is default-deny behind a capability handle;
+  `spawn_args` keeps `spawn_caps`'s Process gate and delegation rule, and its
+  argument block is validated (count, size, printable ASCII without spaces)
+  before anything is loaded.
 - Applications launch only from validated manifests and packages; filesystem
   visibility is normalized and prefix-confined.
 - Updates use integrity-verified packages and crash-atomic staging/rollback;
