@@ -1641,6 +1641,62 @@ Write-Output '=== QEMU V0.11: proposals the kernel checks, and nothing executes 
     '--forbid', 'RING3-PANIC',
     '--timeout-secs', '240', '--label', 'ai-propose-bios')
 
+Write-Output '=== QEMU V0.11: approval, execution, verification (BIOS) ==='
+# ACT11-001, part 1 (ADR-0024): resume-scheduler. `approve <id>` is the only
+# path from a proposal to an action: it re-checks the TTL and whether the
+# action still applies, executes it in kernel code, verifies it over its
+# window with the same measurement as `busy` (other processes must progress
+# at busy points), and rolls back if that fails. Deny is final; a proposal
+# the system has outgrown is refused (precondition_changed), not executed.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B210',
+    '--send', '@pause 1500',
+    '--send', 'sched pause',
+    '--send', 'run /bin/agent sys_view,propose,ipc,fs_read /etc/ai -- propose',
+    '--send', 'deny 1',
+    '--send', 'approve 1',
+    '--send', 'busy 1000',
+    '--send', 'run /bin/agent sys_view,propose,ipc,fs_read /etc/ai -- propose',
+    '--send', 'proposals',
+    '--send', 'approve 2',
+    '--send', 'busy 1000',
+    '--send', 'sched pause',
+    '--send', 'run /bin/agent sys_view,propose,ipc,fs_read /etc/ai -- propose',
+    '--send', 'sched resume',
+    '--send', 'approve 3',
+    '--send', 'approve 99',
+    '--send', 'proposals',
+    '--send', 'shutdown',
+    '--require', 'AGENT-PROPOSAL filed id=1 action=resume-scheduler target=-',
+    '--require', '[ITISYOU:AI] proposal_denied id=1 by=console',
+    '--require', 'approve: id=1 refused reason=already_decided',
+    '--require', 'busy: ms=1000 paused=true others_progressed=false other_quanta=0',
+    '--require', 'AGENT-PROPOSAL filed id=2 action=resume-scheduler target=-',
+    '--require', '[ITISYOU:AI] proposal id=2 state=pending action=resume-scheduler target=- condition=scheduler_paused risk=low reversible=true',
+    '--require', '[ITISYOU:AI] preview id=2 turn background scheduling back on',
+    '--require', '[ITISYOU:AI] proposal_approved id=2 by=console',
+    '--require', '[ITISYOU:AI] action_executed id=2 action=resume-scheduler approved_by=console',
+    '--require', '[ITISYOU:AI] action_verified id=2 result=pass',
+    '--require', 'busy: ms=1000 paused=false others_progressed=true',
+    '--require', 'AGENT-PROPOSAL filed id=3 action=resume-scheduler target=-',
+    '--require', 'approve: id=3 refused reason=precondition_changed',
+    '--require', '[ITISYOU:AI] proposal_expired id=3 reason=precondition_changed',
+    '--require', 'approve: id=99 refused reason=no_such_proposal',
+    '--require', '[ITISYOU:AI] proposal id=2 state=verified',
+    '--require', '[ITISYOU:AI] proposal id=3 state=expired',
+    '--require', 'action=proposal_approved cap=0x0 result=ok',
+    '--require', 'action=action_executed cap=0x0 result=ok',
+    '--require', 'approved_by=console model=e0fc6642563aba99 view=',
+    '--require', 'action=action_verified cap=0x0 result=ok',
+    '--forbid', 'action_executed id=1 ',
+    '--forbid', 'action_executed id=3 ',
+    '--forbid', 'action_verified id=2 result=fail',
+    '--forbid', 'action_rolled_back',
+    '--forbid', 'AGENT-INFER-TIMEOUT',
+    '--forbid', 'AGENT-PROPOSAL-REFUSED',
+    '--forbid', 'RING3-PANIC',
+    '--timeout-secs', '240', '--label', 'ai-act-bios')
+
 if ($anyFailed) { Write-Output 'TEST: FAILED'; exit 1 }
 Write-Output 'TEST: OK'
 exit 0

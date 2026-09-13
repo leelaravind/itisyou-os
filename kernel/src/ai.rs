@@ -404,3 +404,122 @@ pub fn console_deny(id: u64) {
         Err(e) => crate::serial_println!("deny: id={id} refused reason={}", e.name()),
     }
 }
+
+/// Console `approve <id>` (S9): the only path from a proposal to an action.
+///
+/// Re-checks everything that can have changed since the proposal was filed -
+/// its TTL and whether the action still applies - then executes the action
+/// in kernel code, verifies its post-condition over the action's window, and
+/// rolls back if the check fails. Every step is printed and audited with the
+/// proposal's provenance.
+pub fn console_approve(id: u64) {
+    expire_now();
+    let Some(entry) = PROPOSALS.lock().get(id) else {
+        crate::serial_println!("approve: id={id} refused reason=no_such_proposal");
+        return;
+    };
+    if entry.state != policy::State::Pending {
+        crate::serial_println!("approve: id={id} refused reason=already_decided");
+        return;
+    }
+    let r = entry.record;
+    // The system may have moved on since the proposal was filed.
+    if !policy::applies(r.action, &facts(&r)) {
+        let _ = PROPOSALS.lock().transition(id, Event::Expire);
+        crate::serial_println!("approve: id={id} refused reason=precondition_changed");
+        crate::serial_println!("[ITISYOU:AI] proposal_expired id={id} reason=precondition_changed");
+        crate::audit::allowed(
+            "proposal_expired",
+            0,
+            Some(alloc::format!("id={id} reason=precondition_changed")),
+        );
+        return;
+    }
+    if r.action == Action::RetryService && !RETRY_AVAILABLE {
+        crate::serial_println!("approve: id={id} refused reason=action_unavailable");
+        return;
+    }
+    if PROPOSALS.lock().transition(id, Event::Approve).is_err() {
+        crate::serial_println!("approve: id={id} refused reason=already_decided");
+        return;
+    }
+    crate::serial_println!("[ITISYOU:AI] proposal_approved id={id} by=console");
+    crate::audit::allowed(
+        "proposal_approved",
+        0,
+        Some(alloc::format!(
+            "id={id} action={} by=console",
+            r.action.name()
+        )),
+    );
+    let _ = PROPOSALS.lock().transition(id, Event::Execute);
+    let mut m = [0u8; 64];
+    let mut v = [0u8; 64];
+    let (model, view) = (hex(&r.model, &mut m), hex(&r.view, &mut v));
+    let detail = alloc::format!(
+        "id={id} action={} target={} condition={} approved_by=console model={} view={}",
+        r.action.name(),
+        target_or_dash(&r),
+        r.condition.name(),
+        &model[..16],
+        &view[..16]
+    );
+    let passed = match r.action {
+        Action::ResumeScheduler => execute_resume(id, &detail),
+        Action::RetryService => false,
+    };
+    let event = if passed { Event::Pass } else { Event::Fail };
+    let _ = PROPOSALS.lock().transition(id, event);
+}
+
+/// Whether retry-service can execute yet (S10 lands the init mailbox).
+const RETRY_AVAILABLE: bool = false;
+
+/// resume-scheduler: turn background slices back on, then require that
+/// other processes actually progress at busy points during the window -
+/// the same measurement as `busy`, so a resume that did nothing fails and is
+/// rolled back.
+fn execute_resume(id: u64, detail: &str) -> bool {
+    crate::sched::resume();
+    crate::serial_println!(
+        "[ITISYOU:AI] action_executed id={id} action=resume-scheduler approved_by=console"
+    );
+    crate::audit::allowed(
+        "action_executed",
+        0,
+        Some(alloc::string::String::from(detail)),
+    );
+    let window_ms = policy::Action::ResumeScheduler.verify_ticks() * 10;
+    let before = crate::sched::other_quanta_total();
+    let end = crate::interrupts::tsc() + crate::interrupts::cycles_for_ms(window_ms);
+    while crate::interrupts::tsc() < end {
+        crate::sched::safe_point();
+        core::hint::spin_loop();
+    }
+    let others = crate::sched::other_quanta_total() - before;
+    let passed = others > 0 && !crate::sched::paused();
+    crate::serial_println!(
+        "[ITISYOU:AI] action_verified id={id} result={} window_ms={window_ms} other_quanta={others}",
+        if passed { "pass" } else { "fail" }
+    );
+    crate::audit::allowed(
+        "action_verified",
+        0,
+        Some(alloc::format!(
+            "id={id} result={} other_quanta={others}",
+            if passed { "pass" } else { "fail" }
+        )),
+    );
+    if !passed {
+        crate::sched::pause();
+        crate::serial_println!(
+            "[ITISYOU:AI] action_rolled_back id={id} action=resume-scheduler undo=paused-again"
+        );
+        crate::audit::allowed(
+            "action_rolled_back",
+            0,
+            Some(alloc::format!("id={id} undo=paused-again")),
+        );
+    }
+    passed
+}
