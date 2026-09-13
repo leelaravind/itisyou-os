@@ -134,10 +134,11 @@
     its prompt (idle slices must be non-zero); `busy` with scheduling paused
     must starve the background and, resumed, must not (`sched last` judges each
     command's window: starved if nothing ran or any gap exceeded 250 ms); a
-    service client run in the foreground must get its reply, and a CPU-bound
-    program that never yields must still leave the background a bounded gap.
-    The control leg pauses scheduling on the same image and requires the
-    foreground client to time out. `sched` also reports `lock_skips` (must be
+    service client run in the foreground must get its reply, a CPU-bound
+    program that never yields must still leave the background a bounded gap,
+    and programs under `run` must be able to wait for a child and sleep.
+    `sched-pause-bios` pins down what pause stops: busy and idle points, never
+    the console's own job. `sched` also reports `lock_skips` (must be
     0) and the console stack's painted high-water mark (`stack_margin_ok`).
 24. **Process model** (V0.10, `proc-model-bios`): `/bin/proc-probe` checks the
     process tree from inside — a sibling may not collect another process's

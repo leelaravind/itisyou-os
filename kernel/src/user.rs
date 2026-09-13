@@ -387,7 +387,16 @@ pub fn run_quantum(process: &mut Process, first: bool) -> UserExit {
 
 /// Run a loaded process to completion in its own address space (draining
 /// cooperative yields), then tear it down. Returns its terminal outcome.
+///
+/// The selftest's single-process driver. Since V0.10 (SCHED10-002) the
+/// console runs programs through the process table instead, where `wait`
+/// blocks and `sleep` sleeps; here, with no table slot and no run-loop, a
+/// blocked program is simply resumed.
 pub fn run(mut process: Process) -> UserExit {
+    debug_assert!(
+        !crate::sched::enabled(),
+        "user::run is the selftest's single-process driver"
+    );
     let mut first = true;
     let terminal = loop {
         match run_quantum(&mut process, first) {
@@ -396,11 +405,6 @@ pub fn run(mut process: Process) -> UserExit {
             // these indefinitely.
             UserExit::Yielded | UserExit::Preempted | UserExit::Blocked => {
                 first = false;
-                // V0.10: between two quanta of a foreground program the
-                // console is a safe point, so the background keeps running.
-                // (This process is out of Ring 3 and its state is saved; the
-                // slice's run-loop enters Ring 3 only for table processes.)
-                crate::sched::safe_point();
                 continue;
             }
             other => break other,

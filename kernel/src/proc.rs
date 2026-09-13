@@ -64,6 +64,8 @@ struct Slot {
     parent: u64,
     /// What it runs, for `ps`.
     path: String,
+    /// Where it faulted, if it did (the console's `run` reports it, V0.10).
+    fault_addr: Option<u64>,
 }
 
 struct Table {
@@ -109,6 +111,7 @@ pub fn admit_child(process: Process, parent: u64) -> u64 {
             started: false,
             parent,
             path,
+            fault_addr: None,
         },
     );
     table.runq.push_back(pid);
@@ -119,6 +122,12 @@ pub fn admit_child(process: Process, parent: u64) -> u64 {
 pub fn state_of(pid: u64) -> Option<ProcState> {
     let guard = TABLE.lock();
     guard.as_ref()?.slots.get(&pid).map(|s| s.state)
+}
+
+/// Where a faulted process faulted, if the CPU reported an address.
+pub fn fault_addr_of(pid: u64) -> Option<u64> {
+    let guard = TABLE.lock();
+    guard.as_ref()?.slots.get(&pid).and_then(|s| s.fault_addr)
 }
 
 /// What owns a resource, as the `tcp` listing reports it (V0.10): the
@@ -329,6 +338,7 @@ fn finish(
         Some(s) => {
             s.process = None;
             s.state = state;
+            s.fault_addr = fault_addr;
             s.parent
         }
         None => ORPHAN_PARENT,

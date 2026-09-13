@@ -318,10 +318,71 @@ fn cmd_run(args: &[&str]) {
         .get(1)
         .filter(|p| **p != "-")
         .map(|p| alloc::sync::Arc::new(alloc::vec![alloc::string::String::from(*p)]));
-    match crate::user::run_path_with_args(path, caps, sandbox, prog_args) {
-        Ok(exit) => crate::serial_println!("run: {path}: {exit:?}"),
-        Err(err) => crate::serial_println!("run: {path}: load failed: {err:?}"),
+    let mut process = match crate::user::load_with(path, caps, sandbox) {
+        Ok(p) => p,
+        Err(err) => {
+            crate::serial_println!("run: {path}: load failed: {err:?}");
+            return;
+        }
+    };
+    process.args = prog_args;
+    // V0.10 (SCHED10-002): the program is a process in the table like any
+    // other — its `wait` blocks, its `sleep` sleeps, and the background keeps
+    // running — and the console waits for it. The report is the same text as
+    // before (`run: <path>: Exit(0)`, `Fault { vector, addr }`).
+    let pid = crate::proc::admit(process);
+    match run_job(pid, None) {
+        JobEnd::Ended(crate::proc::ProcState::Exited(code), _) => {
+            crate::serial_println!("run: {path}: {:?}", crate::user::UserExit::Exit(code))
+        }
+        JobEnd::Ended(crate::proc::ProcState::Faulted { vector }, addr) => {
+            crate::serial_println!(
+                "run: {path}: {:?}",
+                crate::user::UserExit::Fault { vector, addr }
+            )
+        }
+        JobEnd::Ended(crate::proc::ProcState::Killed, _) => {
+            crate::serial_println!("run: {path}: Killed")
+        }
+        JobEnd::Ended(_, _) | JobEnd::TimedOut | JobEnd::Vanished => {
+            crate::serial_println!("run: {path}: vanished")
+        }
     }
+}
+
+/// How a console job ended.
+enum JobEnd {
+    /// It terminated (and the fault address, if it faulted).
+    Ended(crate::proc::ProcState, Option<u64>),
+    TimedOut,
+    Vanished,
+}
+
+/// Wait for a console job — a process the console admitted and waits for
+/// (`run`, `bg`, `pkg launch`) — giving it, and everything else runnable,
+/// slices until it terminates or `timeout` ticks pass (V0.10, SCHED10-002).
+/// The job is then removed from the table, whatever happened.
+fn run_job(pid: u64, timeout: Option<u64>) -> JobEnd {
+    let deadline = timeout.map(|t| crate::interrupts::ticks() + t);
+    // The job is what the console waits for, so its quanta are not
+    // "background" when starvation is judged.
+    crate::sched::set_job(pid);
+    let end = loop {
+        crate::sched::console_wait_step(pid);
+        match crate::proc::state_of(pid) {
+            Some(state) if state.is_terminal() => {
+                break JobEnd::Ended(state, crate::proc::fault_addr_of(pid));
+            }
+            None => break JobEnd::Vanished,
+            Some(_) => {}
+        }
+        if deadline.is_some_and(|d| crate::interrupts::ticks() >= d) {
+            break JobEnd::TimedOut;
+        }
+    };
+    crate::proc::reap(pid);
+    crate::sched::clear_job();
+    end
 }
 
 /// `bg <path> [caps]` — run a program CO-SCHEDULED with the persistent
@@ -367,45 +428,18 @@ fn cmd_bg(args: &[&str]) {
     };
     process.args = prog_args;
     let pid = crate::proc::admit(process);
-    // The job is what the console waits for, so its quanta are not
-    // "background" when starvation is judged.
-    crate::sched::set_job(pid);
-    bg_wait(pid, path);
-    crate::sched::clear_job();
-}
-
-/// Wait for a `bg` job, giving it (and everything else runnable) slices.
-fn bg_wait(pid: u64, path: &str) {
     // Bounded: a client that never finishes must not wedge the console.
-    let deadline = crate::interrupts::ticks() + BG_JOB_MAX_TICKS;
-    loop {
-        crate::sched::console_wait_step(pid);
-        match crate::proc::state_of(pid) {
-            Some(crate::proc::ProcState::Exited(code)) => {
-                crate::proc::reap(pid);
-                crate::serial_println!("bg: {path}: exit={code}");
-                return;
-            }
-            Some(crate::proc::ProcState::Faulted { vector }) => {
-                crate::proc::reap(pid);
-                crate::serial_println!("bg: {path}: faulted vector={vector} contained=true");
-                return;
-            }
-            Some(crate::proc::ProcState::Killed) => {
-                crate::proc::reap(pid);
-                crate::serial_println!("bg: {path}: killed");
-                return;
-            }
-            None => {
-                crate::serial_println!("bg: {path}: vanished");
-                return;
-            }
-            Some(_) => {}
+    match run_job(pid, Some(BG_JOB_MAX_TICKS)) {
+        JobEnd::Ended(crate::proc::ProcState::Exited(code), _) => {
+            crate::serial_println!("bg: {path}: exit={code}")
         }
-        if crate::interrupts::ticks() >= deadline {
-            crate::proc::reap(pid);
-            crate::serial_println!("bg: {path}: timed out after {BG_JOB_MAX_TICKS} ticks");
-            return;
+        JobEnd::Ended(crate::proc::ProcState::Faulted { vector }, _) => {
+            crate::serial_println!("bg: {path}: faulted vector={vector} contained=true")
+        }
+        JobEnd::Ended(_, _) => crate::serial_println!("bg: {path}: killed"),
+        JobEnd::Vanished => crate::serial_println!("bg: {path}: vanished"),
+        JobEnd::TimedOut => {
+            crate::serial_println!("bg: {path}: timed out after {BG_JOB_MAX_TICKS} ticks")
         }
     }
 }
@@ -1148,8 +1182,9 @@ fn cmd_pkg(args: &[&str]) {
             };
             crate::platform::prepare_launch(&fs, app, kernel_core::caps::CAP_LEGACY_FULL)
         };
-        match prepared.map(|p| crate::user::run(p.process)) {
-            Ok(crate::user::UserExit::Exit(code)) => {
+        // The app is a table process like any other (V0.10, SCHED10-002).
+        match prepared.map(|p| run_job(crate::proc::admit(p.process), None)) {
+            Ok(JobEnd::Ended(crate::proc::ProcState::Exited(code), _)) => {
                 crate::serial_println!("pkg: launch {app}: exit={code}")
             }
             Ok(_) => crate::serial_println!(
