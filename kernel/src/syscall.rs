@@ -1190,6 +1190,20 @@ fn sys_fs_read(path_ptr: u64, path_len: u64, req_ptr: u64) -> u64 {
 /// Validate that [ptr, ptr+len) lies entirely in the user window and is
 /// mapped in the ACTIVE address space. Returns Ok(()) or an ERR_* code.
 pub fn validate_user_range(ptr: u64, len: u64) -> Result<(), u64> {
+    validate_user_access(ptr, len, false)
+}
+
+/// [`validate_user_range`] for a buffer the kernel is about to WRITE: every
+/// page must also be writable by the program itself (V0.10, SEC10-001).
+pub fn validate_user_write(ptr: u64, len: u64) -> Result<(), u64> {
+    validate_user_access(ptr, len, true)
+}
+
+/// Every page of `[ptr, ptr+len)` must lie in the user range and be
+/// accessible to Ring 3 — present and user at every level of the walk, and
+/// writable at every level when `write`. A page the program could not touch
+/// itself is `ERR_FAULT`, never a kernel page fault.
+fn validate_user_access(ptr: u64, len: u64, write: bool) -> Result<(), u64> {
     if len == 0 {
         return Ok(());
     }
@@ -1199,7 +1213,7 @@ pub fn validate_user_range(ptr: u64, len: u64) -> Result<(), u64> {
     }
     let mut page_addr = ptr & !0xFFF;
     while page_addr < end {
-        if crate::memory::paging::translate_active(VirtAddr::new(page_addr)).is_none() {
+        if !crate::memory::paging::user_accessible_active(VirtAddr::new(page_addr), write) {
             return Err(ERR_FAULT);
         }
         page_addr += 4096;
@@ -1236,7 +1250,8 @@ pub fn copy_to_user(ptr: u64, data: &[u8]) -> Result<u64, u64> {
     if data.is_empty() {
         return Ok(0);
     }
-    validate_user_range(ptr, data.len() as u64)?;
+    // Writable by the program itself, not merely mapped (SEC10-001).
+    validate_user_write(ptr, data.len() as u64)?;
     let _access = crate::harden::UserAccess::begin();
     // SAFETY: as above.
     let dst = unsafe { core::slice::from_raw_parts_mut(ptr as *mut u8, data.len()) };
