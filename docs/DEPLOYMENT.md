@@ -1,6 +1,11 @@
 # Deployment — os.itisyou.app
 
-**Latest deploy:** 2026-09-13 15:25, commit `8fafda5` (four overstated claims
+**Latest deploy:** 2026-09-13 16:16, commit `42399b9` (stale /docs pages and
+the home layer diagram corrected) — staging `e0080833-7475-47af-ba1a-e628d1cefedf`,
+production `169d50f9-28c7-49a5-81a1-be15e5c7d408`; browser-verify and downloads
+verify repeated (v0.9.0 byte-exact, v0.8.1 archive byte-exact).
+
+**Previous deploy:** 2026-09-13 15:25, commit `8fafda5` (four overstated claims
 corrected after adversarial review) — staging `dbc396a6-eca5-4f14-8b9f-68dd8730fe5b`,
 production `cf7a7a97-b55a-4b45-885f-74e3e1f00caf`; downloads and browser
 verification repeated (v0.9.0 byte-exact, v0.8.1 archive byte-exact).
