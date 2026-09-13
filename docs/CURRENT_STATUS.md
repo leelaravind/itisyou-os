@@ -35,6 +35,10 @@ v0.8.1 downloadable.
 
 ## V0.10 (started on a branch)
 
+Update 2026-09-13 16:28: `main` green at `42399b9` (CI `34765042925`); site
+production `169d50f9`; repository private. Signing keys on the owner's offline
+USB drive.
+
 Update 2026-09-13 16:05: `v0.10/integration` now carries `main` (v0.9.0) and
 version `0.10.0-dev`; draft PR #2 ran GitHub CI `34764042157` — all four jobs
 green on Linux. Not merged: V0.10 still lacks userspace init, the always-on

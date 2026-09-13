@@ -848,3 +848,14 @@ the slot earlier. The leg now checks the thing that matters — nothing is left
 owned by a program after it exits — and `main` went green. The V0.10 branch,
 brought up to date with the release, ran on GitHub's Linux runners for the
 first time through a draft pull request and passed everything.
+
+**The last hour.** With CI working again only while the repository was
+public, the owner's one-hour box was spent on what could be finished and
+verified inside it: the release reviewers' leftover findings about rendered
+pages that still described an older system — a security model claiming no
+network stack, an interrupt section from before the PIC was retired. Those
+were fixed, deployed, checked in a browser, and given a green CI run in a
+third six-minute public window before the repository went private again.
+V0.10's next items — a userspace init with an always-on scheduler, a Ring 3
+shell, desktop applications — are larger than an hour and are left for the
+next session rather than started and abandoned half-built.

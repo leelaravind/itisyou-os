@@ -9,6 +9,19 @@ https://github.com/leelaravind/itisyou-os (private)
 
 ## Where things stand
 
+**FINAL 16:28 — read first.** Repository PRIVATE (since 16:21:49). `main` at
+`42399b9` has green CI (`34765042925`, all four jobs; third short public window
+16:15–16:21). That commit corrected stale live pages found by the release
+review (/docs/security-model, /docs/architecture, /docs/threat-model,
+/docs/testing, the home layer diagram); production `169d50f9-28c7-49a5-81a1-be15e5c7d408`
+(staging `e0080833-7475-47af-ba1a-e628d1cefedf`) verified in a real browser, v0.9.0
+downloads and the v0.8.1 archive byte-exact. This wind-up commit itself is
+docs-only and has no CI run (the repository is private and GitHub billing is
+still unresolved). NEXT: continue V0.10 on `v0.10/integration` (draft PR #2,
+CI green `34764042157`): userspace init + always-on scheduler, Ring 3 shell,
+persistent desktop applications; then the V0.10 release (needs CI: billing fix
+or another short public window). Signing keys: offline USB drive (see Keys).
+
 **UPDATE 16:05 — second public window (owner's 1-hour timer, deadline 16:43).**
 The flaky leg is FIXED and `main` is GREEN: `net-tcp-bios` required an exact
 `owner_exit` line that only appears if the probe exits inside the 1 s
