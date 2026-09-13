@@ -22,7 +22,8 @@
 
 use ulib::{
     args, exit, raw_syscall, spawn_args, split_args, wait, write, write_raw, write_u64,
-    ARGS_BLOCK_MAX, ARGS_MAX, ERR_2BIG, ERR_FAULT, ERR_INVAL, ERR_PERM, SYS_ARGS,
+    ARGS_BLOCK_MAX, ARGS_MAX, ERR_2BIG, ERR_FAULT, ERR_INVAL, ERR_NOENT, ERR_PERM, SYS_ARGS,
+    SYS_SPAWN_ARGS,
 };
 
 const SELF: &str = "/bin/args-probe";
@@ -95,7 +96,18 @@ extern "C" fn _start() -> ! {
 fn check_args_syscall(block: &[u8]) -> bool {
     let len = block.len();
     if len == 0 {
-        // Nothing to truncate and nothing to copy.
+        // Nothing to truncate and nothing to copy — so a NULL, zero-length
+        // buffer is a valid request that must return 0. The kernel may not
+        // touch the pointer at all (forming even an empty slice from NULL is
+        // undefined behaviour, which a debug kernel turns into a panic).
+        let r = raw_syscall(SYS_ARGS, 0, 0, 0);
+        if r != 0 {
+            write("ARGS-FAILED step=null_empty err=");
+            write_err(r);
+            write("\n");
+            return false;
+        }
+        write("ARGS-NULL-EMPTY-OK\n");
         return true;
     }
     // One byte short: refused whole, nothing written.
@@ -209,5 +221,25 @@ fn parent() -> bool {
     write("ARGS-HOSTILE-OK refused=");
     write_u64(refused);
     write("\n");
+
+    // A NULL, zero-length block is a valid EMPTY argument list; the kernel
+    // must accept it without touching the pointer. Aimed at a path that does
+    // not exist, so the call gets past the block and fails at the load —
+    // ERR_NOENT proves the block was accepted and no child was created.
+    let missing = "/bin/no-such-program";
+    let req: [u64; 3] = [0, 0, 0];
+    let r = raw_syscall(
+        SYS_SPAWN_ARGS,
+        missing.as_ptr() as u64,
+        missing.len() as u64,
+        req.as_ptr() as u64,
+    );
+    if r != ERR_NOENT {
+        write("ARGS-FAILED step=null_block err=");
+        write_err(r);
+        write("\n");
+        return false;
+    }
+    write("ARGS-NULL-BLOCK-OK\n");
     true
 }

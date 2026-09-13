@@ -1190,6 +1190,13 @@ pub fn copy_from_user(ptr: u64, len: u64, max: u64) -> Result<alloc::vec::Vec<u8
     if len > max {
         return Err(ERR_2BIG);
     }
+    // Zero bytes: nothing to read, and the pointer must not be touched — a
+    // zero-length request is valid with ANY pointer, NULL included, and
+    // forming even an empty slice from NULL is undefined behaviour (a debug
+    // kernel panics on it). Found by the V0.10 `args-probe` NULL check.
+    if len == 0 {
+        return Ok(alloc::vec::Vec::new());
+    }
     validate_user_range(ptr, len)?;
     // SMAP forbids kernel access to user pages by default; this is one of
     // the three places that legitimately needs it, so it says so explicitly.
@@ -1202,6 +1209,10 @@ pub fn copy_from_user(ptr: u64, len: u64, max: u64) -> Result<alloc::vec::Vec<u8
 
 /// Copy kernel bytes into a validated user buffer; returns bytes written.
 pub fn copy_to_user(ptr: u64, data: &[u8]) -> Result<u64, u64> {
+    // As in `copy_from_user`: an empty copy never forms a slice from `ptr`.
+    if data.is_empty() {
+        return Ok(0);
+    }
     validate_user_range(ptr, data.len() as u64)?;
     let _access = crate::harden::UserAccess::begin();
     // SAFETY: as above.

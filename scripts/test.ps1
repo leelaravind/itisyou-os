@@ -608,6 +608,10 @@ Write-Output '=== QEMU program arguments: console and parent-to-child (BIOS) ===
     '--require', 'ARGS-HOSTILE-REFUSED case=empty',
     '--require', 'ARGS-HOSTILE-REFUSED case=unterminated',
     '--require', 'ARGS-HOSTILE-OK refused=6',
+    # A NULL zero-length buffer/block is valid and must not be touched (a
+    # debug kernel used to panic forming an empty slice from NULL).
+    '--require', 'ARGS-NULL-BLOCK-OK',
+    '--require', 'ARGS-NULL-EMPTY-OK',
     '--require', 'bg: /bin/args-probe: exit=0',
     '--require', 'ARGS-SPAWN-DENIED call=spawn_args',
     '--require', 'action=spawn_args cap=0x0 result=denied',
