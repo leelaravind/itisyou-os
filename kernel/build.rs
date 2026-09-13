@@ -17,7 +17,7 @@ fn main() {
     let root = manifest_dir.join("../initramfs/root");
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
     let out = out_dir.join("initramfs.tar");
-    emit_dev_public_key(&out_dir);
+    emit_trust_root(&workspace, &out_dir);
     println!("cargo::rerun-if-changed={}", root.display());
     for dir in [
         "ulib",
@@ -66,6 +66,7 @@ fn main() {
         false,
     ));
     build_user_programs(&workspace, &mut entries);
+    add_trust_material(&workspace, &mut entries);
     entries.sort_by(|a, b| a.0.cmp(&b.0));
     entries.dedup_by(|a, b| a.0 == b.0);
 
@@ -275,6 +276,41 @@ caps=fs_read
     let mut forged = pack_signed(manifest_v1, &hello, &DEV_SIGNING_SECRET);
     forged[80] ^= 0x01;
     entries.push(("pkgs/hello-app-forged.itpkg".to_string(), forged, false));
+    // Key-hierarchy fixtures (V0.9). Each is intact and correctly signed; only
+    // the certificate chain can refuse it, each for a different reason:
+    //   * signed by a certified key the root has since revoked;
+    entries.push((
+        "pkgs/hello-app-retired.itpkg".to_string(),
+        pack_signed(manifest_v1, &hello, &RETIRED_SIGNING_SECRET),
+        false,
+    ));
+    //   * signed by a key whose certificate covered only earlier releases;
+    entries.push((
+        "pkgs/hello-app-expired.itpkg".to_string(),
+        pack_signed(manifest_v1, &hello, &EXPIRED_SIGNING_SECRET),
+        false,
+    ));
+    //   * signed by a key whose certificate was NOT issued by the root (the
+    //     certificate ships in /etc/trust and is refused when loaded);
+    entries.push((
+        "pkgs/hello-app-rogue.itpkg".to_string(),
+        pack_signed(manifest_v1, &hello, &ROGUE_SIGNING_SECRET),
+        false,
+    ));
+    //   * signed by the PUBLISHED test key, for a name outside its scope —
+    //     the property that makes publishing that key safe.
+    entries.push((
+        "pkgs/other-app-1.itpkg".to_string(),
+        pack_signed(
+            "name=other-app
+version=1.0.0
+caps=fs_read
+",
+            &hello,
+            &DEV_SIGNING_SECRET,
+        ),
+        false,
+    ));
     // Digest-valid but the manifest demands an undefined capability -> the
     // kernel must refuse it at manifest validation.
     entries.push((
@@ -297,26 +333,97 @@ caps=kernel-root
 /// Deriving it here, from the same seed that signs the fixtures, is what keeps
 /// the trust root and the signer in lockstep: there is no second place to
 /// update and no way for them to disagree.
-fn emit_dev_public_key(out_dir: &Path) {
-    let public = kernel_core::ed25519::public_key(&DEV_SIGNING_SECRET);
-    let path = out_dir.join("dev_signing_public_key.bin");
-    fs::write(&path, public).expect("writing the development signing public key");
+fn emit_trust_root(workspace: &Path, out_dir: &Path) {
+    let hex_path = workspace.join("keys").join("root.pub.hex");
+    println!("cargo:rerun-if-changed={}", hex_path.display());
     println!("cargo:rerun-if-changed=build.rs");
+    let text = fs::read_to_string(&hex_path).expect("reading keys/root.pub.hex");
+    let text = text.trim();
+    assert_eq!(text.len(), 64, "keys/root.pub.hex must be 64 hex digits");
+    let root: Vec<u8> = (0..32)
+        .map(|i| u8::from_str_radix(&text[2 * i..2 * i + 2], 16).expect("hex digit"))
+        .collect();
+    fs::write(out_dir.join("trust_root.bin"), root).expect("writing the trust root");
 }
 
-/// The DEVELOPMENT package-signing seed.
+/// Ship the certificates and the revocation list in the initramfs under
+/// `/etc/trust`. They are PUBLIC, root-signed data produced offline by
+/// `tools/keytool` and committed under `keys/`; the kernel verifies each one
+/// against its compiled-in root when it loads them, so a file added or edited
+/// here confers nothing the root did not sign. Every certificate the build
+/// relies on is also checked HERE, so a key/fixture mismatch fails the build
+/// instead of surfacing as a mysterious refusal at run time.
+fn add_trust_material(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, bool)>) {
+    let keys = workspace.join("keys");
+    println!("cargo:rerun-if-changed={}", keys.display());
+    entries.push(("etc/trust/".to_string(), Vec::new(), true));
+    entries.push(("etc/trust/certs/".to_string(), Vec::new(), true));
+    let mut names: Vec<_> = fs::read_dir(keys.join("certs"))
+        .expect("reading keys/certs")
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.extension().is_some_and(|x| x == "cert"))
+        .collect();
+    names.sort();
+    for path in names {
+        println!("cargo:rerun-if-changed={}", path.display());
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        entries.push((
+            format!("etc/trust/certs/{name}"),
+            fs::read(&path).unwrap(),
+            false,
+        ));
+    }
+    let revocations = keys.join("revocations.bin");
+    println!("cargo:rerun-if-changed={}", revocations.display());
+    entries.push((
+        "etc/trust/revocations.bin".to_string(),
+        fs::read(&revocations).expect("reading keys/revocations.bin"),
+        false,
+    ));
+    // The fixtures above assume these certificates certify these seeds.
+    let root: [u8; 32] =
+        fs::read(PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("trust_root.bin"))
+            .unwrap()
+            .try_into()
+            .unwrap();
+    for (file, seed) in [
+        ("test-signer.cert", &DEV_SIGNING_SECRET),
+        ("retired-signer.cert", &RETIRED_SIGNING_SECRET),
+        ("expired-signer.cert", &EXPIRED_SIGNING_SECRET),
+    ] {
+        let bytes = fs::read(keys.join("certs").join(file)).unwrap();
+        let key = kernel_core::trust::verify_certificate(&bytes, &root)
+            .unwrap_or_else(|e| panic!("keys/certs/{file}: {}", e.name()));
+        assert_eq!(
+            key.public_key,
+            kernel_core::ed25519::public_key(seed),
+            "keys/certs/{file} does not certify the fixture seed build.rs signs with"
+        );
+    }
+}
+
+/// The published TEST signing seed (key id 1 in `keys/certs/test-signer.cert`).
 ///
-/// Not a secret and not pretending to be one: it is a fixed byte pattern so
-/// that a build is reproducible and the kernel's compiled-in trust root
-/// matches the fixtures this build produces. A real deployment replaces this
-/// with a key that never enters the source tree — see
-/// docs/SECURITY_MODEL.md. Publishing the development key is deliberate: a
-/// build-time key that looked secret would invite someone to trust it.
+/// Not a secret and not pretending to be one: a fixed byte pattern so anyone
+/// can rebuild the fixture packages and reproduce the image bit for bit. Since
+/// V0.9 it is no longer the trust root: the kernel trusts only the offline
+/// root, which certified this key for package names starting `hello-` and
+/// nothing else — so holding this seed lets you sign fixtures, not software.
+/// Real packages are signed by the release key (id 10), whose seed never
+/// enters the source tree.
 const DEV_SIGNING_SECRET: [u8; 32] = *b"itisyou-os dev package signer v8";
 
 /// A second key the kernel does NOT trust, used to produce the
 /// "correctly signed by a stranger" fixture.
 const FOREIGN_SIGNING_SECRET: [u8; 32] = *b"itisyou-os foreign signer -----8";
+
+/// V0.9 key-hierarchy fixture signers — published like the test key, and
+/// certified (or not) in `keys/certs/` to exercise each refusal: key 2 is
+/// revoked in `keys/revocations.bin`, key 3's certificate covers only epochs
+/// 7..=8, and key 4's certificate was signed by an impostor root.
+const RETIRED_SIGNING_SECRET: [u8; 32] = *b"itisyou-os retired signer -----9";
+const EXPIRED_SIGNING_SECRET: [u8; 32] = *b"itisyou-os expired signer -----9";
+const ROGUE_SIGNING_SECRET: [u8; 32] = *b"itisyou-os rogue signer -------9";
 
 /// Assemble an UNSIGNED ITPKG001 (header + manifest + payload).
 ///

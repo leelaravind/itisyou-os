@@ -32,5 +32,6 @@ pub mod sha512;
 pub mod shellparse;
 pub mod stage;
 pub mod tar;
+pub mod trust;
 pub mod update;
 pub mod usb;

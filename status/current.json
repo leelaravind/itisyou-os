@@ -285,8 +285,8 @@
     },
     {
       "id": "pkg-keys",
-      "name": "Signing-key hierarchy (rotation, revocation, off-tree keys)",
-      "status": "planned"
+      "name": "Signing-key hierarchy (offline root, scoped certificates, signed revocation)",
+      "status": "verified"
     },
     {
       "id": "release-artifact",

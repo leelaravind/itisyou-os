@@ -18,8 +18,12 @@ router, responder paths against the harness's own peer); TCP streams from
 Ring 3 against the host operating system's own TCP stack, including recovery
 from injected loss by retransmission (and two bugs that work exposed: a kernel
 stack overflow corrupting the capability table, and a V0.8 socket leak on the
-console's `run` exit path). Still open: the signing-key hierarchy. The website
-stays on the `v0.8.1` release until V0.9 closes.
+console's `run` exit path); and the package-signing key hierarchy — an
+offline root, certified signing keys limited by name scope and release-epoch
+window, a signed revocation list (ADR-0021). Every V0.9 feature is verified
+locally; the release (CI, website, download, tag) is pending — GitHub Actions
+is currently refusing to start jobs on this account for a billing reason. The
+website stays on the `v0.8.1` release until V0.9 is released.
 
 ## V0.8.1 (release)
 

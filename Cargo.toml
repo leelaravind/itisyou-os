@@ -5,6 +5,7 @@ members = [
     "crates/kernel-core",
     "tools/image-builder",
     "tools/qemu-runner",
+    "tools/keytool",
     "user/ulib",
     "user/init",
     "user/gp-test",
@@ -46,6 +47,7 @@ default-members = [
     "crates/kernel-core",
     "tools/image-builder",
     "tools/qemu-runner",
+    "tools/keytool",
 ]
 
 [workspace.package]
