@@ -448,8 +448,9 @@ fn cmd_harden() {
     );
     use core::sync::atomic::Ordering::Relaxed;
     crate::serial_println!(
-        "harden: ring3_entry_flag_checks={} dirty_timer={} dirty_landing={}",
+        "harden: ring3_entry_flag_checks={} user_set_seen={} dirty_timer={} dirty_landing={}",
         crate::harden::FLAG_CHECKS.load(Relaxed),
+        crate::harden::FLAG_USER_SET_SEEN.load(Relaxed),
         crate::harden::FLAG_DIRTY_TIMER.load(Relaxed),
         crate::harden::FLAG_DIRTY_LANDING.load(Relaxed)
     );

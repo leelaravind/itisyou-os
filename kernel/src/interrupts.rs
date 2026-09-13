@@ -336,6 +336,9 @@ extern "C" fn timer_handler_inner(frame: &mut TrapFrame) {
     let from_user = frame.cs & 0b11 == 0b11;
     if from_user {
         crate::harden::FLAG_CHECKS.fetch_add(1, Ordering::Relaxed);
+        if frame.rflags & crate::harden::USER_FLAGS != 0 {
+            crate::harden::FLAG_USER_SET_SEEN.fetch_add(1, Ordering::Relaxed);
+        }
         if dirty != 0 {
             crate::harden::FLAG_DIRTY_TIMER.fetch_add(1, Ordering::Relaxed);
         }
