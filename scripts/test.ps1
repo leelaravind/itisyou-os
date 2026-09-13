@@ -746,6 +746,55 @@ Remove-Item $fsDisk -ErrorAction SilentlyContinue
     '--timeout-secs', '240', '--label', 'fs-write-persist')
 Remove-Item $fsDisk -ErrorAction SilentlyContinue
 
+Write-Output '=== QEMU ITFS space reclamation (BIOS, two boots) ==='
+# V0.10: freed extents are reused. The disk is 8 KiB - 16 blocks, 14 of them
+# data - and boot 1 writes 21 one-block files' worth into it: a kept file,
+# then the same file overwritten 20 times through the real NVMe path. The
+# V0.9 bump allocator leaked every old extent and would have refused the
+# 15th write with NoSpace; here every write must succeed and the report must
+# show just the two live blocks in use. Boot 2 (a fresh guest, same disk)
+# must read back the last revision, the kept file, and the identical report.
+# The report's numbers are predicted by the host test
+# `qemu_reclaim_leg_space_report_is_predicted`, not copied from a run.
+$reclaimDisk = Join-Path $env:ITISYOU_SCRATCH 'itisyou-reclaim-test.img'
+Remove-Item $reclaimDisk -ErrorAction SilentlyContinue
+[System.IO.File]::WriteAllBytes($reclaimDisk, (New-Object byte[] 8192))
+$reclaimReport = '[ITISYOU:FS] reclaim data_blocks=14 used=2 free=12 pinned=1 largest_run=11 files=2 generation=22'
+$reclaimSends = @('--send', 'store put keep.txt kept-across-reclaim')
+foreach ($rev in 1..20) {
+    $reclaimSends += @('--send', ('store put churn.txt rev{0:D2}-of-20-reclaim-cycle' -f $rev))
+}
+& $runner (@('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $reclaimDisk,
+    '--expect', 'B210') + $reclaimSends + @(
+    '--send', 'store df',
+    '--send', 'store cat churn.txt',
+    '--send', 'store ls',
+    '--send', 'shutdown',
+    '--require', 'store: put name=churn.txt bytes=25',
+    '--require', $reclaimReport,
+    '--require', 'store: churn.txt = rev20-of-20-reclaim-cycle',
+    '--require', 'store: files=2 generation=22',
+    '--forbid', 'failed: Fs(',
+    '--forbid', 'failed: Block(',
+    '--timeout-secs', '240', '--label', 'fs-reclaim-churn'))
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $reclaimDisk,
+    '--expect', 'B210',
+    '--send', 'store df',
+    '--send', 'store cat churn.txt',
+    '--send', 'store cat keep.txt',
+    '--send', 'store ls',
+    '--send', 'shutdown',
+    '--require', $reclaimReport,
+    '--require', 'store: churn.txt = rev20-of-20-reclaim-cycle',
+    '--require', 'store: keep.txt = kept-across-reclaim',
+    '--require', 'store: files=2 generation=22',
+    '--forbid', 'failed: Fs(',
+    '--forbid', 'failed: Block(',
+    '--timeout-secs', '240', '--label', 'fs-reclaim-persist')
+Remove-Item $reclaimDisk -ErrorAction SilentlyContinue
+
 Write-Output '=== QEMU persistent audit trail (BIOS, three boots) ==='
 # Provenance has to outlive the process that produced it, and it has to be
 # possible to tell an edited trail from an intact one. Records are chained -

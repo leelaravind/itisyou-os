@@ -107,12 +107,31 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
 - NVMe **read + write + flush**, one I/O queue, one namespace; MSI-X delivery is
   proved on it, but the data path is still polled.
 - ITFS is a minimal persistent filesystem: a fixed directory of **≤12 files**,
-  no subdirectories, **contiguous** files, and **no free-block reuse** —
-  `remove` and overwrite leak the old extent by design, trading space for
-  crash-atomic simplicity, so a long-lived disk eventually fills. Crash
-  consistency covers the superblock (double-buffered CRC commit); an overwrite
-  is one crash-atomic commit; a torn *data* write of an unreferenced extent is
-  harmless because nothing points at it yet. (V0.10: space reclamation.)
+  no subdirectories, and **contiguous** files. Since V0.10 freed space is
+  reused (FS10-001): free space is recomputed from the gaps between the live
+  extents the superblock lists — no free list is stored and the on-disk format
+  is unchanged — and allocation is first-fit over those gaps. Crash
+  consistency is unchanged: the superblock is a double-buffered CRC commit, an
+  overwrite is one crash-atomic commit, and new data only ever goes to blocks
+  that NEITHER superblock slot references (the committed one or the one a
+  mount would fall back to), so a torn data write is harmless and an old
+  extent is reused only after two commits have stopped referencing it.
+  Remaining limits: **no compaction or defragmentation** — files are
+  contiguous, so a write larger than every gap is refused with `Fragmented`
+  even when enough blocks are free in total (removing or overwriting a
+  neighbour opens a gap); freed space becomes allocatable one commit late
+  (the fallback slot pins it, reported as `pinned` by `store df`), so an
+  overwrite needs a free run outside BOTH the committed and the fallback
+  copies of the file — repeatedly overwriting a file larger than about a
+  third of the free space can be refused until another commit releases the
+  pin. That is deliberate: pinning only the committed slot would already be
+  crash-safe, but a later unreadable newest superblock would then make mount
+  fall back to a directory whose data may have been overwritten, and serve
+  it silently; with both slots pinned the fallback is always intact. And a
+  handle whose superblock commit failed re-reads both slots before its next
+  transaction on a best-effort basis — if that re-read also fails, the next
+  write on the same handle trusts memory, as V0.9 did (every console and
+  syscall operation mounts afresh, so no long-lived handle crosses a failure).
 - No second block driver (AHCI/virtio-blk); the block trait is ready for one.
 - QEMU attaches only generated disposable disks; no host disk is ever touched.
 

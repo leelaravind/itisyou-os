@@ -122,7 +122,13 @@
     16 pages down, and a Ring 3 read of a kernel address refused. Two
     assertions are `--forbid`: a refusal prints no line, so the only way to
     state it is that the success marker never appeared.
-22. **Negative cases** (grown alongside subsystems): intentional panic,
+22. **ITFS space reclamation** (V0.10, `fs-reclaim-churn` + `fs-reclaim-persist`):
+    an 8 KiB disk (14 data blocks) takes 21 one-block writes through the real
+    NVMe path — more than the V0.9 bump allocator could ever place — with every
+    write succeeding; `store df` prints `[ITISYOU:FS] reclaim …` with exact
+    used/free/pinned/largest-run numbers predicted by a host test, and a second
+    boot on the same disk reads back the last revision and the same report.
+23. **Negative cases** (grown alongside subsystems): intentional panic,
     allocator exhaustion, malformed inputs, timeout classification.
 
 The harness gained `--audio`/`--audio-out` (AC97 → WAV capture, with a non-
