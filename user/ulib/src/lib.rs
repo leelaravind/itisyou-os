@@ -142,6 +142,28 @@ pub fn sleep_ticks(ticks: u64) -> u64 {
 
 pub const SYS_SVC_REPORT: u64 = 39;
 pub const SYS_CONSOLE_READ: u64 = 40;
+pub const SYS_GUI_EVENT: u64 = 41;
+
+/// Event kinds in a `gui_event` record (`kernel_core::wm`): byte 0.
+pub const GUI_EV_FOCUS_IN: u8 = 1;
+pub const GUI_EV_FOCUS_OUT: u8 = 2;
+/// Byte 1 is the key, as ASCII.
+pub const GUI_EV_KEY: u8 = 3;
+/// Bytes 2-3 and 4-5 are x and y (u16 LE) in the window's content.
+pub const GUI_EV_CLICK: u8 = 4;
+
+/// Wait for the next event on a window this process owns (Gui capability):
+/// fills the 8-byte record and returns 8, or an error (`ERR_PERM` for a
+/// window it does not own).
+pub fn gui_event(win: u64, record: &mut [u8; 8]) -> u64 {
+    loop {
+        let r = raw_syscall(SYS_GUI_EVENT, win, record.as_mut_ptr() as u64, 8);
+        // Parked until an event arrived: ask again.
+        if r != ERR_AGAIN {
+            return r;
+        }
+    }
+}
 
 /// Read one line from the console (no newline). Only the process the kernel
 /// handed the console's input to (`rsh`) may; others get `ERR_PERM`. Waits

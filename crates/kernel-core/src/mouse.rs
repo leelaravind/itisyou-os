@@ -39,6 +39,19 @@ impl Mouse {
         }
     }
 
+    /// Drop any partially received packet (V0.10): the next byte must start a
+    /// new one. The kernel calls this after initialization — the controller
+    /// can deliver a command ACK (0xFA, which happens to carry the always-1
+    /// bit) to the interrupt handler, and without a reset that byte framed the
+    /// first real packet off by one — and whenever a packet's bytes are not
+    /// back to back, which a working device never does.
+    pub fn resync(&mut self) {
+        if self.index != 0 {
+            self.resyncs += 1;
+            self.index = 0;
+        }
+    }
+
     /// Feed one byte; returns an event when a valid 3-byte packet completes.
     pub fn feed(&mut self, byte: u8) -> Option<MouseEvent> {
         if self.index == 0 {
@@ -131,6 +144,30 @@ mod tests {
         m.feed(ALWAYS_ONE);
         m.feed(1);
         assert_eq!(m.feed(1).unwrap().dx, 1);
+    }
+
+    #[test]
+    fn a_stray_ack_before_the_first_packet_is_dropped_by_resync() {
+        // What V0.9 did: an ACK (0xFA) left in the decoder framed the first
+        // real packet (flags 0x28, dx 0x28, dy 0xE7) off by one.
+        let mut stale = Mouse::new();
+        assert_eq!(stale.feed(0xFA), None);
+        assert_eq!(stale.feed(0x28), None);
+        let wrong = stale.feed(0x28).unwrap();
+        assert!(wrong.right && wrong.dx == 0 && wrong.dy == 0, "garbage");
+
+        let mut m = Mouse::new();
+        assert_eq!(m.feed(0xFA), None);
+        m.resync();
+        assert_eq!(m.resyncs, 1);
+        assert_eq!(m.feed(0x28), None);
+        assert_eq!(m.feed(0x28), None);
+        let ev = m.feed(0xE7).unwrap();
+        assert_eq!((ev.dx, ev.dy), (40, -25));
+        assert!(!ev.left && !ev.right);
+        // A resync with nothing pending changes nothing.
+        m.resync();
+        assert_eq!(m.resyncs, 1);
     }
 
     #[test]

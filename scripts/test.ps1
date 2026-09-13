@@ -109,6 +109,9 @@ Remove-Item $deskShot -ErrorAction SilentlyContinue
     '--require', '[ITISYOU:INPUT] key=h',
     '--require', '[ITISYOU:INPUT] key=o',
     '--require', '[ITISYOU:INPUT] mouse dx=',
+    # V0.10: the FIRST packet decodes to what was sent (a stray ACK used to
+    # frame it off by one), with Y screen-down like every other source.
+    '--require', 'mouse dx=40 dy=25 ', '--require', 'mouse dx=-20 dy=15 ',
     '--require', 'DESKTOP-INPUT-VERIFIED',
     '--timeout-secs', '150', '--label', 'desktop-input-bios')
 
@@ -1161,6 +1164,51 @@ Write-Output '=== QEMU Ring 3 shell with the console input (BIOS) ==='
     '--forbid', 'rsh: unknown command: echo',
     '--forbid', 'rsh: unknown command: version',
     '--timeout-secs', '180', '--label', 'rsh-bios')
+
+Write-Output '=== QEMU desktop: a Ring 3 app, click-to-focus, keys to the focused window (BIOS) ==='
+# V0.10 DESK10-001: `desktop /bin/gui-echo` puts a persistent Ring 3 app on
+# the live desktop. The cursor is parked in the corner, then moved onto
+# the app and clicked (it gets the focus and a focus-in event); `a` goes to
+# the app, not the desktop; a click on the desktop's own window moves the
+# focus back (the app gets a focus-out) and `b` stays with the desktop.
+$focusShot = Join-Path (Resolve-Path 'artifacts/qemu') 'desktop-focus.ppm'
+Remove-Item $focusShot -ErrorAction SilentlyContinue
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B210',
+    '--send', 'desktop /bin/gui-echo',
+    '--inject-after', 'GUIECHO-READY',
+    '--inject-delay-ms', '1000',
+    '--monitor-cmd', 'mouse_move -300 -200',
+    '--monitor-cmd', 'mouse_move -300 -200',
+    '--monitor-cmd', 'mouse_move -300 -200',
+    '--monitor-cmd', 'mouse_move 150 140',
+    '--monitor-cmd', 'mouse_button 1',
+    '--monitor-cmd', 'mouse_button 0',
+    '--monitor-cmd', 'sendkey a',
+    '--monitor-cmd', 'mouse_move 200 100',
+    '--monitor-cmd', 'mouse_move 200 100',
+    '--monitor-cmd', 'mouse_button 1',
+    '--monitor-cmd', 'mouse_button 0',
+    '--monitor-cmd', 'sendkey b',
+    '--monitor-cmd', "screendump $focusShot",
+    '--monitor-cmd', 'sendkey esc',
+    '--require', '[ITISYOU:MODE] desktop',
+    '--require', 'DESKTOP-APP pid=',
+    '--require', 'GUIECHO-READY win=',
+    '--require', 'DESKTOP-FOCUS win=2 owner=',
+    '--require', 'GUIECHO-FOCUS-IN',
+    '--require', 'DESKTOP-ROUTE key=a win=2',
+    '--require', 'GUIECHO-KEY a',
+    '--require', 'GUIECHO-FOCUS-OUT',
+    '--require', 'DESKTOP-FOCUS win=1 owner=0',
+    '--require', 'DESKTOP-KEY b',
+    '--require', 'DESKTOP-INPUT-VERIFIED',
+    '--forbid', 'GUIECHO-KEY b',
+    '--forbid', 'GUIECHO-EVENT-ERROR',
+    '--forbid', 'GUIECHO-FAILED',
+    '--forbid', 'DESKTOP-TIMEOUT',
+    '--forbid', 'load_failed',
+    '--timeout-secs', '150', '--label', 'desktop-focus-bios')
 
 Write-Output '=== QEMU always-on co-scheduling (BIOS) ==='
 # V0.10 SCHED10-001: background processes run in bounded slices at the

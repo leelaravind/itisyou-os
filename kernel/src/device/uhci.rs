@@ -98,6 +98,8 @@ struct Uhci {
     /// HID interrupt-IN endpoint number + max packet size, once configured.
     hid_ep: Option<(u8, u16)>,
     hid_toggle: u32,
+    /// An IN transfer is armed on the HID endpoint (V0.10).
+    hid_armed: bool,
     kind: &'static str,
 }
 
@@ -157,6 +159,7 @@ impl Driver for UhciDriver {
             address: 0,
             hid_ep: None,
             hid_toggle: 0,
+            hid_armed: false,
             kind: "usb",
         };
 
@@ -466,16 +469,46 @@ impl Uhci {
     }
 
     /// Read one HID boot report off the interrupt-IN endpoint. Returns the
-    /// bytes actually received (may be empty if the device NAKs — no input).
+    /// bytes actually received (0 while the device NAKs — no input).
+    ///
+    /// Never waits (V0.10): the first call arms one IN transfer and returns;
+    /// later calls check it. A NAK leaves the transfer active, and the
+    /// controller retries it every frame by itself, so a report is picked up
+    /// on the first call after it arrives. (Until V0.10 every call armed a
+    /// transfer and spun up to 20 ms on it with the controller lock held.)
     fn poll_hid(&mut self, out: &mut [u8]) -> usize {
         let Some((ep, mps)) = self.hid_ep else {
             return 0;
         };
-        let ls = if self.low_speed { TD_LS } else { 0 };
+        let base = self.work.virt + OFF_TD0;
         let want = (mps as usize).min(out.len());
+        if self.hid_armed {
+            let cs = unsafe { rd32_dma(base + 4) };
+            if cs & TD_ACTIVE != 0 {
+                return 0; // still NAKing: no report yet
+            }
+            self.hid_armed = false;
+            // ActLen field (bits 0-10): received length is actlen+1, or 0.
+            let actlen = cs & 0x7FF;
+            if cs & 0x007E_0000 != 0 {
+                return 0; // error → treat as no data
+            }
+            let got = if actlen == 0x7FF {
+                0
+            } else {
+                (actlen as usize + 1).min(want)
+            };
+            if got > 0 {
+                self.hid_toggle ^= 1;
+                for (i, b) in out.iter_mut().enumerate().take(got) {
+                    *b = unsafe { rd8_dma(self.work.virt + OFF_DATA + i as u64) };
+                }
+            }
+            return got;
+        }
+        let ls = if self.low_speed { TD_LS } else { 0 };
         // Single IN TD on the interrupt endpoint, current toggle, no retries
         // (NAK just means "no report waiting" — don't spin on it).
-        let base = self.work.virt + OFF_TD0;
         let maxlen = if want == 0 {
             0x7FF
         } else {
@@ -496,38 +529,7 @@ impl Uhci {
                 (self.work.phys + OFF_TD0) as u32,
             );
         }
-        // Poll briefly; a boot report either arrives or the TD NAKs/inactivates.
-        // Bounded in real time so a loaded host cannot silently shorten the
-        // window to nothing (and so a wedged controller cannot stall the
-        // desktop loop).
-        let mut deadline = crate::interrupts::Deadline::after_ms(20);
-        loop {
-            let cs = unsafe { rd32_dma(base + 4) };
-            if cs & TD_ACTIVE == 0 {
-                // ActLen field (bits 0-10): received length is actlen+1, or 0.
-                let actlen = cs & 0x7FF;
-                if cs & 0x007E_0000 != 0 {
-                    return 0; // error → treat as no data
-                }
-                let got = if actlen == 0x7FF {
-                    0
-                } else {
-                    (actlen as usize + 1).min(want)
-                };
-                if got > 0 {
-                    self.hid_toggle ^= 1;
-                    for (i, b) in out.iter_mut().enumerate().take(got) {
-                        *b = unsafe { rd8_dma(self.work.virt + OFF_DATA + i as u64) };
-                    }
-                }
-                return got;
-            }
-            if !deadline.pending() {
-                break;
-            }
-        }
-        // Still active → cancel by clearing active; no data this poll.
-        unsafe { wr32_dma(base + 4, 0) };
+        self.hid_armed = true;
         0
     }
 }
