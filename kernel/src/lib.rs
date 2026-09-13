@@ -142,6 +142,9 @@ pub fn init_subsystems(boot_info: &'static mut BootInfo) {
     // With our own descriptors live, the bootloader's low identity mappings
     // are dead — unlink them so L4 entry 0 belongs to processes alone.
     memory::paging::release_boot_identity_mappings();
+    // Only now can an overflow of the static kernel stacks be caught: the
+    // double-fault IST is live, so the guard pages can be unmapped.
+    gdt::arm_stack_guards();
     bootstage::emit(Stage::B080DescriptorsReady);
 
     // B090: PIC remap + PIT timer + interrupts on.

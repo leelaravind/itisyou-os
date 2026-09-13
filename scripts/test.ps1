@@ -784,6 +784,25 @@ Write-Output '=== QEMU intentional panic (BIOS) ==='
     '--require', 'intentional panic-test',
     '--timeout-secs', '60', '--label', 'panic-test-bios')
 
+Write-Output '=== QEMU kernel stack guard: overflow is caught, not silent (BIOS) ==='
+# V0.9: both static kernel stacks (RSP0 for syscalls/interrupts, and the
+# double-fault IST) have an unmapped guard page. The console deliberately
+# overflows the RSP0 stack; the guard must turn that into a double fault that
+# names the stack — the first TCP integration showed that without it an
+# overflow silently corrupted the capability table.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B080', '--expect', 'B200',
+    '--send', 'panic-test stack-overflow',
+    '--expect-panic',
+    '--require', 'stack_guard stack=priv',
+    '--require', 'stack_guard stack=ist_double_fault',
+    '--require', 'armed=true unmapped=true',
+    '--require', 'kernel_stack_overflow stack=priv',
+    '--require', 'guard_hit=true',
+    '--require', 'kernel stack overflow: stack=priv hit its guard page',
+    '--forbid', 'armed=false',
+    '--timeout-secs', '90', '--label', 'stack-guard-bios')
+
 Write-Output '=== QEMU filesystem reboot persistence (UEFI, two boots) ==='
 # Two separate QEMU guests share one disposable persistent disk: boot 1
 # formats ITFS + writes /hello, boot 2 (fresh guest) mounts + verifies it —

@@ -108,4 +108,7 @@ initiates traffic on its own.
   floor for revocation lists.
 - **Kernel stack exhaustion**: V0.9 demonstrated that an overflow of a kernel
   stack corrupts adjacent kernel data silently (it hit the capability table).
-  The trigger was removed; guard pages for kernel stacks remain future work.
+  The trigger was removed, and the RSP0 and double-fault stacks now have
+  unmapped guard pages, verified by a deliberate overflow that ends in a
+  reported double fault (HARD09-001). Residual risk: heap-allocated kernel
+  task stacks have no guard page.

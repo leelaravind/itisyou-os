@@ -1139,10 +1139,45 @@ fn cmd_lsdev() {
 }
 
 fn cmd_panic_test(args: &[&str]) {
-    if args.first() == Some(&"confirm") {
-        panic!("panic-test invoked from shell");
+    match args.first() {
+        Some(&"confirm") => panic!("panic-test invoked from shell"),
+        Some(&"stack-overflow") => overflow_priv_stack(),
+        _ => crate::serial_println!(
+            "panic-test: 'confirm' panics; 'stack-overflow' overflows the syscall stack into its guard page"
+        ),
     }
-    crate::serial_println!("panic-test: pass 'confirm' to trigger a real kernel panic");
+}
+
+/// Deliberately overflow the RSP0 (syscall) stack to prove its guard page
+/// (V0.9). Switches onto that stack and recurses until it runs out; the guard
+/// must turn the overflow into a reported double fault rather than silent
+/// corruption. Never returns — the machine is meant to stop.
+fn overflow_priv_stack() -> ! {
+    let top = crate::gdt::priv_stack_top().as_u64();
+    crate::serial_println!("panic-test: overflowing the syscall stack (top={top:#x})");
+    // SAFETY: test-only and terminal. The RSP0 stack is idle (the console is
+    // not inside a syscall), `top` is its 16-byte-aligned end, and `call`
+    // leaves the ABI's entry alignment. Nothing returns from here.
+    unsafe {
+        core::arch::asm!(
+            "mov rsp, {top}",
+            "call {f}",
+            "ud2",
+            top = in(reg) top,
+            f = sym recurse_until_guard,
+            options(noreturn)
+        );
+    }
+}
+
+/// Recursion that cannot be turned into a loop: each frame keeps a local the
+/// optimizer must materialize, and the result is used after the call.
+#[allow(unconditional_recursion)]
+extern "C" fn recurse_until_guard(depth: u64) -> u64 {
+    let mut pad = [0u8; 256];
+    pad[(depth % 256) as usize] = depth as u8;
+    core::hint::black_box(&mut pad);
+    recurse_until_guard(depth + 1).wrapping_add(pad[0] as u64)
 }
 
 /// ACPI S5 (soft off) through the FADT's PM1 control block (V0.9). Unlike
