@@ -2,10 +2,10 @@
 //! inside QEMU. Each check emits a `[ITISYOU:TEST]` event; the harness
 //! requires `fail=0` plus a clean QEMU exit.
 
+use crate::sync::Mutex;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicUsize, Ordering};
-use spin::Mutex;
 use x86_64::structures::paging::{Page, PageTableFlags};
 use x86_64::VirtAddr;
 
@@ -40,6 +40,21 @@ impl Default for Suite {
 
 /// Run every in-kernel selftest. Requires all subsystems initialized.
 pub fn run_all(suite: &mut Suite) {
+    // V0.10 (SYNC10-001): no counted lock is held between tests, so a
+    // scheduling safe point here would be allowed to slice.
+    suite.check("sync_depth_zero_at_rest", crate::sync::depth() == 0);
+    // V0.10 (TASK10-001): a process created before any kernel task exists
+    // must already share the task-stack window with the kernel.
+    let window_shared = match crate::memory::aspace::AddressSpace::new() {
+        Ok(space) => {
+            let ok = space.shares_kernel_l4_entry(crate::task::stack::l4_index());
+            space.teardown();
+            ok
+        }
+        Err(_) => false,
+    };
+    suite.check("task_window_in_process_space", window_shared);
+    sync_tests(suite);
     pmm_tests(suite);
     paging_tests(suite);
     heap_tests(suite);
@@ -53,6 +68,33 @@ pub fn run_all(suite: &mut Suite) {
     device_tests(suite);
     security_tests(suite);
     capability_handle_tests(suite);
+    suite.check("sync_depth_zero_at_end", crate::sync::depth() == 0);
+}
+
+/// V0.10 (SYNC10-001): the lock count follows nesting and returns to zero.
+fn sync_tests(suite: &mut Suite) {
+    static A: crate::sync::Mutex<u8> = crate::sync::Mutex::new(0);
+    static B: crate::sync::Mutex<u8> = crate::sync::Mutex::new(0);
+    let base = crate::sync::depth();
+    let ok = {
+        let _a = A.lock();
+        let one = crate::sync::depth() == base + 1;
+        let two = {
+            let _b = B.lock();
+            crate::sync::depth() == base + 2
+        };
+        one && two && crate::sync::depth() == base + 1
+    };
+    suite.check("sync_nested_balance", ok && crate::sync::depth() == base);
+    // try_lock on a held lock fails without changing the count.
+    let held = A.lock();
+    let before = crate::sync::depth();
+    let refused = A.try_lock().is_none() && crate::sync::depth() == before;
+    drop(held);
+    suite.check(
+        "sync_try_lock_counts",
+        refused && crate::sync::depth() == base,
+    );
 }
 
 /// V0.8: the capability-handle table as the LIVE enforcement path, exercised

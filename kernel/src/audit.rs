@@ -10,10 +10,10 @@
 //! capability check → service path, so they inherit this provenance trail
 //! automatically (intelligence ≠ authority; see ADR-0012).
 
+use crate::sync::Mutex;
 use alloc::collections::VecDeque;
 use alloc::string::String;
 use core::sync::atomic::{AtomicU64, Ordering};
-use spin::Mutex;
 
 /// One audit record.
 #[derive(Debug, Clone)]

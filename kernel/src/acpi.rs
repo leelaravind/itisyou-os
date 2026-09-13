@@ -16,8 +16,8 @@
 
 use crate::memory::paging;
 use crate::serial_println;
+use crate::sync::Mutex;
 use kernel_core::acpi::{self, Fadt, Madt, Rsdp, SleepType};
-use spin::Mutex;
 use x86_64::instructions::port::Port;
 use x86_64::VirtAddr;
 

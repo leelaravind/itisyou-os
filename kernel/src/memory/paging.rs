@@ -4,7 +4,7 @@
 //! owns the active level-4 table through `OffsetPageTable` and enforces the
 //! kernel mapping policy: no writable+executable pages, explicit flushes.
 
-use spin::Mutex;
+use crate::sync::Mutex;
 use x86_64::registers::control::Cr3;
 use x86_64::structures::paging::mapper::{
     FlagUpdateError, MapToError, TranslateResult, UnmapError,

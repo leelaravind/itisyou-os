@@ -19,11 +19,11 @@
 //! exercised against a real peer without a lossy link.
 
 use super::{try_send_ipv4, IFACE, MAX_FRAME};
+use crate::sync::Mutex;
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use kernel_core::net::eth;
 use kernel_core::net::ipv4::{self, Ipv4Addr};
 use kernel_core::net::tcp::{self, Event, Outbox, State, Tcb};
-use spin::Mutex;
 
 /// Connection slots; a descriptor is an index into this table.
 pub const MAX_CONNS: usize = 8;

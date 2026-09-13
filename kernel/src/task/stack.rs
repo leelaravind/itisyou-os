@@ -53,6 +53,35 @@ pub fn map(id: usize) -> Result<u64, StackError> {
     Ok(base + SLOT)
 }
 
+/// Create the window's upper page tables NOW, at boot, before any process
+/// exists (V0.10, TASK10-001).
+///
+/// Every process address space copies the kernel's top-level (L4) entries
+/// when it is created. Until V0.10 the window's L4 entry appeared only with
+/// the first `task::spawn`, so a process created earlier lacked it, and a
+/// task switch while that process's page tables were active would fault on
+/// its own stack. Mapping and unmapping one page builds the shared tables
+/// through the ordinary mapper; the L4 entry then exists before anything can
+/// copy the L4. The frame used for the probe page is returned to the pool.
+pub fn init() -> Result<(), StackError> {
+    let page = Page::<Size4KiB>::containing_address(VirtAddr::new(WINDOW));
+    let frame = crate::memory::alloc_frame().map_err(|_| StackError::NoMemory)?;
+    let flags = PageTableFlags::WRITABLE | PageTableFlags::NO_EXECUTE;
+    paging::map_page(page, frame, flags).map_err(StackError::Map)?;
+    let back = paging::unmap_page(page).map_err(StackError::Map)?;
+    let _ = crate::memory::free_frame(back);
+    crate::serial_println!(
+        "[ITISYOU:HARDEN] task_stack_window l4_index={} shared_before_processes=true",
+        (WINDOW >> 39) & 0x1FF
+    );
+    Ok(())
+}
+
+/// The window's top-level (L4) index.
+pub const fn l4_index() -> usize {
+    ((WINDOW >> 39) & 0x1FF) as usize
+}
+
 /// The task whose guard page contains `addr`, if any.
 pub fn guard_hit(addr: u64) -> Option<usize> {
     let end = WINDOW + MAX_TASKS as u64 * SLOT;

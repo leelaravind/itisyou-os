@@ -24,8 +24,8 @@ use super::{Device, Driver, DriverError};
 use crate::memory;
 use crate::memory::paging;
 use crate::serial_println;
+use crate::sync::Mutex;
 use kernel_core::net::eth::MacAddr;
-use spin::Mutex;
 use x86_64::structures::paging::PhysFrame;
 
 /// 82540EM — the default `-device e1000` model.

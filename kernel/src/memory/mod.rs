@@ -5,10 +5,10 @@ pub mod aspace;
 pub mod heap;
 pub mod paging;
 
+use crate::sync::Mutex;
 use bootloader_api::info::{MemoryRegionKind, MemoryRegions};
 use kernel_core::bitmap::{FrameBitmap, FrameError};
 use kernel_core::memmap::{self, MemMapStats, RawRegion, RegionKind, FRAME_SIZE};
-use spin::Mutex;
 use x86_64::structures::paging::{FrameAllocator, PhysFrame, Size4KiB};
 use x86_64::PhysAddr;
 

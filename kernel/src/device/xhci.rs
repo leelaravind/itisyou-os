@@ -24,8 +24,8 @@ use super::{Device, Driver, DriverError};
 use crate::memory;
 use crate::memory::paging;
 use crate::serial_println;
+use crate::sync::Mutex;
 use kernel_core::pci::Bar;
-use spin::Mutex;
 use x86_64::structures::paging::PhysFrame;
 
 // --- capability registers (offset 0 of BAR0) --------------------------------

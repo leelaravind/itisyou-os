@@ -5,12 +5,12 @@
 //! the strictly-validating reader in `kernel_core::tar`; paths go through
 //! `kernel_core::path` so traversal cannot escape the root (plan §10.9).
 
+use crate::sync::Mutex;
 use alloc::borrow::ToOwned;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 use kernel_core::{path as kpath, tar};
-use spin::Mutex;
 
 static INITRAMFS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/initramfs.tar"));
 

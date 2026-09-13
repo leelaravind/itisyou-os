@@ -10,10 +10,10 @@
 //! it sends no IPv6 traffic at all.
 
 use super::{mac, poll, tx_frame};
+use crate::sync::Mutex;
 use kernel_core::net::eth::{EtherType, MacAddr};
 use kernel_core::net::icmp::EchoKind;
 use kernel_core::net::ipv6::{self as v6, Icmpv6Message, Ipv6Addr, NeighborAdvert};
-use spin::Mutex;
 
 const NEIGHBORS: usize = 8;
 const MAX_PACKET: usize = super::MAX_FRAME - 14;

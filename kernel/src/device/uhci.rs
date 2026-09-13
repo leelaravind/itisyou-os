@@ -15,8 +15,8 @@
 use crate::device::{pci, Device, Driver, DriverError};
 use crate::memory::{self, paging};
 use crate::serial_println;
+use crate::sync::Mutex;
 use kernel_core::usb::{self, DeviceDescriptor};
-use spin::Mutex;
 use x86_64::instructions::port::Port;
 use x86_64::structures::paging::PhysFrame;
 

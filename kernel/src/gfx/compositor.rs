@@ -7,10 +7,10 @@
 //! bounds, so one process can never draw into another's window or outside it.
 
 use crate::gfx;
+use crate::sync::Mutex;
 use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
-use spin::Mutex;
 
 pub const TITLE_BAR_H: usize = 12;
 pub const TOP_BAR_H: usize = 16;

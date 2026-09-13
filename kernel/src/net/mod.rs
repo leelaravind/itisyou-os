@@ -26,8 +26,8 @@ pub mod socket;
 pub mod tcp;
 
 use crate::device::e1000;
+use crate::sync::Mutex;
 use kernel_core::net::{arp, eth, icmp, ipv4, udp};
-use spin::Mutex;
 
 use eth::MacAddr;
 use ipv4::Ipv4Addr;

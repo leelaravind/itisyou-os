@@ -10,8 +10,8 @@
 //! process cannot read another's datagrams even if it guesses the descriptor
 //! number, and every socket a process holds is closed when it dies.
 
+use crate::sync::Mutex;
 use kernel_core::net::ipv4::Ipv4Addr;
-use spin::Mutex;
 
 /// Concurrently bound ports. Small on purpose: this is a system stack, not a
 /// server, and an unbounded table would be another remote-influenced

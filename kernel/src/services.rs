@@ -9,11 +9,11 @@
 //! `[ITISYOU:SVC]` marker per state transition — the machine-readable
 //! service diagnostics the tests assert on.
 
+use crate::sync::Mutex;
 use crate::{proc, user};
 use alloc::vec::Vec;
 use kernel_core::caps::{CAP_IPC, CAP_SPAWN};
 use kernel_core::service::{self, on_exit, startup_order, ServiceState};
-use spin::Mutex;
 
 /// A declared system service.
 pub struct ServiceDef {
