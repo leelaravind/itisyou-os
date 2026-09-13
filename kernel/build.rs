@@ -57,12 +57,18 @@ fn main() {
         "burn",
         "uaccess-probe",
         "proc-probe",
+        "sysinit",
     ] {
         println!(
             "cargo::rerun-if-changed={}",
             workspace.join("user").join(dir).display()
         );
     }
+    // /sbin/init links kernel-core (the config grammar and restart policy).
+    println!(
+        "cargo::rerun-if-changed={}",
+        workspace.join("crates").join("kernel-core").display()
+    );
 
     let mut entries: Vec<(String, Vec<u8>, bool)> = Vec::new();
     collect(&root, "", &mut entries);
@@ -174,6 +180,8 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
             "user-uaccess-probe",
             "-p",
             "user-proc-probe",
+            "-p",
+            "user-sysinit",
         ])
         .arg("--target-dir")
         .arg(&target_dir)
@@ -235,8 +243,10 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
         ("user-burn", "bin/burn"),
         ("user-uaccess-probe", "bin/uaccess-probe"),
         ("user-proc-probe", "bin/proc-probe"),
+        ("user-sysinit", "sbin/init"),
     ];
     entries.push(("bin/".to_string(), Vec::new(), true));
+    entries.push(("sbin/".to_string(), Vec::new(), true));
     for (artifact, dest) in programs {
         let bytes = fs::read(bin_dir.join(artifact))
             .unwrap_or_else(|e| panic!("reading user ELF {artifact}: {e}"));
