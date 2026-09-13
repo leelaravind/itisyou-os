@@ -43,15 +43,19 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
   `audit save/verify`). A background process's effective quantum is 10–20 ms
   of Ring 3 time; syscall time is not charged to it. There is **no userspace
   `init`** yet — the console is still a kernel component.
-- Process model: spawn/wait/exit with a single blocking waiter per child; no
-  fork/exec, no process groups, no signals. Program arguments (V0.10) are
+- Process model (V0.10): spawn, wait and a non-blocking `wait_nohang`, only by
+  the parent; `sleep`; orphans reaped automatically (no adopter until
+  `/sbin/init` runs); the console's `ps` and `kill`. No fork/exec, no process
+  groups, no signals — `kill` is the console's alone and cannot be caught.
+  Program arguments (V0.10) are
   bounded and deliberately narrow: at most 16 arguments and 512 bytes, each
   argument printable ASCII without spaces (no quoting, no UTF-8, no empty
   arguments); no environment variables. From the console a line is still
   capped at 256 bytes and 24 tokens, so the 512-byte limit is reachable only
   through `spawn_args`. Pre-existing and unchanged: a program under the
   console's foreground `run` is not in the process table, so its `wait`
-  returns 0 at once (the blocked program is simply resumed); since V0.10 a
+  returns 0 at once and its `sleep` ends at once (the blocked program is
+  simply resumed); since V0.10 a
   child it spawns runs in the background slices meanwhile, but a program that
   spawns and waits must still be started with `bg`, which is what the
   `args-bios` leg does.

@@ -56,6 +56,7 @@ fn main() {
         "line-probe",
         "burn",
         "uaccess-probe",
+        "proc-probe",
     ] {
         println!(
             "cargo::rerun-if-changed={}",
@@ -171,6 +172,8 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
             "user-burn",
             "-p",
             "user-uaccess-probe",
+            "-p",
+            "user-proc-probe",
         ])
         .arg("--target-dir")
         .arg(&target_dir)
@@ -231,6 +234,7 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
         ("user-line-probe", "bin/line-probe"),
         ("user-burn", "bin/burn"),
         ("user-uaccess-probe", "bin/uaccess-probe"),
+        ("user-proc-probe", "bin/proc-probe"),
     ];
     entries.push(("bin/".to_string(), Vec::new(), true));
     for (artifact, dest) in programs {

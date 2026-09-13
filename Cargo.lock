@@ -745,6 +745,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "user-proc-probe"
+version = "0.10.0-dev"
+dependencies = [
+ "ulib",
+]
+
+[[package]]
 name = "user-sandbox-probe"
 version = "0.10.0-dev"
 dependencies = [

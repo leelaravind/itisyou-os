@@ -41,6 +41,7 @@ members = [
     "user/flags-probe",
     "user/line-probe",
     "user/burn",
+    "user/proc-probe",
     "user/uaccess-probe",
 ]
 # The kernel must NEVER share a cargo invocation with host packages: cargo

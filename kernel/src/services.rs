@@ -182,7 +182,7 @@ fn supervise_background() {
         let pid = bg.pids[idx];
         let died = match proc::state_of(pid) {
             Some(proc::ProcState::Exited(code)) => Some(code == 0),
-            Some(proc::ProcState::Faulted { .. }) => Some(false),
+            Some(proc::ProcState::Faulted { .. }) | Some(proc::ProcState::Killed) => Some(false),
             // Still runnable/blocked, or the slot is gone (already reaped).
             Some(_) => None,
             None => Some(false),
@@ -374,7 +374,7 @@ pub fn run_supervised(max_ticks: u64) -> Result<RunReport, service::OrderError> 
                         _ => {}
                     }
                 }
-                Some(proc::ProcState::Faulted { .. }) => {
+                Some(proc::ProcState::Faulted { .. }) | Some(proc::ProcState::Killed) => {
                     proc::reap(pids[idx]);
                     let next = on_exit(false, restarts[idx]);
                     match next {

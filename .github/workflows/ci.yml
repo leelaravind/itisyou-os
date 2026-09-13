@@ -409,6 +409,40 @@ jobs:
             --forbid "UACCESS-FAILED" \
             --timeout-secs 120 --label uaccess-bios
 
+      - name: QEMU process model (BIOS)
+        run: |
+          cargo run -q -p qemu-runner -- \
+            --image target/images/itisyou-kernel-bios.img --expect B210 \
+            --send "bg /bin/proc-probe spawn -- all" \
+            --send "busy 500" \
+            --send "ps" \
+            --send "kill 999" \
+            --send "shutdown" \
+            --require "PROCPROBE-FOREIGN-WAIT-REFUSED pid=" \
+            --require "PROCPROBE-FOREIGN-NOHANG-REFUSED pid=" \
+            --require "PROCPROBE-SIBLING-REFUSED-OK" \
+            --require "action=wait_foreign cap=0x1 result=denied" \
+            --require "PROCPROBE-NOCHILD-OK" \
+            --require "PROCPROBE-NOHANG-AGAIN-OK" \
+            --require "PROCPROBE-NOHANG-REAPED status=7" \
+            --require "PROCPROBE-ANY-REAPED status=7" \
+            --require "PROCPROBE-SLEEP-OK requested=50" \
+            --require "PROCPROBE-SLEEP-BOUND-OK" \
+            --require "PROCPROBE-ORPHAN-SPAWNED" \
+            --require "PROCPROBE-OK" \
+            --require "bg: /bin/proc-probe: exit=0" \
+            --require "[ITISYOU:PROC] reparent child=" \
+            --require "to=orphan" \
+            --require "PROCPROBE-ORPHAN-CHILD-DONE" \
+            --require "path=/bin/tickd state=runnable" \
+            --require "ps: processes=" \
+            --require "kill: pid=999: no such process" \
+            --require "shutting down (QEMU exit)" \
+            --forbid "PROCPROBE-FAILED" \
+            --forbid "PROCPROBE-SLEEP-SHORT" \
+            --forbid "path=/bin/proc-probe" \
+            --timeout-secs 180 --label proc-model-bios
+
       - name: QEMU always-on co-scheduling (BIOS)
         run: |
           cargo run -q -p qemu-runner -- \

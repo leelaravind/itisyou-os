@@ -143,6 +143,9 @@ pub struct Process {
     /// Program arguments (V0.10): immutable for the life of the process and
     /// validated when it was built — see [`Args`].
     pub args: Args,
+    /// What it runs, for `ps` (V0.10): the VFS path, `pkg:<app>` for an
+    /// installed app, empty for a selftest image loaded from bytes.
+    pub path: alloc::string::String,
 }
 
 /// A process's argument block (V0.10, `kernel_core::progargs` encoding).
@@ -219,6 +222,7 @@ pub fn load_with(
     let bytes = crate::fs::read(path).map_err(LoadError::File)?;
     let mut process = load_from_bytes(bytes)?;
     process.set_authority(caps, fs_prefixes);
+    process.path = alloc::string::String::from(path);
     Ok(process)
 }
 
@@ -239,6 +243,7 @@ pub fn load_from_bytes(bytes: &[u8]) -> Result<Process, LoadError> {
         handles: [kernel_core::capability::CapabilityHandle::INVALID;
             crate::capability::HANDLE_SLOTS],
         args: Args::empty(),
+        path: alloc::string::String::new(),
     };
 
     let result = (|| {
@@ -419,6 +424,9 @@ pub fn run(mut process: Process) -> UserExit {
     // The one exit cleanup every path uses (V0.10; V0.9 found this path
     // had skipped the network release).
     crate::proc::release_owned(process.pid);
+    // Children it spawned are in the table; they must not keep a parent that
+    // no longer exists (V0.10).
+    crate::proc::orphan_children_of(process.pid);
     process.space.teardown();
     terminal
 }
