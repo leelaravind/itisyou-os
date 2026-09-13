@@ -1,6 +1,6 @@
 # Session checkpoint — resumable state
 
-**Timestamp:** 2026-09-13 14:20 Europe/London (session 4, wind-up)
+**Timestamp:** 2026-09-13 14:37 Europe/London (session 4, wind-up)
 **Repository:** `E:\Project\itisyou-os` · branch `main` · remote
 https://github.com/leelaravind/itisyou-os (private)
 **Tags:** `v0.1.0` … `v0.8.1` (all on green-CI commits). No `v0.9.0` yet.
@@ -50,7 +50,8 @@ https://github.com/leelaravind/itisyou-os (private)
   two agents in isolated worktrees and merged with `main`. Gate on the first
   integration commit `4ceaa4c`: VERIFY OK, 39/39 legs, 385 host tests. The
   branch tip `b5cc23d` (adds `main`'s later commits and the agent's zero-length
-  fix): VERIFY OK, 39/39 legs, 385 host tests.
+  fix): VERIFY OK, 39/39 legs, 385 host tests. Then guard pages for kernel
+  TASK stacks (HARD10-001, `e12329b`, the branch tip): VERIFY OK, 40/40 legs.
 - **Keys:** root and release-signer private keys (KEY09-001) are in
   `E:\secrets\itisyou-os\` (`root.seed`, `release-signer.seed`), generated
   with the OS CSPRNG, OUTSIDE the repository, never committed. The owner
@@ -70,7 +71,8 @@ https://github.com/leelaravind/itisyou-os (private)
 | `7367b89` | VERIFY OK, 36/36, 366 host tests |
 | `08d836c` (main, final) | VERIFY OK, 36/36, 366 host tests |
 | `4ceaa4c` (v0.10/integration) | VERIFY OK, 39/39, 385 host tests |
-| `b5cc23d` (v0.10/integration tip) | VERIFY OK, 39/39, 385 host tests |
+| `b5cc23d` (v0.10/integration) | VERIFY OK, 39/39, 385 host tests |
+| `e12329b` (v0.10/integration tip) | VERIFY OK, 40/40, 385 host tests |
 
 ## Next actions, in order
 
