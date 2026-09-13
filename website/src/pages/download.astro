@@ -131,6 +131,9 @@ const description = published
               </div>
               <p class="mt-4 text-sm text-meta-bright">
                 The digest must equal the one above, character for character. Anything else is not the released image.
+                Verify <strong>before</strong> booting: without a writable variable store, UEFI firmware writes an
+                <code>NvVars</code> file into the image's EFI partition on every boot, so a booted copy no longer matches.
+                The <code>snapshot=on</code> in the commands below keeps the downloaded file unchanged.
               </p>
             </div>
             <div class="panel p-gutter">
@@ -150,13 +153,15 @@ const description = published
               <p class="text-muted">// UEFI (needs OVMF firmware; path varies by distribution)</p>
               <p>qemu-system-x86_64 -m 256M -cpu qemu64,+smep,+smap,+umip \</p>
               <p>&nbsp;&nbsp;-drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \</p>
-              <p>&nbsp;&nbsp;-drive format=raw,file={uefi?.file ?? 'itisyou-os-uefi.img'} -serial mon:stdio</p>
+              <p>&nbsp;&nbsp;-drive format=raw,file={uefi?.file ?? 'itisyou-os-uefi.img'},snapshot=on -serial mon:stdio</p>
               <p class="text-muted mt-3">// BIOS (SeaBIOS, QEMU's default firmware)</p>
               <p>qemu-system-x86_64 -m 256M -cpu qemu64,+smep,+smap,+umip \</p>
-              <p>&nbsp;&nbsp;-drive format=raw,file={bios?.file ?? 'itisyou-os-bios.img'} -serial mon:stdio</p>
+              <p>&nbsp;&nbsp;-drive format=raw,file={bios?.file ?? 'itisyou-os-bios.img'},snapshot=on -serial mon:stdio</p>
               <p class="text-muted mt-3">// optional: persistent /data store (a blank 16 MiB disk, formatted on first write)</p>
               <p>qemu-img create -f raw data.img 16M</p>
               <p>&nbsp;&nbsp;... -drive file=data.img,if=none,format=raw,id=nvme0 -device nvme,serial=itisyou1,drive=nvme0</p>
+              <p class="text-muted mt-3">// optional: let the console's `shutdown` command exit QEMU</p>
+              <p>&nbsp;&nbsp;... -device isa-debug-exit,iobase=0xf4,iosize=0x04</p>
               <p class="text-muted mt-3">// optional: network (static 10.0.2.15; no TCP, no DHCP yet)</p>
               <p>&nbsp;&nbsp;... -netdev user,id=net0 -device e1000,netdev=net0</p>
             </div>

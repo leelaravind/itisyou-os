@@ -422,8 +422,14 @@ fn build_command(
     net_ports: Option<(u16, u16)>,
 ) -> Command {
     let mut cmd = Command::new(&opts.qemu);
+    // `snapshot=on`: guest writes to the boot disk go to a temporary overlay.
+    // OVMF, lacking a persistent variable store, writes an `NvVars` file into
+    // the image's EFI partition on every boot — so without this a test run
+    // silently changed the image it was testing (observed 2026-09-13: a
+    // booted release image no longer matched its published SHA-256).
+    // Persistent state belongs on the separate NVMe disks, never here.
     cmd.arg("-drive")
-        .arg(format!("format=raw,file={}", opts.image.display()))
+        .arg(format!("format=raw,file={},snapshot=on", opts.image.display()))
         .arg("-serial")
         .arg(format!("tcp:127.0.0.1:{serial_port},nodelay"))
         // The default `qemu64` model advertises neither SMEP nor SMAP, so the
