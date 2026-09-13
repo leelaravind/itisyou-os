@@ -1211,7 +1211,7 @@ fn cmd_panic_test(args: &[&str]) {
         Some(&"confirm") => panic!("panic-test invoked from shell"),
         Some(&"stack-overflow") => overflow_priv_stack(),
         _ => crate::serial_println!(
-            "panic-test: 'confirm' panics; 'stack-overflow' overflows the syscall stack into its guard page"
+            "panic-test: pass 'confirm' to trigger a real kernel panic, or 'stack-overflow' to overflow the syscall stack into its guard page"
         ),
     }
 }

@@ -28,7 +28,9 @@ pub fn free_port() -> std::io::Result<u16> {
 #[derive(Default)]
 struct Tally {
     attempts: u32,
-    echo_ok: bool,
+    /// Listeners served successfully, and whether every one of them was.
+    exchanges: u32,
+    all_ok: bool,
     bytes: usize,
 }
 
@@ -37,32 +39,40 @@ pub struct TcpClient {
 }
 
 impl TcpClient {
-    /// Connect to `127.0.0.1:host_port` once `go` fires, retrying a few
-    /// times (slirp accepts on the host side before the guest has answered,
-    /// so an early attempt can be refused by the guest after the fact).
+    /// Connect to `127.0.0.1:host_port` each time `go` fires (once per guest
+    /// listener), retrying a few times (slirp accepts on the host side before
+    /// the guest has answered, so an early attempt can be refused by the
+    /// guest after the fact).
     pub fn start(host_port: u16, go: mpsc::Receiver<()>, tx: mpsc::Sender<String>) -> TcpClient {
-        let tally = Arc::new(Mutex::new(Tally::default()));
+        let tally = Arc::new(Mutex::new(Tally {
+            all_ok: true,
+            ..Tally::default()
+        }));
         let shared = Arc::clone(&tally);
         thread::spawn(move || {
-            if go.recv_timeout(Duration::from_secs(600)).is_err() {
-                return;
-            }
-            for attempt in 1..=ATTEMPTS {
-                shared.lock().unwrap().attempts = attempt;
-                match exchange(host_port) {
-                    Ok(n) => {
-                        let mut t = shared.lock().unwrap();
-                        t.echo_ok = true;
-                        t.bytes = n;
-                        let _ = tx.send(format!(
-                            "[HOST:TCPC] echo_ok attempt={attempt} bytes={n} pattern_ok=true"
-                        ));
-                        return;
+            while go.recv_timeout(Duration::from_secs(600)).is_ok() {
+                let mut ok = false;
+                for attempt in 1..=ATTEMPTS {
+                    shared.lock().unwrap().attempts += 1;
+                    match exchange(host_port) {
+                        Ok(n) => {
+                            let mut t = shared.lock().unwrap();
+                            t.exchanges += 1;
+                            t.bytes += n;
+                            let _ = tx.send(format!(
+                                "[HOST:TCPC] echo_ok attempt={attempt} bytes={n} pattern_ok=true"
+                            ));
+                            ok = true;
+                            break;
+                        }
+                        Err(e) => {
+                            let _ = tx.send(format!("[HOST:TCPC] attempt={attempt} failed={e}"));
+                            thread::sleep(Duration::from_millis(500));
+                        }
                     }
-                    Err(e) => {
-                        let _ = tx.send(format!("[HOST:TCPC] attempt={attempt} failed={e}"));
-                        thread::sleep(Duration::from_millis(500));
-                    }
+                }
+                if !ok {
+                    shared.lock().unwrap().all_ok = false;
                 }
             }
         });
@@ -73,8 +83,11 @@ impl TcpClient {
     pub fn summary(&self) -> String {
         let t = self.tally.lock().unwrap();
         format!(
-            "[HOST:TCPC] summary attempts={} echo_ok={} bytes={}",
-            t.attempts, t.echo_ok, t.bytes
+            "[HOST:TCPC] summary exchanges={} attempts={} echo_ok={} bytes={}",
+            t.exchanges,
+            t.attempts,
+            t.all_ok && t.exchanges > 0,
+            t.bytes
         )
     }
 }
@@ -123,6 +136,8 @@ mod tests {
             line.contains("echo_ok attempt=1 bytes=2500 pattern_ok=true"),
             "{line}"
         );
-        assert!(client.summary().contains("echo_ok=true bytes=2500"));
+        assert!(client
+            .summary()
+            .contains("exchanges=1 attempts=1 echo_ok=true bytes=2500"));
     }
 }

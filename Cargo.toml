@@ -30,6 +30,7 @@ members = [
     "user/net-probe",
     "user/net-denied",
     "user/tcp-probe",
+    "user/tcp-server-probe",
     "user/fs-writer",
     "user/fs-write-denied",
     "user/fs-user-persist",

@@ -745,7 +745,7 @@ fn run(opts: &Options) -> RunResult {
         None
     };
     let echo_port = tcp_echo.as_ref().map(|e| e.port.to_string());
-    let (mut client_go, tcp_client) = match opts.tcp_client_forward {
+    let (client_go, tcp_client) = match opts.tcp_client_forward {
         Some((host, guest)) => {
             let (go_tx, go_rx) = mpsc::channel();
             let _ = net_tx.send(format!(
@@ -985,7 +985,7 @@ fn run(opts: &Options) -> RunResult {
                 }
                 // Release the host TCP client once the guest is listening.
                 if line.contains("TCPSERVE-LISTENING") {
-                    if let Some(go) = client_go.take() {
+                    if let Some(go) = &client_go {
                         let _ = go.send(());
                     }
                 }
