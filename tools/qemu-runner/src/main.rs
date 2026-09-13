@@ -960,6 +960,15 @@ fn run(opts: &Options) -> RunResult {
                             {
                                 sent_commands = true;
                                 for cmd in &opts.send {
+                                    // `@pause <ms>`: stop typing for a while, so
+                                    // the console really sits idle at its prompt
+                                    // (V0.10). Guest output keeps queueing in the
+                                    // reader thread meanwhile.
+                                    if let Some(ms) = pause_ms(cmd) {
+                                        let _ = serial_writer.flush();
+                                        std::thread::sleep(Duration::from_millis(ms));
+                                        continue;
+                                    }
                                     let mut line = cmd.clone();
                                     if let Some(port) = &echo_port {
                                         line = line.replace("{TCP_ECHO_PORT}", port);
@@ -1215,6 +1224,17 @@ fn run(opts: &Options) -> RunResult {
     }
 }
 
+/// The longest `@pause` a leg may ask for.
+const MAX_PAUSE_MS: u64 = 10_000;
+
+/// `@pause <ms>` in a `--send` list holds the next command back for `<ms>`
+/// (1..=10000), so the guest's console sits idle at its prompt. Anything
+/// else — including a malformed pause — is an ordinary line to type.
+fn pause_ms(cmd: &str) -> Option<u64> {
+    let ms: u64 = cmd.strip_prefix("@pause ")?.trim().parse().ok()?;
+    (1..=MAX_PAUSE_MS).contains(&ms).then_some(ms)
+}
+
 /// Drain whatever QEMU has already written to stderr without blocking the
 /// caller forever: the pipe is read on a worker thread and abandoned if QEMU
 /// keeps it open. Used only on failure paths, where the text is diagnostic.
@@ -1366,5 +1386,21 @@ fn classify(
         // non-selftest smoke runs, anything else as unexpected.
         Some(0) => Outcome::Success,
         _ => Outcome::UnexpectedExit,
+    }
+}
+
+#[cfg(test)]
+mod send_tests {
+    use super::pause_ms;
+
+    #[test]
+    fn pause_lines_are_recognised_and_bounded() {
+        assert_eq!(pause_ms("@pause 1500"), Some(1500));
+        assert_eq!(pause_ms("@pause 10000"), Some(10_000));
+        assert_eq!(pause_ms("@pause 0"), None);
+        assert_eq!(pause_ms("@pause 10001"), None);
+        assert_eq!(pause_ms("@pause x"), None);
+        assert_eq!(pause_ms("sched"), None);
+        assert_eq!(pause_ms("echo @pause 5"), None);
     }
 }

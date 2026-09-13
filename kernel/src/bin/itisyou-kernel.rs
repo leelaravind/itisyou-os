@@ -20,6 +20,10 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // background daemons would otherwise be scheduled in the middle of the
     // scheduler and userspace tests.
     kernel::services::start_background();
+    // V0.10 (SCHED10-001; ADR-0022): background processes run in bounded
+    // slices at the audited safe points from here on. Never in the selftest
+    // image, whose checks count every process step.
+    kernel::sched::enable();
 
     kernel::bootstage::emit(Stage::B130ShellRunning);
     // All V0.1 hard-target boot stages are up: acceptance marker.

@@ -128,7 +128,18 @@
     write succeeding; `store df` prints `[ITISYOU:FS] reclaim …` with exact
     used/free/pinned/largest-run numbers predicted by a host test, and a second
     boot on the same disk reads back the last revision and the same report.
-23. **Negative cases** (grown alongside subsystems): intentional panic,
+23. **Always-on co-scheduling** (V0.10, `sched-always-on-bios` +
+    `sched-always-on-negative`): background processes keep running while the
+    console is busy. The runner's `@pause <ms>` send holds the console idle at
+    its prompt (idle slices must be non-zero); `busy` with scheduling paused
+    must starve the background and, resumed, must not (`sched last` judges each
+    command's window: starved if nothing ran or any gap exceeded 250 ms); a
+    service client run in the foreground must get its reply, and a CPU-bound
+    program that never yields must still leave the background a bounded gap.
+    The control leg pauses scheduling on the same image and requires the
+    foreground client to time out. `sched` also reports `lock_skips` (must be
+    0) and the console stack's painted high-water mark (`stack_margin_ok`).
+24. **Negative cases** (grown alongside subsystems): intentional panic,
     allocator exhaustion, malformed inputs, timeout classification.
 
 The harness gained `--audio`/`--audio-out` (AC97 → WAV capture, with a non-
@@ -136,7 +147,9 @@ silence assertion), `--usb` (UHCI + USB HID), `--xhci` (an xHCI controller with
 its own HID keyboard), `--net` (an e1000 wired to the runner's own Ethernet
 peer), `--net-user` (an e1000 on QEMU's user-mode network, an independent IPv4
 implementation with its own gateway, DHCP server and DNS forwarder; added in
-V0.8.1), and `--forbid` (a substring that must NOT appear) alongside the
+V0.8.1), `@pause <ms>` in a `--send` list (hold the next command back so
+the console sits idle; V0.10), and `--forbid` (a substring that must NOT
+appear) alongside the
 serial + monitor channels. Every leg now runs on a CPU advertising `+smep,+smap,+umip`,
 so the whole matrix passing is itself evidence that supervisor-mode protection
 did not break the kernel's own access to user memory.

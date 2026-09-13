@@ -17,6 +17,8 @@ static NO_SCHED: AtomicU32 = AtomicU32::new(0);
 static LAST_SLICE_TICK: AtomicU64 = AtomicU64::new(0);
 
 static SLICES: AtomicU64 = AtomicU64::new(0);
+/// Slices per kind of safe point: busy, idle (the prompt), job wait.
+static POINT_SLICES: [AtomicU64; 3] = [const { AtomicU64::new(0) }; 3];
 static QUANTA: AtomicU64 = AtomicU64::new(0);
 static OTHER_QUANTA: AtomicU64 = AtomicU64::new(0);
 /// Slices refused per reason, indexed like [`SKIP_ORDER`].
@@ -40,6 +42,11 @@ static JOB: AtomicU64 = AtomicU64::new(0);
 /// TSC of the last background quantum, and the longest gap seen (ms).
 static LAST_OTHER_TSC: AtomicU64 = AtomicU64::new(0);
 static MAX_GAP_MS: AtomicU64 = AtomicU64::new(0);
+/// The command (first 8 bytes) running when [`MAX_GAP_MS`] was set; 0 = the
+/// prompt.
+static MAX_GAP_CMD: AtomicU64 = AtomicU64::new(0);
+/// The command whose window is open (first 8 bytes); 0 = none.
+static WIN_CMD: AtomicU64 = AtomicU64::new(0);
 
 /// The console command whose window is open, and its running counters.
 static WIN_ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -72,6 +79,20 @@ impl CmdName {
 
 fn ms_of(cycles: u64) -> u64 {
     cycles / crate::interrupts::cycles_for_ms(1).max(1)
+}
+
+/// A command name packed into a word, so it can live in an atomic.
+fn pack(s: &str) -> u64 {
+    let mut b = [0u8; 8];
+    let n = s.len().min(8);
+    b[..n].copy_from_slice(&s.as_bytes()[..n]);
+    u64::from_le_bytes(b)
+}
+
+fn unpack(w: u64, out: &mut [u8; 8]) -> &str {
+    *out = w.to_le_bytes();
+    let n = out.iter().position(|&c| c == 0).unwrap_or(8);
+    core::str::from_utf8(&out[..n]).unwrap_or("?")
 }
 
 /// Turn always-on scheduling on (the interactive kernel only; never the
@@ -144,6 +165,12 @@ fn gate() -> Gate {
 fn try_slice(point: Point) -> bool {
     match cosched::decide(&gate(), point) {
         Ok(()) => {
+            let kind = match point {
+                Point::Busy => 0,
+                Point::Idle => 1,
+                Point::JobWait => 2,
+            };
+            POINT_SLICES[kind].fetch_add(1, Relaxed);
             slice();
             true
         }
@@ -192,7 +219,10 @@ pub fn note_quantum(pid: u64) {
     let now = crate::interrupts::tsc();
     let prev = LAST_OTHER_TSC.swap(now, Relaxed);
     if prev != 0 {
-        MAX_GAP_MS.fetch_max(ms_of(now.saturating_sub(prev)), Relaxed);
+        let gap = ms_of(now.saturating_sub(prev));
+        if gap > MAX_GAP_MS.fetch_max(gap, Relaxed) {
+            MAX_GAP_CMD.store(WIN_CMD.load(Relaxed), Relaxed);
+        }
     }
     if WIN_ACTIVE.load(Relaxed) {
         WIN_OTHER.fetch_add(1, Relaxed);
@@ -209,6 +239,11 @@ pub fn note_runq_empty() {
     if WIN_ACTIVE.load(Relaxed) {
         WIN_LAST_OTHER_TSC.store(now, Relaxed);
     }
+}
+
+/// The console is about to wait for `pid` (`bg`).
+pub fn set_job(pid: u64) {
+    JOB.store(pid, Relaxed);
 }
 
 pub fn clear_job() {
@@ -241,6 +276,7 @@ impl CommandWindow {
         WIN_SLICES.store(0, Relaxed);
         WIN_OTHER.store(0, Relaxed);
         WIN_MAX_GAP_MS.store(0, Relaxed);
+        WIN_CMD.store(pack(cmd), Relaxed);
         WIN_ACTIVE.store(true, Relaxed);
         CommandWindow {
             cmd: CmdName::new(cmd),
@@ -251,6 +287,7 @@ impl CommandWindow {
 impl Drop for CommandWindow {
     fn drop(&mut self) {
         WIN_ACTIVE.store(false, Relaxed);
+        WIN_CMD.store(0, Relaxed);
         let now = crate::interrupts::tsc();
         // The stretch since the last background quantum counts too.
         let tail = ms_of(now.saturating_sub(WIN_LAST_OTHER_TSC.load(Relaxed)));
@@ -274,8 +311,14 @@ fn skips(skip: Skip) -> u64 {
 
 /// The `sched` report.
 pub fn report() {
+    let mut name = [0u8; 8];
+    let cmd = match MAX_GAP_CMD.load(Relaxed) {
+        0 => "prompt",
+        w => unpack(w, &mut name),
+    };
+    let peak = console_stack_peak();
     crate::serial_println!(
-        "[ITISYOU:SCHED] always_on={} paused={} period_ticks={} slice_ticks={} slice_quanta={} slices={} quanta={} other_quanta={} max_gap_ms={} skips_period={} skips_midline={} skips_nosched={} lock_skips={}",
+        "[ITISYOU:SCHED] always_on={} paused={} period_ticks={} slice_ticks={} slice_quanta={} slices={} quanta={} other_quanta={} max_gap_ms={} max_gap_cmd={} skips_period={} skips_midline={} skips_nosched={} lock_skips={} console_stack_peak={} console_stack_size={} stack_margin_ok={} busy_slices={} idle_slices={} job_slices={}",
         enabled(),
         paused(),
         cosched::PERIOD_TICKS,
@@ -285,11 +328,112 @@ pub fn report() {
         QUANTA.load(Relaxed),
         OTHER_QUANTA.load(Relaxed),
         MAX_GAP_MS.load(Relaxed),
+        cmd,
         skips(Skip::Period),
         skips(Skip::MidLine),
         skips(Skip::NoSched),
-        skips(Skip::LockHeld)
+        skips(Skip::LockHeld),
+        peak,
+        CONSOLE_STACK_SIZE,
+        peak != 0 && peak <= STACK_MARGIN_LIMIT,
+        POINT_SLICES[0].load(Relaxed),
+        POINT_SLICES[1].load(Relaxed),
+        POINT_SLICES[2].load(Relaxed)
     );
+}
+
+// --- The console stack's high-water mark ----------------------------------
+//
+// Slices run on the console's (boot) stack, below whatever command reached
+// the safe point, so always-on scheduling makes the console stack deeper.
+// It is measured, not assumed: painted at boot, scanned on `sched`.
+
+/// The bootloader's kernel stack (`BOOTLOADER_CONFIG.kernel_stack_size`).
+pub const CONSOLE_STACK_SIZE: u64 = 128 * 1024;
+/// `stack_margin_ok` means the deepest use left at least 32 KiB unused.
+const STACK_MARGIN_LIMIT: u64 = 96 * 1024;
+const PAINT: u8 = 0xA5;
+/// Top of the console stack (page-aligned), recorded at kernel entry.
+static STACK_TOP: AtomicU64 = AtomicU64::new(0);
+/// The painted range `[low, high)`; 0 = not painted.
+static PAINT_LOW: AtomicU64 = AtomicU64::new(0);
+static PAINT_HIGH: AtomicU64 = AtomicU64::new(0);
+
+fn current_rsp() -> u64 {
+    let rsp: u64;
+    // SAFETY: copies the stack pointer into a register; touches no memory
+    // and no flags (UNSAFE_INVENTORY row 46).
+    unsafe {
+        core::arch::asm!("mov {}, rsp", out(reg) rsp, options(nomem, nostack, preserves_flags))
+    };
+    rsp
+}
+
+/// Record the console stack's top. Called first thing at kernel entry, so
+/// the stack pointer is within the stack's top page.
+pub fn record_entry_rsp() {
+    let top = (current_rsp() + 0xFFF) & !0xFFF;
+    STACK_TOP.store(top, Relaxed);
+}
+
+/// Fill the unused part of the console stack with a pattern. Called once at
+/// boot, after paging is up and while interrupts are still off, so nothing
+/// else can be using the memory below the stack pointer.
+pub fn paint_console_stack() {
+    let top = STACK_TOP.load(Relaxed);
+    if top < CONSOLE_STACK_SIZE || x86_64::instructions::interrupts::are_enabled() {
+        return;
+    }
+    // Leave the lowest page and the 4 KiB just below this frame alone: the
+    // former may be the bootloader's guard, the latter holds the frames of
+    // the calls made from here.
+    let low = top - CONSOLE_STACK_SIZE + 0x1000;
+    let high = (current_rsp() - 0x1000) & !0xFFF;
+    let mut first = 0;
+    let mut page = low;
+    while page < high {
+        if crate::memory::paging::translate_active(x86_64::VirtAddr::new(page)).is_some() {
+            // SAFETY: `page` is a mapped page of the console stack wholly
+            // below the live frames (`high` is 4 KiB under this function's
+            // stack pointer), and interrupts are off, so no interrupt frame
+            // can be there either (UNSAFE_INVENTORY row 46).
+            unsafe { core::ptr::write_bytes(page as *mut u8, PAINT, 0x1000) };
+            if first == 0 {
+                first = page;
+            }
+        } else if first != 0 {
+            // Only a contiguous run from the bottom up is measured.
+            break;
+        }
+        page += 0x1000;
+    }
+    if first != 0 {
+        PAINT_LOW.store(first, Relaxed);
+        PAINT_HIGH.store(page.min(high), Relaxed);
+    }
+}
+
+/// The deepest console-stack use since boot, in bytes from the top; 0 when
+/// the stack was not painted.
+pub fn console_stack_peak() -> u64 {
+    let (low, high, top) = (
+        PAINT_LOW.load(Relaxed),
+        PAINT_HIGH.load(Relaxed),
+        STACK_TOP.load(Relaxed),
+    );
+    if low == 0 {
+        return 0;
+    }
+    let mut a = low;
+    while a < high {
+        // SAFETY: `[low, high)` is mapped console stack (checked when it was
+        // painted); a volatile byte read (UNSAFE_INVENTORY row 46).
+        if unsafe { core::ptr::read_volatile(a as *const u8) } != PAINT {
+            return top - a;
+        }
+        a += 1;
+    }
+    top - high
 }
 
 /// The `sched last` report: the most recent finished command window.

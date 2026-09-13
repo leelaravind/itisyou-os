@@ -68,6 +68,8 @@ pub static EXIT_QEMU_ON_PANIC: AtomicBool = AtomicBool::new(false);
 
 /// Early kernel bring-up (stages B010–B030): serial, identity, CPU baseline.
 pub fn early_init(boot_info: &'static mut BootInfo) -> &'static mut BootInfo {
+    // V0.10: the console stack's top, before anything else uses the stack.
+    sched::record_entry_rsp();
     serial::init();
     bootstage::emit(Stage::B010KernelEntry);
     bootstage::emit(Stage::B020SerialReady);
@@ -134,6 +136,9 @@ pub fn init_subsystems(boot_info: &'static mut BootInfo) {
     // SAFETY: phys_offset is the bootloader's physical-memory mapping and
     // this is the single initialization call.
     unsafe { memory::paging::init(phys_offset) };
+    // V0.10: interrupts are still off; paint the unused console stack so its
+    // high-water mark can be measured (`sched`).
+    sched::paint_console_stack();
     bootstage::emit(Stage::B060VirtualMemoryReady);
 
     // B070: kernel heap.

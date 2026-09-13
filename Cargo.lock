@@ -577,6 +577,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "user-burn"
+version = "0.10.0-dev"
+dependencies = [
+ "ulib",
+]
+
+[[package]]
 name = "user-cap-child"
 version = "0.10.0-dev"
 dependencies = [

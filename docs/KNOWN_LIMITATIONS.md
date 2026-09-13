@@ -31,22 +31,30 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
 - Scheduling is **preemptive round-robin** with a fixed 20 ms quantum and no
   priorities or CPU accounting. Registers and address-space isolation are
   preserved across preemption (machine-verified).
-- Processes run when the kernel console drives the scheduler: at the idle
-  prompt, during `run`/`bg`, and inside the supervisor. There is **no userspace
-  `init`** yet — the console is a kernel component, and a long-running
-  foreground command (`desktop`, a long `run`) starves the background services
-  for its duration. (V0.10: userspace init and an always-on scheduler.)
+- Scheduling is **always-on but cooperative** (V0.10, ADR-0022): background
+  processes get bounded slices (1 tick, 32 quanta or 20 ms) at audited safe
+  points — the idle prompt, `bg` job waits, every network poll, the desktop
+  and `usbwait` loops, and between quanta of a foreground `run` — never from
+  the timer interrupt; the kernel itself is not preemptible. Inside these
+  **non-schedulable regions** the background waits for the region to end:
+  every syscall (`net_resolve` can take 1.5 s), `irq` (about 200 ms with the
+  timer masked), `xhciwait` (up to 5 s), `beep`, and every command that holds
+  the NVMe store (`store`, `pkg install/stage/rollback/recover`,
+  `audit save/verify`). A background process's effective quantum is 10–20 ms
+  of Ring 3 time; syscall time is not charged to it. There is **no userspace
+  `init`** yet — the console is still a kernel component.
 - Process model: spawn/wait/exit with a single blocking waiter per child; no
   fork/exec, no process groups, no signals. Program arguments (V0.10) are
   bounded and deliberately narrow: at most 16 arguments and 512 bytes, each
   argument printable ASCII without spaces (no quoting, no UTF-8, no empty
   arguments); no environment variables. From the console a line is still
   capped at 256 bytes and 24 tokens, so the 512-byte limit is reachable only
-  through `spawn_args`. Pre-existing and unchanged: under the console's
-  foreground `run` a program runs alone, so its `wait` returns 0 at once
-  (the blocked program is simply resumed) and a spawned child runs only later,
-  when the console idles — a program that spawns and waits must be started
-  with `bg`, which is what the `args-bios` leg does.
+  through `spawn_args`. Pre-existing and unchanged: a program under the
+  console's foreground `run` is not in the process table, so its `wait`
+  returns 0 at once (the blocked program is simply resumed); since V0.10 a
+  child it spawns runs in the background slices meanwhile, but a program that
+  spawns and waits must still be started with `bg`, which is what the
+  `args-bios` leg does.
 - IPC: bounded kernel message channels (4 channels, ≤256 B, ≤8 queued),
   non-blocking, addressed by integer id. No shared-memory or synchronous
   rendezvous IPC.

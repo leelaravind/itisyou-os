@@ -391,6 +391,11 @@ pub fn run(mut process: Process) -> UserExit {
             // these indefinitely.
             UserExit::Yielded | UserExit::Preempted | UserExit::Blocked => {
                 first = false;
+                // V0.10: between two quanta of a foreground program the
+                // console is a safe point, so the background keeps running.
+                // (This process is out of Ring 3 and its state is saved; the
+                // slice's run-loop enters Ring 3 only for table processes.)
+                crate::sched::safe_point();
                 continue;
             }
             other => break other,

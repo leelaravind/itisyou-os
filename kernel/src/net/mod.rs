@@ -445,7 +445,19 @@ pub fn await_ping_reply(id: u16, seq: u16, timeout_ms: u64) -> bool {
 
 /// Drain every frame the card has, dispatching each. Returns how many were
 /// processed. Never blocks.
+///
+/// Every poll is also a scheduling safe point (V0.10, rule R8): ping,
+/// resolve, dhcp, ipv6, `net poll`, `tcp serve` and the audit anchor all
+/// wait by polling, so the background keeps running while they wait. No
+/// caller may hold a lock across `poll` (a held lock makes the safe point
+/// refuse and is counted as `lock_skips`). Slices never poll the NIC
+/// themselves; inside a syscall the safe point refuses (IF is clear).
 pub fn poll() -> usize {
+    crate::sched::safe_point();
+    poll_inner()
+}
+
+fn poll_inner() -> usize {
     let mut processed = 0;
     let mut buf = [0u8; MAX_FRAME];
     // Clear whatever the card has raised. The MSI handler counts messages and

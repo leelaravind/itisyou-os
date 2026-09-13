@@ -146,6 +146,9 @@ pub fn run() -> ! {
             qemu::exit(qemu::ExitCode::Failed);
         }
 
+        // V0.10: the desktop's idle loop is a safe point, so background
+        // processes keep running under the desktop.
+        crate::sched::safe_point();
         // Sleep until the next interrupt (100 Hz timer or an input IRQ).
         x86_64::instructions::hlt();
     }

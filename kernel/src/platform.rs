@@ -332,11 +332,34 @@ pub fn recover(fs: &mut FileSystem) -> Result<u32, PlatformError> {
     Ok(findings)
 }
 
+/// An app ready to run: verified, loaded and authorized, with nothing left
+/// that needs the store (V0.10).
+pub struct Prepared {
+    pub process: user::Process,
+    pub app: String,
+    pub version: u32,
+}
+
 /// Launch the ACTIVE version of an installed app: re-verify the package
 /// digest, then run the payload with `manifest caps ∩ launcher caps` under
 /// the standard app sandbox (its own app dir + /etc, read-only view).
 /// Returns the app's exit code.
 pub fn launch(fs: &FileSystem, app: &str, launcher_caps: u64) -> Result<u64, PlatformError> {
+    let prepared = prepare_launch(fs, app, launcher_caps)?;
+    match user::run(prepared.process) {
+        user::UserExit::Exit(code) => Ok(code),
+        _ => Err(PlatformError::LaunchFailed),
+    }
+}
+
+/// Everything [`launch`] does before the app runs (V0.10): the console runs
+/// the result only after closing the store, so the app's run is not a
+/// non-schedulable region.
+pub fn prepare_launch(
+    fs: &FileSystem,
+    app: &str,
+    launcher_caps: u64,
+) -> Result<Prepared, PlatformError> {
     let st = state(fs, app);
     let v = st.active.ok_or(PlatformError::NotInstalled)?;
     let bytes = fs.read(&format!("{app}.{v}.pkg")).map_err(fs_err)?;
@@ -359,8 +382,9 @@ pub fn launch(fs: &FileSystem, app: &str, launcher_caps: u64) -> Result<u64, Pla
         "[ITISYOU:PKG] launch name={app} v={v} caps={granted:#x} manifest_version={}",
         parsed.manifest.version
     );
-    match user::run(process) {
-        user::UserExit::Exit(code) => Ok(code),
-        _ => Err(PlatformError::LaunchFailed),
-    }
+    Ok(Prepared {
+        process,
+        app: String::from(app),
+        version: v,
+    })
 }
