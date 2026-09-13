@@ -66,6 +66,11 @@ struct Conn {
     end: Option<End>,
     /// End of the highest data sequence sent so far, to spot retransmissions.
     high_water: u32,
+    /// The port the owner's network authority was checked against when the
+    /// connection was opened: the DESTINATION port for an active open, the
+    /// LOCAL port for a listener. Every later call re-checks this, not the
+    /// peer's port — a server's clients arrive from ports nobody chose.
+    scope_port: u16,
 }
 
 impl Conn {
@@ -75,6 +80,7 @@ impl Conn {
         owner: 0,
         end: None,
         high_water: 0,
+        scope_port: 0,
     };
 
     fn free(&mut self) {
@@ -210,6 +216,7 @@ pub fn connect(owner: u64, remote: Ipv4Addr, port: u16) -> Option<usize> {
     conn.owner = owner;
     conn.end = None;
     conn.high_water = iss.wrapping_add(1);
+    conn.scope_port = port;
     flush(out, Some(&mut conn.high_water));
     Some(slot)
 }
@@ -233,6 +240,7 @@ pub fn listen(owner: u64, port: u16) -> Option<usize> {
     conn.owner = owner;
     conn.end = None;
     conn.high_water = iss.wrapping_add(1);
+    conn.scope_port = port;
     Some(slot)
 }
 
@@ -246,11 +254,11 @@ fn owned(conns: &mut [Conn; MAX_CONNS], index: usize, owner: u64) -> Option<&mut
     conns.get_mut(index).filter(|c| c.used && c.owner == owner)
 }
 
-/// The remote port of `index`, if `owner` holds it — what the syscall layer
-/// re-checks the network capability against on every call.
-pub fn remote_port(index: usize, owner: u64) -> Option<u16> {
+/// The port `index`'s network authority is scoped to, if `owner` holds it —
+/// what the syscall layer re-checks the capability against on every call.
+pub fn scope_port(index: usize, owner: u64) -> Option<u16> {
     let mut table = TABLE.lock();
-    owned(&mut table.conns, index, owner).map(|c| c.tcb.remote().1)
+    owned(&mut table.conns, index, owner).map(|c| c.scope_port)
 }
 
 /// Queue bytes; `Some(accepted)` (0 when the buffer is full or the

@@ -418,6 +418,7 @@ pub const SYS_TCP_SEND: u64 = 30;
 pub const SYS_TCP_RECV: u64 = 31;
 pub const SYS_TCP_CLOSE: u64 = 32;
 pub const SYS_TCP_STATE: u64 = 33;
+pub const SYS_TCP_LISTEN: u64 = 34;
 
 /// `tcp_state` results.
 pub const TCP_CONNECTING: u64 = 0;
@@ -433,6 +434,12 @@ pub fn tcp_connect(ip: [u8; 4], port: u16) -> u64 {
     req[..4].copy_from_slice(&ip);
     req[4..].copy_from_slice(&port.to_le_bytes());
     raw_syscall(SYS_TCP_CONNECT, req.as_ptr() as u64, req.len() as u64, 0)
+}
+
+/// Passive open on `port`: a descriptor in LISTEN that becomes the stream
+/// when a peer connects (poll [`tcp_state`] for `TCP_ESTABLISHED`).
+pub fn tcp_listen(port: u16) -> u64 {
+    raw_syscall(SYS_TCP_LISTEN, port as u64, 0, 0)
 }
 
 /// Queue bytes on a connection; returns how many were accepted.

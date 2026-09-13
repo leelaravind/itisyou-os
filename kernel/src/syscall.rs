@@ -96,6 +96,9 @@ pub const SYS_TCP_RECV: u64 = 31;
 pub const SYS_TCP_CLOSE: u64 = 32;
 /// Connection state, for polling a non-blocking connect or close.
 pub const SYS_TCP_STATE: u64 = 33;
+/// Passive open on a local port (the scoped resource). The descriptor waits
+/// in LISTEN and becomes the connection when a peer's SYN arrives.
+pub const SYS_TCP_LISTEN: u64 = 34;
 
 pub const ERR_NOSYS: u64 = u64::MAX;
 pub const ERR_FAULT: u64 = u64::MAX - 1;
@@ -456,6 +459,7 @@ extern "C" fn syscall_dispatch(a1: u64, a2: u64, a3: u64, nr: u64) -> u64 {
         SYS_TCP_RECV => sys_tcp_recv(a1, a2, a3),
         SYS_TCP_CLOSE => sys_tcp_close(a1),
         SYS_TCP_STATE => sys_tcp_state(a1),
+        SYS_TCP_LISTEN => sys_tcp_listen(a1),
         SYS_CAP_LIST => sys_cap_list(a1, a2),
         SYS_CAP_CHECK => sys_cap_check(a1, a2, a3),
         SYS_CAP_REVOKE => sys_cap_revoke(a1),
@@ -618,15 +622,16 @@ fn sys_udp_close(sock: u64) -> u64 {
     }
 }
 
-/// The connection's remote port, if `sock` belongs to the caller — after the
-/// class-level network check, and followed by a check scoped to that port, so
-/// a handle narrowed or revoked after the connect stops working at the next
-/// call (the same order as the UDP calls, for the same audit reasons).
+/// The port the connection's authority is scoped to (destination port for a
+/// connect, local port for a listen), if `sock` belongs to the caller — after
+/// the class-level network check, and followed by a check scoped to that
+/// port, so a handle narrowed or revoked after the open stops working at the
+/// next call (the same order as the UDP calls, for the same audit reasons).
 fn tcp_conn_port(sock: u64, action: &'static str) -> Result<u16, u64> {
     use kernel_core::capability::{rights, CapabilityKind};
     require_any(CapabilityKind::Network, rights::USE, action)?;
     let pid = CURRENT_PID.load(Ordering::SeqCst);
-    let port = crate::net::tcp::remote_port(sock as usize, pid).ok_or(ERR_BADF)?;
+    let port = crate::net::tcp::scope_port(sock as usize, pid).ok_or(ERR_BADF)?;
     require_scoped(CapabilityKind::Network, rights::USE, port as u64, action)?;
     Ok(port)
 }
@@ -671,6 +676,40 @@ fn sys_tcp_connect(req_ptr: u64, req_len: u64) -> u64 {
             );
             index as u64
         }
+        None => ERR_AGAIN,
+    }
+}
+
+/// tcp_listen(port): passive open. Non-blocking: returns a descriptor in
+/// LISTEN at once; `tcp_state` reads `connecting` until a peer completes the
+/// handshake, then `established`, after which the descriptor is the stream.
+/// One connection per listen — the state machine's own passive-open model.
+fn sys_tcp_listen(port: u64) -> u64 {
+    if port == 0 || port > u16::MAX as u64 {
+        return ERR_INVAL;
+    }
+    if let Err(e) = require_scoped(
+        kernel_core::capability::CapabilityKind::Network,
+        kernel_core::capability::rights::USE,
+        port,
+        "tcp_listen",
+    ) {
+        return e;
+    }
+    if !crate::net::is_up() {
+        return ERR_NOENT;
+    }
+    let pid = CURRENT_PID.load(Ordering::SeqCst);
+    match crate::net::tcp::listen(pid, port as u16) {
+        Some(index) => {
+            crate::audit::allowed(
+                "tcp_listen",
+                kernel_core::caps::CAP_NETWORK,
+                Some(alloc::format!("port={port}")),
+            );
+            index as u64
+        }
+        // The port is taken or every slot is in use.
         None => ERR_AGAIN,
     }
 }

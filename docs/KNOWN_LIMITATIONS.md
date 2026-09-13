@@ -114,10 +114,11 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
   carrying one is refused), no duplicate address detection, no DHCPv6, and no
   IPv6 UDP/TCP or Ring 3 IPv6 sockets.
 - **TCP** (V0.9) is IPv4 only. Ring 3 programs can open a connection
-  (`tcp_connect`), stream both ways and close; passive open works and is
-  verified, but only from the kernel console (`tcp serve <port>`, one
-  connection per listen) — there are no Ring 3 listen/accept syscalls yet.
-  At most 8 connections, 4 KB send and receive buffers each. Loss
+  (`tcp_connect`) or listen for one (`tcp_listen`), stream both ways and
+  close. A listen serves exactly one connection — the listening descriptor
+  becomes the stream — so there is no accept queue and no second client
+  until the program listens again. At most 8 connections, 4 KB send and
+  receive buffers each. Loss
   recovery is a single retransmission timer (300 ms, doubling, 6 retries, then
   the connection times out) — no RTT estimation, no congestion control beyond a
   cap of four segments in flight, no SACK, window scaling, timestamps, fast
