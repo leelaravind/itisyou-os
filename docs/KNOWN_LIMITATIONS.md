@@ -52,13 +52,11 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
   argument printable ASCII without spaces (no quoting, no UTF-8, no empty
   arguments); no environment variables. From the console a line is still
   capped at 256 bytes and 24 tokens, so the 512-byte limit is reachable only
-  through `spawn_args`. Pre-existing and unchanged: a program under the
-  console's foreground `run` is not in the process table, so its `wait`
-  returns 0 at once and its `sleep` ends at once (the blocked program is
-  simply resumed); since V0.10 a
-  child it spawns runs in the background slices meanwhile, but a program that
-  spawns and waits must still be started with `bg`, which is what the
-  `args-bios` leg does.
+  through `spawn_args`. Since V0.10 the console's `run` runs a program as a
+  process in the table, so its `wait` blocks and its `sleep` sleeps (before,
+  a foreground program ran alone and both returned at once); `run` has no
+  timeout — the console waits until the program ends — while `bg` gives up
+  after 30 s.
 - IPC: bounded kernel message channels (4 channels, ≤256 B, ≤8 queued),
   non-blocking, addressed by integer id. No shared-memory or synchronous
   rendezvous IPC.

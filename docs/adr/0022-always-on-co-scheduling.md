@@ -38,12 +38,15 @@ Background processes get the CPU from **bounded slices**, run only at a few
 named **safe points** in kernel code:
 
 - `sched::idle_point()` — the console prompt (no period);
-- `sched::console_wait_step(job)` — `bg` job waits (the job only ever runs in
-  slices, so this point ignores enable, pause, line position and period);
+- `sched::console_wait_step(job)` — the console waiting for its job (`bg`;
+  since S7 also `run` and `pkg launch`). The job only ever runs in slices, so
+  this point ignores enable, pause, line position and period — the console
+  can never deadlock on its own job;
 - `sched::safe_point()` — busy waits: every `net::poll` (ping, resolve, dhcp,
   ipv6, `net poll`, `tcp serve`, audit anchor), the desktop and `usbwait`
-  loops, the `busy` diagnostic, and between two quanta of a foreground `run`
-  (until S7 moves `run` into the process table).
+  loops, and the `busy` diagnostic. (In S5–S6 also between two quanta of a
+  foreground `run`; since S7 `run` admits the program to the table and
+  waits for it in job slices, like `bg`.)
 
 A slice is `proc::run_slice(1 tick, 32 quanta, 20 ms)`: whichever cap is
 reached first ends it (the bounds are checked between quanta, so a slice
@@ -67,9 +70,10 @@ Rules that bind every change (R1–R14 of the V0.10 plan):
 - **R1** Slices only at the named safe points. Adding one needs an audit note
   in the code and in this ADR.
 - **R3** One Ring 3 entry at a time: the single-slot state is touched only by
-  one run-loop frame or one foreground `run` frame, never both at once; a
-  foreground program is out of Ring 3, its state saved, whenever its console
-  loop reaches the safe point.
+  one run-loop frame or one `user::run` frame, never both at once. (In S5–S6
+  the console's foreground `run` used `user::run` and was out of Ring 3, its
+  state saved, whenever it reached the safe point; since S7 `user::run` is
+  the selftest's driver only.)
 - **R4** Nothing blocks inside a syscall.
 - **R5** The process table is never held across a quantum.
 - **R6** Lock order: table → console output → serial; table →
@@ -102,8 +106,10 @@ for windows of 100 ms or more; starved if nothing ran or a gap exceeded
 ## Consequences
 
 - A client can now be run in the foreground against a live service
-  (`run /bin/tick-client` gets its reply; with scheduling paused it times out,
-  exactly as before V0.10).
+  (`run /bin/tick-client` gets its reply). In S5–S6, with scheduling paused,
+  it timed out exactly as before V0.10; since S7 the console waits for its job
+  in job slices, which run everything runnable even when paused
+  (`sched-pause-bios`).
 - Busy console commands no longer starve the background: measured
   `max_gap_ms` 50 during `busy`, 61 during a CPU-bound foreground program that
   never yields, 49 during `net poll` (leg `sched-always-on-bios`).

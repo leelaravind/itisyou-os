@@ -1051,6 +1051,8 @@ Write-Output '=== QEMU always-on co-scheduling (BIOS) ==='
     '--send', 'net poll 1500',
     '--send', 'sched last',
     '--send', 'bg /bin/line-probe spawn',
+    '--send', 'run /bin/args-probe spawn -- spawn-child',
+    '--send', 'run /bin/proc-probe - -- sleep',
     '--send', 'sched',
     '--send', 'shutdown',
     '--require', '[ITISYOU:SCHED] enabled period_ticks=5',
@@ -1070,7 +1072,13 @@ Write-Output '=== QEMU always-on co-scheduling (BIOS) ==='
     '--require', 'LINEPROBE-OK',
     '--require', 'lock_skips=0 ',
     '--require', 'stack_margin_ok=true',
+    '--require', 'ARGS-SPAWN-OK child_status=42',
+    '--require', 'run: /bin/args-probe: Exit(0)',
+    '--require', 'PROCPROBE-SLEEP-OK requested=50',
+    '--require', 'run: /bin/proc-probe: Exit(0)',
     '--require', 'shutting down (QEMU exit)',
+    '--forbid', 'ARGS-SPAWN-FAILED',
+    '--forbid', 'PROCPROBE-SLEEP-SHORT',
     '--forbid', 'paused=false judged=true starved=true',
     '--forbid', 'idle_slices=0 ',
     '--forbid', 'TICKC-RECV-TIMEOUT',
@@ -1079,20 +1087,29 @@ Write-Output '=== QEMU always-on co-scheduling (BIOS) ==='
     '--forbid', 'LINEPROBE-FAILED',
     '--timeout-secs', '240', '--label', 'sched-always-on-bios')
 
-Write-Output '=== QEMU always-on co-scheduling, paused control (BIOS) ==='
-# Control on the same image: with scheduling paused, a foreground client of
-# a service gets no reply, because the service is never scheduled while the
-# console runs the client - the pre-V0.10 behaviour.
+Write-Output '=== QEMU always-on co-scheduling: what pause stops (BIOS) ==='
+# `sched pause` stops background slices at busy and idle points (`busy`
+# starves the background), but never the console's own job: a job wait
+# slices everything runnable, so a foreground client still gets its
+# service's reply - the console can never deadlock on its own job. (Until
+# S7 moved `run` into the process table, this leg was the control showing
+# that a paused foreground `run` starved the service: TICKC-RECV-TIMEOUT.)
 & $runner @('--image', 'target/images/itisyou-kernel-bios.img',
     '--expect', 'B200',
     '--send', 'sched pause',
+    '--send', 'busy 1000',
     '--send', 'run /bin/tick-client',
+    '--send', 'sched last',
+    '--send', 'sched resume',
     '--send', 'shutdown',
     '--require', '[ITISYOU:SCHED] paused=true',
-    '--require', 'TICKC-RECV-TIMEOUT',
-    '--require', 'run: /bin/tick-client: Exit(2)',
-    '--forbid', 'TICKC-OK',
-    '--timeout-secs', '180', '--label', 'sched-always-on-negative')
+    '--require', 'busy: ms=1000 paused=true others_progressed=false other_quanta=0',
+    '--require', 'TICKC-OK passes=',
+    '--require', 'run: /bin/tick-client: Exit(0)',
+    '--require', '[ITISYOU:SCHED] window cmd=run paused=true',
+    '--require', '[ITISYOU:SCHED] paused=false',
+    '--forbid', 'TICKC-RECV-TIMEOUT',
+    '--timeout-secs', '180', '--label', 'sched-pause-bios')
 
 Write-Output '=== QEMU kernel SYSCALL stack guard (BIOS) ==='
 # V0.10 HARD10-003: the stack every syscall runs on (the one V0.9's TCP bug

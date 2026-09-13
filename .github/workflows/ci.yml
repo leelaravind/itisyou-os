@@ -461,6 +461,8 @@ jobs:
             --send "net poll 1500" \
             --send "sched last" \
             --send "bg /bin/line-probe spawn" \
+            --send "run /bin/args-probe spawn -- spawn-child" \
+            --send "run /bin/proc-probe - -- sleep" \
             --send "sched" \
             --send "shutdown" \
             --require "[ITISYOU:SCHED] enabled period_ticks=5" \
@@ -480,7 +482,13 @@ jobs:
             --require "LINEPROBE-OK" \
             --require "lock_skips=0 " \
             --require "stack_margin_ok=true" \
+            --require "ARGS-SPAWN-OK child_status=42" \
+            --require "run: /bin/args-probe: Exit(0)" \
+            --require "PROCPROBE-SLEEP-OK requested=50" \
+            --require "run: /bin/proc-probe: Exit(0)" \
             --require "shutting down (QEMU exit)" \
+            --forbid "ARGS-SPAWN-FAILED" \
+            --forbid "PROCPROBE-SLEEP-SHORT" \
             --forbid "paused=false judged=true starved=true" \
             --forbid "idle_slices=0 " \
             --forbid "TICKC-RECV-TIMEOUT" \
@@ -489,18 +497,24 @@ jobs:
             --forbid "LINEPROBE-FAILED" \
             --timeout-secs 240 --label sched-always-on-bios
 
-      - name: QEMU always-on co-scheduling, paused control (BIOS)
+      - name: QEMU always-on co-scheduling, what pause stops (BIOS)
         run: |
           cargo run -q -p qemu-runner -- \
             --image target/images/itisyou-kernel-bios.img --expect B200 \
             --send "sched pause" \
+            --send "busy 1000" \
             --send "run /bin/tick-client" \
+            --send "sched last" \
+            --send "sched resume" \
             --send "shutdown" \
             --require "[ITISYOU:SCHED] paused=true" \
-            --require "TICKC-RECV-TIMEOUT" \
-            --require "run: /bin/tick-client: Exit(2)" \
-            --forbid "TICKC-OK" \
-            --timeout-secs 180 --label sched-always-on-negative
+            --require "busy: ms=1000 paused=true others_progressed=false other_quanta=0" \
+            --require "TICKC-OK passes=" \
+            --require "run: /bin/tick-client: Exit(0)" \
+            --require "[ITISYOU:SCHED] window cmd=run paused=true" \
+            --require "[ITISYOU:SCHED] paused=false" \
+            --forbid "TICKC-RECV-TIMEOUT" \
+            --timeout-secs 180 --label sched-pause-bios
 
       - name: QEMU kernel syscall stack guard (BIOS)
         run: |
