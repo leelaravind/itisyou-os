@@ -951,6 +951,37 @@ Write-Output '=== QEMU kernel stack guard: overflow is caught, not silent (BIOS)
     '--forbid', 'armed=false',
     '--timeout-secs', '90', '--label', 'stack-guard-bios')
 
+Write-Output '=== QEMU kernel SYSCALL stack guard (BIOS) ==='
+# V0.10 HARD10-003: the stack every syscall runs on (the one V0.9's TCP bug
+# overflowed) is guarded like RSP0 and the double-fault stack.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B080', '--expect', 'B200',
+    '--send', 'panic-test syscall-stack-overflow',
+    '--expect-panic',
+    '--require', 'stack_guard stack=syscall',
+    '--require', 'kernel_stack_overflow stack=syscall',
+    '--require', 'kernel stack overflow: stack=syscall hit its guard page',
+    '--forbid', 'armed=false',
+    '--timeout-secs', '90', '--label', 'stack-guard-syscall-bios')
+
+Write-Output '=== QEMU Ring 3 DF/AC never reach kernel code (BIOS) ==='
+# V0.10 HARD10-002: a Ring 3 program sets DF and AC and is preempted many
+# times (spin), then faults with them set; the kernel counts every entry from
+# Ring 3 that finds either flag still set. Before the fix: 75 and 38.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B200',
+    '--send', 'run /bin/flags-probe',
+    '--send', 'run /bin/flags-probe - - -- fault',
+    '--send', 'harden',
+    '--send', 'shutdown',
+    '--require', 'FLAGSPROBE-SPIN df=1 ac=1',
+    '--require', 'FLAGSPROBE-SPUN',
+    '--require', 'FLAGSPROBE-FAULT-ARMED df=1 ac=1',
+    '--require', 'user_fault pid=4 vector=13',
+    '--require', 'dirty_timer=0 dirty_landing=0',
+    '--forbid', 'ring3_entry_flag_checks=0 ',
+    '--timeout-secs', '180', '--label', 'flags-hygiene-bios')
+
 Write-Output '=== QEMU kernel TASK stack guard (BIOS) ==='
 # V0.10: kernel task stacks live in guarded slots of a dedicated window. A
 # task that recurses must end in a double fault that names it.

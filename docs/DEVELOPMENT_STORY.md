@@ -899,3 +899,15 @@ on exactly the digests the build job uploaded. The published images were then
 boot-tested byte for byte (UEFI and BIOS reporting `itisyou-os 0.9.0`,
 two-boot persistence, networking) before the site linked them, and v0.8.1 was
 kept downloadable beside them.
+
+**Two V0.9 defects, each shown before it was fixed.** The V0.10 design review
+read the entry paths closely and found that a Ring 3 program's direction and
+alignment-check flags survive interrupt delivery: the naked timer ISR and the
+fault-return path never cleared them, so after a preemption the kernel ran
+with string instructions reversed and SMAP switched off. A probe that sets
+both flags and spins made the unfixed kernel record 75 dirty timer entries
+and 38 dirty returns to the run-loop; with the flags cleared on every entry
+from Ring 3 the counts are zero across 108 checks. The same review showed the
+V0.9 stack-guard claim was wider than the code: syscalls have a stack of their
+own, and it is now on a guard page too, with a test that overflows that stack
+rather than a neighbouring one.

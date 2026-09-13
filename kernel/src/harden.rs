@@ -32,6 +32,43 @@ use x86_64::registers::control::{Cr4, Cr4Flags};
 /// `stac`/`clac` bracket is needed. Executing `stac` on a CPU without SMAP is
 /// an invalid opcode, so this is not merely an optimisation.
 static SMAP_ENABLED: AtomicBool = AtomicBool::new(false);
+
+/// RFLAGS.DF and RFLAGS.AC: a Ring 3 program may set both, and neither is
+/// cleared by interrupt delivery. Kernel code must never run with them
+/// (V0.10, HARD10-002): DF reverses string instructions, AC disables SMAP.
+pub const USER_FLAGS: u64 = (1 << 10) | (1 << 18);
+
+/// Kernel entries from Ring 3 that were checked for DF/AC, and how many found
+/// either still set — the evidence the `harden` command reports.
+pub static FLAG_CHECKS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+pub static FLAG_DIRTY_TIMER: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+pub static FLAG_DIRTY_LANDING: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// Clear DF and AC on kernel entry (V0.10, HARD10-002). `pushfq`/`popfq`
+/// rather than `clac`, which would #UD on a CPU without SMAP; interrupt
+/// delivery has already cleared IF, so rewriting RFLAGS here changes nothing
+/// else. The interrupted context's own flags live in its stack frame and are
+/// restored untouched by `iretq`.
+#[inline(always)]
+pub fn clear_user_flags() {
+    // SAFETY: only DF and AC change; the push/pop pair is balanced.
+    unsafe {
+        core::arch::asm!(
+            "cld",
+            "pushfq",
+            "and qword ptr [rsp], -262145",
+            "popfq",
+            options(nomem, preserves_flags)
+        );
+    }
+}
+
+/// Current RFLAGS & (DF | AC).
+#[inline(always)]
+pub fn user_flags_now() -> u64 {
+    x86_64::registers::rflags::read_raw() & USER_FLAGS
+}
 static SMEP_ENABLED: AtomicBool = AtomicBool::new(false);
 static UMIP_ENABLED: AtomicBool = AtomicBool::new(false);
 

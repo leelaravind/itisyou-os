@@ -534,6 +534,12 @@ pub mod transition {
         // saved by a prior yield); the abort context is armed before any
         // Ring 3 instruction runs.
         let packed = unsafe { enter_user_raw(ctx as *mut UserContext) };
+        // Every return from Ring 3 to the run-loop lands here: check that no
+        // Ring 3 DF/AC survived into kernel code (V0.10, HARD10-002).
+        crate::harden::FLAG_CHECKS.fetch_add(1, Ordering::Relaxed);
+        if crate::harden::user_flags_now() != 0 {
+            crate::harden::FLAG_DIRTY_LANDING.fetch_add(1, Ordering::Relaxed);
+        }
         IN_USER.store(false, Ordering::SeqCst);
         CURRENT_CTX.store(0, Ordering::SeqCst);
         // Abort paths arrive with IF masked; kernel steady-state runs with
@@ -634,6 +640,12 @@ pub mod transition {
     #[unsafe(naked)]
     unsafe extern "C" fn user_abort_raw(packed: u64) -> ! {
         naked_asm!(
+            // Every return from Ring 3 to the run-loop passes here: clear the
+            // DF/AC a Ring 3 program may have left set (V0.10, HARD10-002).
+            "cld",
+            "pushfq",
+            "and qword ptr [rsp], -262145",
+            "popfq",
             "mov rax, rdi",
             "mov rsp, [rip + USER_ABORT_CTX + 8]",
             "mov rbp, [rip + USER_ABORT_CTX + 16]",
