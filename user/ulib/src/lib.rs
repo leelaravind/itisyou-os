@@ -58,6 +58,9 @@ pub const CAP_FS_WRITE: u64 = 1 << 7;
 pub const CAP_NETWORK: u64 = 1 << 8;
 pub const CAP_PROC_CONTROL: u64 = 1 << 9;
 pub const CAP_SERVICE: u64 = 1 << 10;
+/// V0.11: console-granted only, never delegable (`kernel_core::caps`).
+pub const CAP_SYS_VIEW: u64 = 1 << 11;
+pub const CAP_PROPOSE: u64 = 1 << 12;
 
 /// Raw syscall: rax=nr, rdi/rsi/rdx=args → rax. rcx/r11 are clobbered by
 /// the hardware; the kernel may clobber any caller-saved register.
@@ -143,6 +146,15 @@ pub fn sleep_ticks(ticks: u64) -> u64 {
 pub const SYS_SVC_REPORT: u64 = 39;
 pub const SYS_CONSOLE_READ: u64 = 40;
 pub const SYS_GUI_EVENT: u64 = 41;
+/// V0.11 (ADR-0024): the approved system view (`CAP_SYS_VIEW`).
+pub const SYS_SYS_VIEW: u64 = 42;
+
+/// Copy the approved system view (a `kernel_core::sysview` record) into
+/// `buf`: returns its length, `ERR_2BIG` if `buf` is too small, `ERR_PERM`
+/// without the view capability.
+pub fn sys_view(buf: &mut [u8]) -> u64 {
+    raw_syscall(SYS_SYS_VIEW, buf.as_mut_ptr() as u64, buf.len() as u64, 0)
+}
 
 /// Event kinds in a `gui_event` record (`kernel_core::wm`): byte 0.
 pub const GUI_EV_FOCUS_IN: u8 = 1;

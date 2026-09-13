@@ -1466,6 +1466,44 @@ $modelPin = (Get-Content ai/diag.model.sha256 -TotalCount 1).Trim()
     '--forbid', 'initramfs_match=false',
     '--timeout-secs', '120', '--label', 'ai-model-bios')
 
+Write-Output '=== QEMU V0.11: the approved system view (BIOS) ==='
+# VIEW11-001 (ADR-0024). sys_view (42) serves a fixed, allow-listed record of
+# counts and service rows, and only to a process the console granted
+# `sys_view` by name: refused with no capabilities, and refused to a `run`
+# without a caps list (the legacy default no longer carries it). Granted, the
+# record decodes with the host-tested sysview module and tells the truth -
+# flapd failed after 3 restarts, tickd running, both reported by init, the
+# scheduler's pause - and the kernel remembers what it served (the
+# provenance a proposal will cite). A buffer one byte short is refused whole.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B210',
+    '--send', '@pause 1500',
+    '--send', 'run /bin/ai-probe - - -- view-denied',
+    '--send', 'run /bin/ai-probe -- view-denied',
+    '--send', 'run /bin/ai-probe sys_view - -- view',
+    '--send', 'sched pause',
+    '--send', 'run /bin/ai-probe sys_view - -- view',
+    '--send', 'sched resume',
+    '--send', 'shutdown',
+    '--require', 'AIPROBE-VIEW-DENIED err=perm',
+    '--require', 'action=sys_view cap=0x0 result=denied',
+    '--require', 'kind=sysadmin reason=no_handle',
+    # The legacy default holds a sysadmin handle (ADMIN) but not READ.
+    '--require', 'kind=sysadmin reason=scope_denied',
+    '--require', 'AIPROBE-VIEW-SMALL-OK',
+    '--require', '[ITISYOU:AI] view_served pid=',
+    '--require', 'AIPROBE-VIEW sched paused=0 always_on=1 ',
+    '--require', 'AIPROBE-VIEW sched paused=1 always_on=1 ',
+    '--require', 'AIPROBE-VIEW service=tickd state=running restarts=0 by_init=1 ',
+    '--require', 'AIPROBE-VIEW service=flapd state=failed restarts=3 by_init=1 ',
+    '--require', 'AIPROBE-VIEW features=',
+    '--require', 'AIPROBE-VIEW-OK',
+    '--forbid', 'AIPROBE-VIEW-LEAK',
+    '--forbid', 'AIPROBE-VIEW-DECODE-FAILED',
+    '--forbid', 'AIPROBE-FAILED',
+    '--forbid', 'RING3-PANIC',
+    '--timeout-secs', '180', '--label', 'ai-view-bios')
+
 if ($anyFailed) { Write-Output 'TEST: FAILED'; exit 1 }
 Write-Output 'TEST: OK'
 exit 0

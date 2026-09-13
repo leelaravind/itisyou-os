@@ -402,6 +402,30 @@ pub fn release_owned(pid: u64) {
     // owned: the port would stay unusable for the rest of the boot.
     crate::net::socket::close_owner(pid);
     crate::net::tcp::close_owner(pid);
+    // V0.11: a view served to it can no longer be cited.
+    crate::ai::forget(pid);
+}
+
+/// Process counts for the approved view (V0.11): every slot, runnable,
+/// waiting (in `wait`, `sleep`, a console read or a window event), and ended
+/// but not yet collected.
+pub fn state_counts() -> (usize, usize, usize, usize) {
+    let guard = TABLE.lock();
+    let Some(table) = guard.as_ref() else {
+        return (0, 0, 0, 0);
+    };
+    let (mut runnable, mut waiting, mut ended) = (0, 0, 0);
+    for slot in table.slots.values() {
+        match slot.state {
+            ProcState::Runnable => runnable += 1,
+            ProcState::Blocked { .. }
+            | ProcState::Sleeping { .. }
+            | ProcState::ConsoleWait
+            | ProcState::GuiWait => waiting += 1,
+            ProcState::Exited(_) | ProcState::Faulted { .. } | ProcState::Killed => ended += 1,
+        }
+    }
+    (table.slots.len(), runnable, waiting, ended)
 }
 
 /// Run the scheduler until nothing is runnable OR `max_ticks` elapse —

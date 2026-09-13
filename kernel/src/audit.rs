@@ -427,6 +427,13 @@ pub fn counts() -> (u64, u64) {
     (SEQ.load(Ordering::SeqCst), DENIALS.load(Ordering::SeqCst))
 }
 
+/// Records in the ring now, and how many of them are denials (V0.11, the
+/// approved view's recent-activity counts).
+pub fn ring_counts() -> (usize, usize) {
+    let ring = RING.lock();
+    (ring.len(), ring.iter().filter(|r| !r.ok).count())
+}
+
 /// Run `f` over a snapshot of the retained ring (newest last).
 pub fn with_records<R>(f: impl FnOnce(&[Record]) -> R) -> R {
     let ring = RING.lock();

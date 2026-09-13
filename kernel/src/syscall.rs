@@ -130,6 +130,9 @@ pub const SYS_CONSOLE_READ: u64 = 40;
 /// (V0.10). The Gui capability; one 8-byte record (`kernel_core::wm`), or
 /// the caller waits for one.
 pub const SYS_GUI_EVENT: u64 = 41;
+/// sys_view(buf, len) (V0.11, ADR-0024): the approved system view, a
+/// `kernel_core::sysview` record. SystemAdministration READ (`sys_view`).
+pub const SYS_SYS_VIEW: u64 = 42;
 
 pub const ERR_NOSYS: u64 = u64::MAX;
 pub const ERR_FAULT: u64 = u64::MAX - 1;
@@ -457,6 +460,14 @@ extern "C" fn syscall_dispatch(a1: u64, a2: u64, a3: u64, nr: u64) -> u64 {
         SYS_CONSOLE_READ => crate::console::sys_console_read(a1, a2),
         SYS_GUI_EVENT => match require_any(CapabilityKind::Gui, rights::USE, "gui_event") {
             Ok(()) => sys_gui_event(a1, a2, a3),
+            Err(e) => e,
+        },
+        SYS_SYS_VIEW => match require_any(
+            CapabilityKind::SystemAdministration,
+            rights::READ,
+            "sys_view",
+        ) {
+            Ok(()) => sys_view(a1, a2),
             Err(e) => e,
         },
         SYS_SVC_REPORT => match require_any(CapabilityKind::Service, rights::ADMIN, "svc_report") {
@@ -1462,6 +1473,27 @@ fn sys_gui_present(win: u64) -> u64 {
 /// an 8-byte record (V0.10, syscall 41). The buffer is checked before an
 /// event is taken, so none is lost to a bad pointer. With no event the caller
 /// waits (R4) and resumes with `ERR_AGAIN` for its wrapper to ask again.
+/// sys_view(buf, len) (V0.11): build the approved view, copy all of it or
+/// none of it, and only then remember it as served to this process (the
+/// provenance a proposal must cite).
+fn sys_view(buf: u64, len: u64) -> u64 {
+    let n = kernel_core::sysview::LEN as u64;
+    if len < n {
+        return ERR_2BIG;
+    }
+    if let Err(e) = validate_user_write(buf, n) {
+        return e;
+    }
+    let bytes = crate::ai::build_view().encode();
+    match copy_to_user(buf, &bytes) {
+        Ok(copied) => {
+            crate::ai::served(CURRENT_PID.load(Ordering::SeqCst), &bytes);
+            copied
+        }
+        Err(e) => e,
+    }
+}
+
 fn sys_gui_event(win: u64, buf: u64, len: u64) -> u64 {
     use kernel_core::wm::RECORD_LEN;
     if len < RECORD_LEN as u64 {

@@ -175,6 +175,15 @@ pub fn rights_from_bits(bits: u64) -> [u32; CapabilityKind::COUNT] {
     if bits & CAP_SYS_ADMIN != 0 {
         add(CapabilityKind::SystemAdministration, rights::ADMIN);
     }
+    // V0.11 (ADR-0024): observing the system and proposing to change it are
+    // exact rights of their own, never implied by ADMIN (rights are checked
+    // as exact subsets).
+    if bits & CAP_SYS_VIEW != 0 {
+        add(CapabilityKind::SystemAdministration, rights::READ);
+    }
+    if bits & CAP_PROPOSE != 0 {
+        add(CapabilityKind::SystemAdministration, rights::USE);
+    }
     out
 }
 

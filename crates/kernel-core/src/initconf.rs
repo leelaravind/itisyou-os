@@ -83,6 +83,10 @@ pub enum Reason {
     DuplicateOption,
     /// A `caps=` list naming no known capability (or malformed).
     UnknownCapability,
+    /// A `caps=` list naming a capability only the kernel console may grant
+    /// (V0.11: `sys_view`, `propose`) - a service is init's child, and that
+    /// authority cannot be passed to a child.
+    ConsoleOnlyCapability,
     /// A `restart=` value other than always/on-failure/never.
     BadRestart,
     /// More than [`MAX_DEPS`] dependencies.
@@ -105,7 +109,7 @@ pub enum Reason {
 
 impl Reason {
     /// Every reason, in declaration order.
-    pub const ALL: [Reason; 18] = [
+    pub const ALL: [Reason; 19] = [
         Reason::UnknownDirective,
         Reason::MissingName,
         Reason::MissingPath,
@@ -115,6 +119,7 @@ impl Reason {
         Reason::UnknownOption,
         Reason::DuplicateOption,
         Reason::UnknownCapability,
+        Reason::ConsoleOnlyCapability,
         Reason::BadRestart,
         Reason::TooManyDeps,
         Reason::BadArgs,
@@ -138,6 +143,7 @@ impl Reason {
             Reason::UnknownOption => "unknown_option",
             Reason::DuplicateOption => "duplicate_option",
             Reason::UnknownCapability => "unknown_capability",
+            Reason::ConsoleOnlyCapability => "console_only_capability",
             Reason::BadRestart => "bad_restart",
             Reason::TooManyDeps => "too_many_deps",
             Reason::BadArgs => "bad_args",
@@ -437,7 +443,7 @@ fn parse_line<'a>(
         }
         *seen = true;
         match key {
-            "caps" => svc.caps = parse_caps(value).ok_or(fail(Reason::UnknownCapability))?,
+            "caps" => svc.caps = parse_caps(value).map_err(fail)?,
             "restart" => svc.restart = Restart::parse(value).ok_or(fail(Reason::BadRestart))?,
             _ => {
                 for dep in value.split(',') {
@@ -459,18 +465,24 @@ fn parse_line<'a>(
 /// `-` (no capabilities) or a comma-separated list of capability names, each
 /// looked up by [`caps::parse`]. Empty elements and surrounding whitespace
 /// (which `caps::parse` would forgive) are refused here.
-fn parse_caps(value: &str) -> Option<u64> {
+fn parse_caps(value: &str) -> Result<u64, Reason> {
     if value == "-" {
-        return Some(0);
+        return Ok(0);
     }
     let mut bits = 0u64;
     for name in value.split(',') {
         if name.is_empty() || name.trim() != name {
-            return None;
+            return Err(Reason::UnknownCapability);
         }
-        bits |= caps::parse(name).ok()?;
+        bits |= caps::parse(name).map_err(|_| Reason::UnknownCapability)?;
     }
-    Some(bits)
+    // A service is init's child, and the console-only bits cannot be passed
+    // to a child (V0.11): naming one is refused here rather than silently
+    // dropped at spawn.
+    if bits & caps::CAP_CONSOLE_ONLY != 0 {
+        return Err(Reason::ConsoleOnlyCapability);
+    }
+    Ok(bits)
 }
 
 fn valid_path(path: &str) -> bool {
@@ -675,6 +687,17 @@ mod tests {
                 Reason::DuplicateOption,
             ),
             ("service a /bin/x caps=root", 1, Reason::UnknownCapability),
+            // V0.11: console-only authority is not a service's to have.
+            (
+                "service a /bin/x caps=sys_view",
+                1,
+                Reason::ConsoleOnlyCapability,
+            ),
+            (
+                "service a /bin/x caps=ipc,propose",
+                1,
+                Reason::ConsoleOnlyCapability,
+            ),
             ("service a /bin/x restart=sometimes", 1, Reason::BadRestart),
             ("service a /bin/x after=b,c,d,e,f", 1, Reason::TooManyDeps),
             ("service a /bin/x --", 1, Reason::BadArgs),
@@ -927,7 +950,7 @@ mod tests {
         );
         assert_eq!(only("service a /bin/x caps=ipc,ipc").caps, CAP_IPC);
         let all = "service a /bin/x caps=spawn,ipc,gui,dev,fs_read,audio,sys_admin,fs_write,network,proc_control,service";
-        assert_eq!(only(all).caps, caps::CAP_ALL_KNOWN);
+        assert_eq!(only(all).caps, caps::CAP_DELEGABLE);
         for bad in [
             "caps=",
             "caps=,",
@@ -1048,6 +1071,7 @@ mod tests {
                 "unknown_option",
                 "duplicate_option",
                 "unknown_capability",
+                "console_only_capability",
                 "bad_restart",
                 "too_many_deps",
                 "bad_args",

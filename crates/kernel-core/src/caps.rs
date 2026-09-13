@@ -29,6 +29,12 @@ pub const CAP_NETWORK: u64 = 1 << 8;
 pub const CAP_PROC_CONTROL: u64 = 1 << 9;
 /// Service lifecycle and service-RPC administration.
 pub const CAP_SERVICE: u64 = 1 << 10;
+/// Read the approved system view (V0.11, `sys_view`; SystemAdministration
+/// READ). Console-granted only — see [`CAP_CONSOLE_ONLY`].
+pub const CAP_SYS_VIEW: u64 = 1 << 11;
+/// File a proposal for the console to approve (V0.11, `propose`;
+/// SystemAdministration USE). Console-granted only.
+pub const CAP_PROPOSE: u64 = 1 << 12;
 
 /// Every currently defined capability bit.
 pub const CAP_ALL_KNOWN: u64 = CAP_SPAWN
@@ -41,13 +47,27 @@ pub const CAP_ALL_KNOWN: u64 = CAP_SPAWN
     | CAP_FS_WRITE
     | CAP_NETWORK
     | CAP_PROC_CONTROL
-    | CAP_SERVICE;
+    | CAP_SERVICE
+    | CAP_SYS_VIEW
+    | CAP_PROPOSE;
+
+/// Authority only the kernel console grants, by naming it (V0.11,
+/// ADR-0024): the approved view and the right to propose. It is in no default
+/// set, a parent cannot pass it to a child ([`delegate`] drops it), and a
+/// service definition or a package manifest cannot obtain it — so the agent
+/// that holds it is always one the operator started on purpose.
+pub const CAP_CONSOLE_ONLY: u64 = CAP_SYS_VIEW | CAP_PROPOSE;
+
+/// Every bit a parent may pass on.
+pub const CAP_DELEGABLE: u64 = CAP_ALL_KNOWN & !CAP_CONSOLE_ONLY;
 
 /// The full "legacy" set granted to programs started directly by the trusted
 /// kernel shell/selftest (pre-platform paths), so V0.2–V0.6 behavior is
 /// unchanged. Platform-launched apps NEVER get this implicitly — they receive
 /// only what their manifest requests intersected with the launcher's caps.
-pub const CAP_LEGACY_FULL: u64 = CAP_ALL_KNOWN;
+/// It excludes the console-only bits (V0.11): `run` without a caps list,
+/// `rsh`, desktop apps and `pkg launch` never get the view or `propose`.
+pub const CAP_LEGACY_FULL: u64 = CAP_DELEGABLE;
 
 const NAMES: &[(&str, u64)] = &[
     ("spawn", CAP_SPAWN),
@@ -61,6 +81,8 @@ const NAMES: &[(&str, u64)] = &[
     ("network", CAP_NETWORK),
     ("proc_control", CAP_PROC_CONTROL),
     ("service", CAP_SERVICE),
+    ("sys_view", CAP_SYS_VIEW),
+    ("propose", CAP_PROPOSE),
 ];
 
 /// Parse error for a capability list.
@@ -108,9 +130,10 @@ pub fn names(caps: u64) -> impl Iterator<Item = &'static str> {
 }
 
 /// Delegation rule: a child receives what it requested intersected with what
-/// the parent actually holds. Never amplification.
+/// the parent actually holds. Never amplification, and never the
+/// console-only bits (V0.11).
 pub fn delegate(parent: u64, requested: u64) -> u64 {
-    parent & requested
+    parent & requested & CAP_DELEGABLE
 }
 
 #[cfg(test)]
@@ -141,6 +164,20 @@ mod tests {
         assert_eq!(delegate(parent, CAP_GUI | CAP_DEV), 0);
         // Subset requests pass through.
         assert_eq!(delegate(parent, CAP_IPC), CAP_IPC);
+    }
+
+    #[test]
+    fn console_only_authority_is_never_passed_on() {
+        // A parent holding the view and propose cannot give either to a
+        // child, even when it asks for exactly that.
+        let agent = CAP_SYS_VIEW | CAP_PROPOSE | CAP_IPC | CAP_SPAWN;
+        assert_eq!(delegate(agent, CAP_SYS_VIEW | CAP_PROPOSE), 0);
+        assert_eq!(delegate(agent, CAP_ALL_KNOWN), CAP_IPC | CAP_SPAWN);
+        // No default set carries them.
+        assert_eq!(CAP_LEGACY_FULL & CAP_CONSOLE_ONLY, 0);
+        assert_eq!(CAP_LEGACY_FULL | CAP_CONSOLE_ONLY, CAP_ALL_KNOWN);
+        // The console names them explicitly.
+        assert_eq!(parse("sys_view,propose").unwrap(), CAP_CONSOLE_ONLY);
     }
 
     #[test]
