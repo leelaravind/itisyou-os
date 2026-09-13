@@ -17,8 +17,9 @@ const traceability = [
   { id: 'NET09-001', req: 'TCP: connection state machine, retransmission, Ring 3 streams', status: 'verified', evidence: 'net-tcp-bios against the host TCP stack · injected_losses=2 · pattern_ok=true' },
   { id: 'KEY09-001', req: 'Signing-key hierarchy: offline root, certified signing keys, signed revocation', status: 'verified', evidence: 'trust-bios · revoked_signer · certificate_expired · out_of_scope' },
   { id: 'HARD09-001', req: 'A kernel stack overflow faults instead of corrupting kernel data', status: 'verified', evidence: 'stack-guard-bios · kernel_stack_overflow stack=priv … guard_hit=true' },
-  { id: 'REG-V09', req: 'Every V0.1–V0.8 leg stays green on the V0.9 interrupt path', status: 'in-development', evidence: 'full local gate at each exact commit; terminal at the V0.9 release' },
-  { id: 'CI-V09', req: 'CI green for V0.9', status: 'in-development', evidence: 'GitHub refuses to start jobs on this account (billing; run 34755059496); terminal on the release commit' },
+  { id: 'SEC09-001', req: 'No Ring 3 argument can make the kernel form a slice from an invalid pointer', status: 'verified', evidence: 'negative control null-copy-unfixed panics · CAPH-NULL-LIST-OK · TCPPROBE-NULL-SEND-OK' },
+  { id: 'REG-V09', req: 'Every V0.1–V0.8 leg stays green on the V0.9 interrupt path', status: 'verified', evidence: 'local gate 36/36 QEMU legs, 366 host tests (08d836c) · CI run 34760629701 on the release commit f06673e' },
+  { id: 'CI-V09', req: 'CI green for V0.9', status: 'verified', evidence: 'CI run 34760629701 on the release commit f06673e: QEMU matrix, reproducible images, website, secret scan' },
 ];
 
 const pyramid = [
@@ -134,7 +135,7 @@ const pyramid = [
       </div>
       <p class="font-mono text-mono-data text-muted mt-4">
         A requirement is never deleted because it is difficult. Statuses collapse to implemented+verified / blocked /
-        not-applicable at reporting time; the two In Development rows close with the V0.9 release, which waits on CI.
+        not-applicable at reporting time; the V0.9 rows are all terminal at the v0.9.0 release.
       </p>
     </section>
 

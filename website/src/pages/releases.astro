@@ -4,14 +4,21 @@ import Breadcrumbs from '../components/Breadcrumbs.astro';
 import StatusTag from '../components/StatusTag.astro';
 import WarningBanner from '../components/WarningBanner.astro';
 import { status } from '../lib/status';
-import { RELEASES } from '../lib/releases';
+import { RELEASES, type Release } from '../lib/releases';
 import { MILESTONES } from '../lib/roadmap';
+import downloads from '../data/downloads.json';
 
 const description =
   'ITISYOU OS releases: every version tag with its commit and green CI run, what each delivered, and which carry a public, checksummed boot image for virtual machines (v0.8.1 is the first).';
 const repo = 'https://github.com/leelaravind/itisyou-os';
 /** The milestone in development, if any — built and verified, but not yet tagged. */
 const building = MILESTONES.find((m) => m.current && m.status !== 'verified');
+/**
+ * A release's download link is shown only while its images are on the site:
+ * the release /download serves (src/data/downloads.json), or an earlier one
+ * whose published files are archived there.
+ */
+const downloadable = (r: Release) => r.tag === downloads.tag || r.archive !== undefined;
 ---
 
 <Base title="Releases" description={description}>
@@ -37,9 +44,9 @@ const building = MILESTONES.find((m) => m.current && m.status !== 'verified');
         </div>
       </div>
       <p class="px-gutter pt-4 font-mono text-mono-data text-meta max-w-3xl">
-        Each tag marks a commit whose full gate and CI run passed. The repository is private, so a tag is evidence of
-        a verified state, not something you can fetch. Since v0.8.1 a release can also carry a public download: boot
-        images built by CI, checksummed, and booted byte for byte before publication. Earlier tags have none.
+        Each tag marks a commit whose full gate and CI run passed: evidence of a verified state. Since v0.8.1 a release
+        can also carry a public download: boot images built by CI and published with their SHA-256 digests. Earlier
+        tags have none. The latest release is {RELEASES[0].tag}; earlier images stay downloadable, unchanged.
       </p>
       {
         building?.release && (
@@ -69,7 +76,7 @@ const building = MILESTONES.find((m) => m.current && m.status !== 'verified');
                   <td class="font-mono text-mono-data text-meta-bright px-4 py-3">{r.ciRun}</td>
                   <td class="text-sm text-meta-bright px-4 py-3">{r.summary}</td>
                   <td class="font-mono text-mono-data px-4 py-3 whitespace-nowrap">
-                    {r.download ? <a class="underline underline-offset-4 text-ink" href={r.download}>Images + SHA-256</a> : <span class="text-meta">—</span>}
+                    {r.download && downloadable(r) ? <a class="underline underline-offset-4 text-ink" href={r.download}>Images + SHA-256</a> : <span class="text-meta">—</span>}
                   </td>
                 </tr>
               ))
@@ -78,8 +85,9 @@ const building = MILESTONES.find((m) => m.current && m.status !== 'verified');
         </table>
       </div>
       <p class="px-gutter py-4 font-mono text-mono-data text-meta border-t border-line">
-        CI runs are GitHub Actions runs in the private repository ({repo}); the evidence is summarized in the
-        requirement matrix.
+        CI runs are GitHub Actions runs in the project repository ({repo}); the evidence is summarized in the
+        requirement matrix. The commit column is the commit the listed CI run built; from v0.8.1 on that is the
+        release’s content commit, and the tag sits on the status-stamp commit that follows it.
       </p>
     </section>
 

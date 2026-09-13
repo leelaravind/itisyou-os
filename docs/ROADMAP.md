@@ -131,7 +131,7 @@ written, and the change is recorded here rather than made silently:
    trust to seal one. Moving the head out of that attacker's reach is the
    honest form of the same goal.
 
-## V0.9 — Transport, Interrupt Cutover & Trust *(in progress)*
+## V0.9 — Transport, Interrupt Cutover & Trust *(released as v0.9.0, 2026-09-13)*
 
 Verified so far: ACPI discovery, the I/O APIC cutover with the 8259 PIC
 retired (and the PIT-mode bug it exposed), ACPI S5 power-off, the DHCP client,
@@ -139,9 +139,8 @@ a fix for broadcast UDP checksums, and audit anchoring against an off-disk
 witness, IPv6 foundations (client and responder paths), and TCP streams from
 Ring 3 verified against the host's own TCP stack with loss injected, and the
 package-signing key hierarchy (offline root, scoped certificates, signed
-revocation). Every V0.9 feature row is verified; what remains is the release
-itself (CI green on the release commit, website, download, tag). Status per
-row in `docs/REQUIREMENTS.md`.
+revocation). Released as v0.9.0 on 2026-09-13: release commit `f06673e`, CI run
+`34760629701`; per-row evidence in `docs/REQUIREMENTS.md`.
 
 - **TCP** with a connection state machine (active and passive open, orderly
   close, reset), a retransmission timer with backoff, and a receive window;

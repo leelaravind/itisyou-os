@@ -1,5 +1,19 @@
 # Deployment — os.itisyou.app
 
+**Latest deploy:** 2026-09-13 15:25, commit `8fafda5` (four overstated claims
+corrected after adversarial review) — staging `dbc396a6-eca5-4f14-8b9f-68dd8730fe5b`,
+production `cf7a7a97-b55a-4b45-885f-74e3e1f00caf`; downloads and browser
+verification repeated (v0.9.0 byte-exact, v0.8.1 archive byte-exact).
+
+**Last release:** v0.9.0 (2026-09-13) — release commit `f06673e`, CI run
+`34760629701`; staging `896ebfe6-1504-4aeb-9c7b-6f978944584f`, production
+`1ba155b6-30e9-4f51-bd2e-5414ea29a968`; images under `/downloads/v0.9.0/`,
+v0.8.1 kept under `/downloads/v0.8.1/` (staged from its verified release bytes
+next to the v0.9.0 files — `downloads.mjs stage` handles only the current
+manifest, so the archive is copied in by hand after a digest check). Both
+verified after deploy with `downloads.mjs verify`, a direct digest check of the
+archive and `browser-verify.mjs`.
+
 **Last release:** v0.8.1 — `status/current.json` stamped to CI-verified commit
 `bf32b53` (run `34750316003`); staging version
 `5ad339cd-bd0b-4752-862b-7dcc79a37c0f`, production version

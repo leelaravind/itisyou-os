@@ -885,3 +885,17 @@ always-on scheduler planned for V0.10 will run real kernel tasks on exactly
 those stacks, so they moved first: each task gets a fixed slot in a dedicated
 virtual window, the slot's first page never mapped. The leg spawns a task that
 recurses and requires the double fault to name it.
+
+**v0.9.0, and the repository that went public for an hour.** With CI refused
+for billing, the owner chose the free path: make the repository public so
+GitHub-hosted runners would run, release, then make it private again. Before
+flipping it the whole history was scanned — all 77 commits on every branch —
+for credential patterns and for sensitive file names; nothing but the secret
+scanner's own filename matched, and the signing roots live outside the
+repository by design. The release commit's CI run went green on the first
+try: the whole QEMU matrix on Linux, including every V0.9 leg that had only
+ever run on Windows, and the reproducibility job, whose two clean builds landed
+on exactly the digests the build job uploaded. The published images were then
+boot-tested byte for byte (UEFI and BIOS reporting `itisyou-os 0.9.0`,
+two-boot persistence, networking) before the site linked them, and v0.8.1 was
+kept downloadable beside them.

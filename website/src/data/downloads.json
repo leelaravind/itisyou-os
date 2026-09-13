@@ -1,40 +1,40 @@
 {
-  "tag": "v0.8.1",
-  "version": "0.8.1",
+  "tag": "v0.9.0",
+  "version": "0.9.0",
   "published": true,
-  "commit": "bf32b5337d9503b47bb4cece7d5436a0b1804cca",
-  "builtBy": "GitHub Actions run 34750316003 (ubuntu-24.04, pinned nightly-2026-08-01)",
-  "builtAt": "2026-09-13T09:51:40Z",
-  "reproducibility": "Bit-for-bit reproducible from source: the same CI run built every image twice more from two clean checkouts in two different directories, with no shared cache, and got identical digests (job \"Reproducible boot images\"); the BIOS image is also byte-identical to the one an earlier, independent run built. image-builder removes the two sources of non-determinism found along the way — random GPT GUIDs, and the link time and CodeView GUID the linker stamps into the embedded UEFI loader. A Windows host builds different bytes, because Rust embeds the build host's source paths in panic locations; the published files are the Linux CI build.",
-  "notice": "Release candidate note: the UEFI image first uploaded here (SHA-256 eb7d566c7fcafd9a4ee672b0ede9b3c3456b9577b799698fd982d2ff72c45571) was replaced before v0.8.1 was tagged, because a clean rebuild did not reproduce it (it carried its loader's link time). The BIOS image did not change. If you downloaded that UEFI file, it boots the same system, but it is not the release and cannot be reproduced.",
+  "commit": "f06673e00f27c3e5ef3df756a452969464d2b558",
+  "builtBy": "GitHub Actions run 34760629701 (ubuntu-24.04, pinned nightly-2026-08-01)",
+  "builtAt": "2026-09-13T13:45:28Z",
+  "reproducibility": "Bit-for-bit reproducible from source: the same CI run built every image twice more from two clean checkouts in two different directories, with no shared cache, and got identical digests (job \"Reproducible boot images\"). image-builder removes the sources of non-determinism found in v0.8.1 — random GPT GUIDs, and the link time and CodeView GUID the linker stamps into the embedded UEFI loader. A Windows host builds different bytes, because Rust embeds the build host's source paths in panic locations; the published files are the Linux CI build.",
+  "notice": "v0.8.1 remains available at /downloads/v0.8.1/ with its own SHA256SUMS.txt. V0.10 work (program arguments, filesystem space reclamation, kernel task-stack guard pages) is NOT in these images — it exists only on the v0.10/integration branch.",
   "bootTests": [
     {
-      "label": "Full QEMU matrix (24 legs)",
+      "label": "Full QEMU matrix (36 legs)",
       "firmware": "BIOS (SeaBIOS) and UEFI (OVMF 2024.02)",
       "qemu": "QEMU 8.2.2 (Ubuntu package)",
       "host": "GitHub Actions ubuntu-24.04",
-      "result": "Passed — run 34750316003, on these exact images before upload"
+      "result": "Passed — run 34760629701 (all four jobs green), on these exact images; the run's reproducibility job rebuilt both images from two clean checkouts and got these exact digests"
     },
     {
       "label": "Release boot test (downloaded CI bytes)",
       "firmware": "UEFI (OVMF, QEMU-bundled edk2) and BIOS (SeaBIOS)",
       "qemu": "QEMU 11.1.0",
       "host": "Windows 11 (x86_64)",
-      "result": "Passed — UEFI + BIOS console boot reporting itisyou-os 0.8.1, two-boot persistence on an NVMe data disk, ping over QEMU user-mode networking; images unchanged afterwards"
+      "result": "Passed — UEFI + BIOS console boot reporting itisyou-os 0.9.0, two-boot persistence on an NVMe data disk, ping over QEMU user-mode networking; images unchanged afterwards"
     }
   ],
   "files": [
     {
-      "file": "itisyou-os-0.8.1-x86_64-uefi.img",
+      "file": "itisyou-os-0.9.0-x86_64-uefi.img",
       "firmware": "UEFI (OVMF)",
       "bytes": 4259840,
-      "sha256": "93750593a7b56d149e1b90e023d111a8aac4fea401fa3a7ce6249b78212cbd88"
+      "sha256": "3d252547926ba497559d7419e2d77803c2af69148cec45ba5a83d6cdddfc443e"
     },
     {
-      "file": "itisyou-os-0.8.1-x86_64-bios.img",
+      "file": "itisyou-os-0.9.0-x86_64-bios.img",
       "firmware": "BIOS (SeaBIOS)",
-      "bytes": 4686848,
-      "sha256": "4a84705bec3c8a2ee0d80cceeb0b5b1562cf237936dc686035ff6f6494f410ea"
+      "bytes": 5735424,
+      "sha256": "eb3ceb46782b9d04cd40dc61aecce12a8cdbc4ed089b556675f1623c01dd8232"
     }
   ]
 }
