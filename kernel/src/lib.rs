@@ -32,6 +32,7 @@ pub mod net;
 pub mod platform;
 pub mod proc;
 pub mod qemu;
+pub mod sched;
 pub mod selftest;
 pub mod serial;
 pub mod services;

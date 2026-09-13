@@ -155,6 +155,25 @@ pub fn pump(max_ticks: u64) {
         return;
     }
     proc::run_until_pid_idle_bounded(max_ticks);
+    supervise_background();
+}
+
+/// One bounded always-on slice (V0.10), then the restart policy. Unlike
+/// [`pump`] the slice runs whether or not the V0.8 background set was
+/// started: whatever is runnable gets the CPU.
+pub fn pump_slice() {
+    proc::run_slice(
+        kernel_core::cosched::SLICE_TICKS,
+        kernel_core::cosched::SLICE_QUANTA,
+        kernel_core::cosched::SLICE_MAX_MS,
+    );
+    if BG.lock().started {
+        supervise_background();
+    }
+}
+
+/// The V0.8 background restart policy (moved verbatim out of [`pump`]).
+fn supervise_background() {
     let mut bg = BG.lock();
     for (idx, def) in BACKGROUND.iter().enumerate().take(MAX_BACKGROUND) {
         if bg.retired[idx] {
