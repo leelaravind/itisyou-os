@@ -24,6 +24,7 @@ pub mod fs_disk;
 pub mod gdt;
 pub mod gfx;
 pub mod harden;
+pub mod initd;
 pub mod input;
 pub mod interrupts;
 pub mod ipc;

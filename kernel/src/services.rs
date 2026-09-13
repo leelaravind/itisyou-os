@@ -14,6 +14,7 @@ use crate::{proc, user};
 use alloc::vec::Vec;
 use kernel_core::caps::{CAP_IPC, CAP_SPAWN};
 use kernel_core::service::{self, on_exit, startup_order, ServiceState};
+use kernel_core::svcreport::ServiceName;
 
 /// A declared system service.
 pub struct ServiceDef {
@@ -242,29 +243,46 @@ fn supervise_background() {
 /// Live status of one supervised service (queryable via `svc`).
 #[derive(Debug, Clone, Copy)]
 pub struct Status {
-    pub name: &'static str,
+    /// Validated (`[a-z0-9-]{1,15}`, V0.10): rows can come from a Ring 3
+    /// supervisor now, not only from the kernel's static tables.
+    pub name: ServiceName,
     pub state: ServiceState,
     pub pid: u64,
     pub restarts: u32,
+    /// Who reports this service: 0 = the kernel, otherwise the supervisor's
+    /// pid (V0.10, `svc_report`).
+    pub owner: u64,
 }
 
 static STATUS: Mutex<Vec<Status>> = Mutex::new(Vec::new());
 
+/// Most rows the service table holds (V0.10: supervisors can add rows).
+const MAX_ROWS: usize = 16;
+
+/// A kernel-owned row (the static REGISTRY and BACKGROUND names are all valid).
 fn set_state(name: &'static str, state: ServiceState, pid: u64, restarts: u32) {
+    let name = ServiceName::new(name).expect("static service names are valid");
+    set_state_owned(name, state, pid, restarts, 0);
+}
+
+fn set_state_owned(name: ServiceName, state: ServiceState, pid: u64, restarts: u32, owner: u64) {
     let mut table = STATUS.lock();
     match table.iter_mut().find(|s| s.name == name) {
         Some(s) => {
             s.state = state;
             s.pid = pid;
             s.restarts = restarts;
+            s.owner = owner;
         }
         None => table.push(Status {
             name,
             state,
             pid,
             restarts,
+            owner,
         }),
     }
+    let name = name.as_str();
     let label = match state {
         ServiceState::Stopped => "stopped",
         ServiceState::Running => "running",
@@ -303,7 +321,7 @@ pub fn run_supervised(max_ticks: u64) -> Result<RunReport, service::OrderError> 
     // operator for the rest of the session.
     STATUS
         .lock()
-        .retain(|s| !REGISTRY.iter().any(|d| d.name == s.name));
+        .retain(|s| !REGISTRY.iter().any(|d| d.name == s.name.as_str()));
     // Deterministic, cycle-checked startup order (host-tested logic).
     let mut decl: Vec<(&str, &[&str])> = Vec::new();
     for def in REGISTRY {
@@ -348,7 +366,7 @@ pub fn run_supervised(max_ticks: u64) -> Result<RunReport, service::OrderError> 
         for (idx, def) in REGISTRY.iter().enumerate() {
             let current = with_status(|t| {
                 t.iter()
-                    .find(|s| s.name == def.name)
+                    .find(|s| s.name.as_str() == def.name)
                     .map(|s| s.state)
                     .unwrap_or(ServiceState::Stopped)
             });
@@ -412,7 +430,7 @@ pub fn run_supervised(max_ticks: u64) -> Result<RunReport, service::OrderError> 
     with_status(|t| {
         for s in t
             .iter()
-            .filter(|s| REGISTRY.iter().any(|d| d.name == s.name))
+            .filter(|s| REGISTRY.iter().any(|d| d.name == s.name.as_str()))
         {
             match s.state {
                 ServiceState::Done => report.done += 1,
@@ -449,4 +467,124 @@ fn restart(def: &ServiceDef, idx: usize, pids: &mut [u64], count: u32) {
         }
         Err(_) => set_state(def.name, ServiceState::Failed { restarts: count }, 0, count),
     }
+}
+
+// --- svc_report (V0.10, SVC10-001) -------------------------------------------
+
+/// Refuse a supervisor report: say why, and audit it.
+fn refuse_report(caller: u64, reason: &str, err: u64) -> u64 {
+    crate::serial_println!(
+        "[ITISYOU:SVC] svc_report refused pid={caller} init={} reason={reason}",
+        crate::initd::is_init(caller)
+    );
+    crate::audit::denied("svc_report", kernel_core::caps::CAP_SERVICE);
+    err
+}
+
+/// svc_report(req_ptr, len) — a Ring 3 supervisor reports one service event
+/// (V0.10, syscall 39; the Service capability with ADMIN was checked by the
+/// dispatcher). The record (`kernel_core::svcreport`, exactly 32 bytes) is
+/// decoded strictly; then the kernel checks what it can know itself:
+///
+/// * `ready` — only init may say its start phase is over (`not_init`);
+/// * a name the kernel's own on-demand registry uses is never a
+///   supervisor's (`reserved_name`);
+/// * `start`/`restart` — the pid must be the reporter's own uncollected
+///   child (`not_child`), and the caps printed are the kernel's record of
+///   that child, not the reporter's claim;
+/// * a row belongs to whoever created it, unless that supervisor is dead
+///   (`not_owner`; the kernel's rows are never taken over);
+/// * at most 16 rows (`table_full`).
+///
+/// The name and the policy (`long_running`) remain the supervisor's claim,
+/// and every accepted line names the supervisor (`supervisor=<pid>`).
+pub fn sys_svc_report(req_ptr: u64, len: u64) -> u64 {
+    use crate::syscall::{ERR_AGAIN, ERR_INVAL, ERR_NOENT, ERR_PERM};
+    use kernel_core::svcreport::{self, Event, REPORT_LEN};
+    let caller = crate::syscall::CURRENT_PID.load(core::sync::atomic::Ordering::SeqCst);
+    if len != REPORT_LEN as u64 {
+        return refuse_report(caller, "bad_length", ERR_INVAL);
+    }
+    let bytes = match crate::syscall::copy_from_user(req_ptr, len, len) {
+        Ok(b) => b,
+        Err(e) => return e,
+    };
+    let report = match svcreport::decode(&bytes) {
+        Ok(r) => r,
+        Err(e) => return refuse_report(caller, e.name(), ERR_INVAL),
+    };
+    if report.event == Event::Ready {
+        if !crate::initd::is_init(caller) {
+            return refuse_report(caller, "not_init", ERR_PERM);
+        }
+        crate::initd::mark_ready();
+        let owned = STATUS.lock().iter().filter(|s| s.owner == caller).count();
+        crate::serial_println!("[ITISYOU:INIT] ready pid={caller} services={owned}");
+        return 0;
+    }
+    let name = report.name;
+    if REGISTRY.iter().any(|d| d.name == name.as_str()) {
+        return refuse_report(caller, "reserved_name", ERR_INVAL);
+    }
+    let caps = if matches!(report.event, Event::Start | Event::Restart) {
+        match crate::proc::child_caps(caller, report.pid) {
+            Some(c) => Some(c),
+            None => return refuse_report(caller, "not_child", ERR_NOENT),
+        }
+    } else {
+        None
+    };
+    {
+        let table = STATUS.lock();
+        match table.iter().find(|s| s.name == name) {
+            Some(row)
+                if row.owner != caller && (row.owner == 0 || !crate::proc::is_dead(row.owner)) =>
+            {
+                drop(table);
+                return refuse_report(caller, "not_owner", ERR_PERM);
+            }
+            None if table.len() >= MAX_ROWS => {
+                drop(table);
+                return refuse_report(caller, "table_full", ERR_AGAIN);
+            }
+            _ => {}
+        }
+    }
+    let (n, pid, k) = (name.as_str(), report.pid, report.restarts);
+    let state = match report.event {
+        Event::Start => {
+            crate::serial_println!(
+                "[ITISYOU:SVC] bg_start name={n} pid={pid} caps={:#x} long_running={} supervisor={caller}",
+                caps.unwrap_or(0),
+                report.long_running
+            );
+            ServiceState::Running
+        }
+        Event::Restart => {
+            crate::serial_println!(
+                "[ITISYOU:SVC] bg_restart name={n} pid={pid} restarts={k} clean_exit={} supervisor={caller}",
+                report.clean_exit
+            );
+            ServiceState::Running
+        }
+        Event::Done => {
+            crate::serial_println!(
+                "[ITISYOU:SVC] bg_done name={n} restarts={k} supervisor={caller}"
+            );
+            ServiceState::Done
+        }
+        _ => {
+            crate::serial_println!(
+                "[ITISYOU:SVC] bg_failed name={n} restarts={k} supervisor={caller}"
+            );
+            ServiceState::Failed { restarts: k }
+        }
+    };
+    let row_pid = if state == ServiceState::Running {
+        pid
+    } else {
+        0
+    };
+    set_state_owned(name, state, row_pid, k, caller);
+    0
 }

@@ -1075,7 +1075,7 @@ fn cmd_svc() {
                 for s in table {
                     crate::serial_println!(
                         "  {}  {:?}  pid={} restarts={}",
-                        s.name,
+                        s.name.as_str(),
                         s.state,
                         s.pid,
                         s.restarts

@@ -66,6 +66,9 @@ struct Slot {
     path: String,
     /// Where it faulted, if it did (the console's `run` reports it, V0.10).
     fault_addr: Option<u64>,
+    /// The capability bits it was launched with (what `svc_report` prints,
+    /// V0.10 — the kernel's record, not a supervisor's claim).
+    caps: u64,
 }
 
 struct Table {
@@ -101,6 +104,7 @@ pub fn admit(process: Process) -> u64 {
 pub fn admit_child(process: Process, parent: u64) -> u64 {
     let pid = process.pid;
     let path = process.path.clone();
+    let caps = process.caps;
     let mut guard = TABLE.lock();
     let table = guard.as_mut().expect("proc table init");
     table.slots.insert(
@@ -112,6 +116,7 @@ pub fn admit_child(process: Process, parent: u64) -> u64 {
             parent,
             path,
             fault_addr: None,
+            caps,
         },
     );
     table.runq.push_back(pid);
@@ -122,6 +127,19 @@ pub fn admit_child(process: Process, parent: u64) -> u64 {
 pub fn state_of(pid: u64) -> Option<ProcState> {
     let guard = TABLE.lock();
     guard.as_ref()?.slots.get(&pid).map(|s| s.state)
+}
+
+/// The launch capabilities of `pid` if it is an uncollected child of
+/// `parent` (running or ended), for `svc_report` (V0.10).
+pub fn child_caps(parent: u64, pid: u64) -> Option<u64> {
+    let guard = TABLE.lock();
+    let slot = guard.as_ref()?.slots.get(&pid)?;
+    proctree::may_wait(slot.parent, parent).then_some(slot.caps)
+}
+
+/// Is `pid` gone or ended (a supervisor that can no longer report)?
+pub fn is_dead(pid: u64) -> bool {
+    !matches!(state_of(pid), Some(s) if !s.is_terminal())
 }
 
 /// Where a faulted process faulted, if the CPU reported an address.

@@ -11,7 +11,15 @@
 //!   collecting it, and collecting "any child";
 //! * `sleep` — `sleep(50)` lasts at least 50 ticks; `sleep(6001)` is refused;
 //! * `orphan` — spawn an orphan and exit at once;
-//! * `orphan-child` — (spawned by `orphan`) sleep 20 ticks, report, exit 0.
+//! * `orphan-child` — (spawned by `orphan`) sleep 20 ticks, report, exit 0;
+//! * `svc-report` — `svc_report` (needs the Service capability) is refused
+//!   for a pid that is not our child, for a name the kernel reserves, for a
+//!   row someone else owns, and for `ready` (we are not init); a report about
+//!   our own child is accepted;
+//! * `svc-basic` — the same without the owned-row case (the selftest has no
+//!   `tickd` row);
+//! * `svc-denied` — without the Service capability `svc_report` is refused
+//!   at the capability gate.
 //!
 //! Every check prints a `PROCPROBE-…` marker; a failure prints
 //! `PROCPROBE-FAILED step=<step>` and exits 1.
@@ -20,8 +28,8 @@
 #![no_main]
 
 use ulib::{
-    args, exit, sleep_ticks, spawn, spawn_args, split_args, uptime_ticks, wait, wait_nohang, write,
-    write_u64, yield_now, CAP_SPAWN, ERR_AGAIN, ERR_INVAL, ERR_NOENT,
+    args, exit, sleep_ticks, spawn, spawn_args, split_args, svc_report, uptime_ticks, wait,
+    wait_nohang, write, write_u64, yield_now, CAP_SPAWN, ERR_AGAIN, ERR_INVAL, ERR_NOENT, ERR_PERM,
 };
 
 const SELF: &str = "/bin/proc-probe";
@@ -205,6 +213,75 @@ fn orphan() {
     write("PROCPROBE-ORPHAN-SPAWNED\n");
 }
 
+/// The 32-byte `svc_report` record (`kernel_core::svcreport`), built by hand
+/// so the probe checks the ABI independently of the kernel's own codec.
+fn record(event: u8, restarts: u32, pid: u64, name: &[u8]) -> [u8; 32] {
+    let mut r = [0u8; 32];
+    r[0] = event;
+    r[4..8].copy_from_slice(&restarts.to_le_bytes());
+    r[8..16].copy_from_slice(&pid.to_le_bytes());
+    r[16..16 + name.len()].copy_from_slice(name);
+    r
+}
+
+const EV_START: u8 = 1;
+const EV_DONE: u8 = 3;
+const EV_READY: u8 = 5;
+
+fn expect(got: u64, want: u64, step: &str, marker: &str) {
+    if got != want {
+        fail(step);
+    }
+    write(marker);
+}
+
+fn svc(owned_row: bool) {
+    let c = spawn("/bin/child");
+    if is_err(c) {
+        fail("svc-spawn");
+    }
+    // pid 1 is not our child (whatever it is, if anything).
+    expect(
+        svc_report(&record(EV_START, 0, 1, b"fake")),
+        ERR_NOENT,
+        "not_child",
+        "PROCPROBE-SVCREPORT-NOT-CHILD-OK\n",
+    );
+    expect(
+        svc_report(&record(EV_START, 0, c, b"echod")),
+        ERR_INVAL,
+        "reserved_name",
+        "PROCPROBE-SVCREPORT-RESERVED-OK\n",
+    );
+    if owned_row {
+        expect(
+            svc_report(&record(EV_START, 0, c, b"tickd")),
+            ERR_PERM,
+            "not_owner",
+            "PROCPROBE-SVCREPORT-NOT-OWNER-OK\n",
+        );
+    }
+    expect(
+        svc_report(&record(EV_READY, 0, 0, b"probe")),
+        ERR_PERM,
+        "not_init",
+        "PROCPROBE-SVCREPORT-READY-REFUSED-OK\n",
+    );
+    if svc_report(&record(EV_START, 0, c, b"probe-svc")) != 0 {
+        fail("svc-start");
+    }
+    if wait(c) != CHILD_STATUS {
+        fail("svc-wait");
+    }
+    expect(
+        svc_report(&record(EV_DONE, 0, c, b"probe-svc")),
+        0,
+        "svc-done",
+        "PROCPROBE-SVCREPORT-ACCEPTED-OK\n",
+    );
+    write("PROCPROBE-SVCREPORT-OK\n");
+}
+
 #[unsafe(no_mangle)]
 extern "C" fn _start() -> ! {
     let mut buf = [0u8; 64];
@@ -229,6 +306,14 @@ extern "C" fn _start() -> ! {
         Some(b"nohang") => nohang(),
         Some(b"sleep") => sleep_check(),
         Some(b"orphan") => orphan(),
+        Some(b"svc-report") => svc(true),
+        Some(b"svc-basic") => svc(false),
+        Some(b"svc-denied") => expect(
+            svc_report(&record(EV_START, 0, 1, b"x")),
+            ERR_PERM,
+            "svc-denied",
+            "PROCPROBE-SVCREPORT-DENIED-OK\n",
+        ),
         Some(b"orphan-child") => {
             if sleep_ticks(20) != 0 {
                 fail("orphan-sleep");
@@ -237,7 +322,7 @@ extern "C" fn _start() -> ! {
             exit(0)
         }
         _ => {
-            write("PROCPROBE-USAGE all|foreign <pid>|nohang|sleep|orphan\n");
+            write("PROCPROBE-USAGE all|foreign <pid>|nohang|sleep|orphan|svc-report|svc-basic|svc-denied\n");
             exit(2)
         }
     }

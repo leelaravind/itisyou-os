@@ -146,6 +146,10 @@
     collect), `wait_nohang` on no child / a running child / "any", `sleep`
     duration and bound, and an orphan that the kernel reaps once it ends (a
     `--forbid` on its path in the final `ps` states that nothing is left).
+    The same probe acts as a supervisor to check `svc_report`: every refusal
+    the kernel can decide by itself (not its child, a reserved name, a row it
+    does not own, `ready` from a non-init, no capability) and one accepted
+    report about its own child.
 25. **Kernel copies into user memory** (V0.10, `uaccess-bios`): a program with
     no capability points `args` and `cap_list` at its own read-only code and
     data; the kernel must refuse (`ERR_FAULT`) — before SEC10-001 it panicked.
