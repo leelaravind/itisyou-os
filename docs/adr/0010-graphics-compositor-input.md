@@ -2,6 +2,11 @@
 
 **Status:** Accepted · 2026-09-02 (V0.5)
 
+**V0.10 additions** (DESK10-001, GUI10-001, INPUT10-001): click-to-focus
+with raise, per-window event rings read with `gui_event` (syscall 41), keys
+routed to the focused window's owner, a per-process window quota, an
+ownership-checked `gui_present`, and an interrupt-safe fixed input ring.
+
 ## Context
 
 V0.4 delivered a headless multitasking kernel driven entirely over the serial
