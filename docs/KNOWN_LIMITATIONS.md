@@ -40,8 +40,13 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
   every syscall (`net_resolve` can take 1.5 s), `irq` (about 200 ms with the
   timer masked), `xhciwait` (up to 5 s), `beep`, and every command that holds
   the NVMe store (`store`, `pkg install/stage/rollback/recover`,
-  `audit save/verify`). A background process's effective quantum is 10–20 ms
-  of Ring 3 time; syscall time is not charged to it.
+  `audit save/verify`). Measured with `sched last` (the whole command window,
+  QEMU on the development laptop): `store put` 37 ms, `pkg install` 1547 ms,
+  `irq` 932 ms, `xhciwait` with no input 5002 ms — against 49 ms for a busy
+  `net poll`. A background process's effective quantum is 10–20 ms of Ring 3
+  time; syscall time is not charged to it. The NIC is polled only by syscalls
+  and console network commands (a slice never polls it), and `tickd` still
+  spins on `yield`, so an idle system never halts the CPU.
 - **Userspace init** (V0.10, ADR-0023): `/sbin/init` (pid 1) starts and
   supervises the services in `/etc/init.conf`, which lives in the initramfs —
   there is no persistent configuration and no reload. Its authority is fixed

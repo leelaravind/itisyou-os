@@ -33,7 +33,23 @@ host tests. Released as v0.9.0: release commit `f06673e`, CI run
 `34761869462` green); production `1ba155b6` serves the v0.9.0 images and keeps
 v0.8.1 downloadable.
 
-## V0.10 (started on a branch)
+## V0.10 (implemented on a branch; release pending CI)
+
+Update 2026-09-13 evening: every V0.10 roadmap item is implemented and
+verified on `v0.10/integration` (last full gate `11e9fb5`: VERIFY OK, 50/50
+QEMU legs, 456 host tests; each step also shown against a negative control):
+always-on co-scheduling at audited safe points (SCHED10-001/002), a process
+tree with parent-only `wait`, `wait_nohang`, `sleep`, orphan handling, `ps`
+and `kill` (PROC10-002), `svc_report` (SVC10-001), `/sbin/init` as pid 1
+from `/etc/init.conf`, restarted by the kernel (INIT10-001/002/003), a Ring 3
+shell with the console's input (SHELL10-001), and Ring 3 desktop apps with
+click-to-focus and routed input (DESK10-001). Found and fixed on the way:
+a denial of service in every release so far — the kernel wrote through user
+pages the program could not write (SEC10-001, disclosed for v0.9.0 on the
+site) — plus a PS/2 framing bug, an IRQ-unsafe input queue, and a
+`gui_present` that checked existence instead of ownership (INPUT10-001,
+GUI10-001). The release waits for its CI run (GitHub Actions needs the
+billing fix or another short public window).
 
 Update 2026-09-13 16:28: `main` green at `42399b9` (CI `34765042925`); site
 production `169d50f9`; repository private. Signing keys on the owner's offline

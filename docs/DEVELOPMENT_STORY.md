@@ -948,6 +948,50 @@ naked timer interrupt path does not clear the direction and alignment-check
 flags a Ring 3 program may have set before kernel code runs after a
 preemption; that is also scheduled for V0.10, with a negative control.
 
+**V0.10: a userspace system, one audited step at a time.** The design was
+argued out first — three independent plans, judged against each other, then
+merged into one with fourteen binding rules — and the rule that shaped
+everything else was that the kernel would stay non-preemptible. Background
+programs would get the CPU only in bounded slices at a handful of places in
+kernel code where nothing can be half-done: the prompt, the console's waits
+for a job, every network poll, the desktop's idle loop. Before a single slice
+ran, the ground was prepared so a slice could not corrupt anything: every
+kernel lock counted (so a slice can refuse to run while one is held), output
+from Ring 3 made line-atomic (so two programs can never splice a kernel
+marker together), a program's direction and alignment-check flags cleared on
+every entry to the kernel (a V0.9 defect: kernel code after a preemption ran
+with the user's DF and AC), and the syscall stack given the guard page V0.9
+had wrongly claimed it had. Each change carried its own negative control —
+the same probe run against the kernel without the fix, to show the check can
+fail.
+
+The scheduling core then went in built, measured and switched off, and only
+afterwards on. `sched` reports what the background got during each console
+command and whether it starved; a paused `busy` starves it by design, a
+resumed one leaves a gap of 50 ms. With slices in place the console could run
+programs as ordinary processes, and the process model grew what an init
+needs: parents, parent-only `wait`, a non-blocking `wait_nohang`, `sleep`,
+orphans, `kill`. A sibling told to collect another program's child is
+refused, and the probe that shows it fails the moment the parent check is
+removed. `/sbin/init` came last: a Ring 3 program that reads its config with
+the same host-tested parser the tests use, starts `tickd` and `flapd` with
+exactly the capabilities the file names, supervises them, and reports each
+event to the kernel, which checks everything it can know for itself. Killing
+init ends its whole tree, and the kernel starts a new one.
+
+Two more increments followed: a Ring 3 shell that borrows the console's
+input from the kernel and gives it back, and Ring 3 applications on the live
+desktop with click-to-focus and keys routed to the focused window. The last
+one surfaced three old input bugs at once: a mouse-command acknowledgement
+fed into the packet decoder framed the first real packet off by one (the V0.5
+test only checked that some mouse line was printed, so it never noticed),
+the PS/2 vertical axis was upside down relative to USB, and the input queue
+allocated from the heap inside interrupt handlers. And writing `wait_nohang`
+found a denial of service in every release so far: the kernel's copy into a
+user buffer checked only that the page was mapped, so a program pointing a
+capability-free call at its own code made the kernel fault in Ring 0. It was
+disclosed for v0.9.0 the same evening and fixed on the branch.
+
 **The serial log is the evidence, so it has to be trustworthy.** The design
 review noticed two ways a Ring 3 program could corrupt the log that every test
 reads: output written in pieces could be interleaved with anyone else's, and

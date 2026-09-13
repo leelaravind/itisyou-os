@@ -158,9 +158,10 @@ revocation). Released as v0.9.0 on 2026-09-13: release commit `f06673e`, CI run
 
 ## V0.10 — Userspace System
 
-*(Started on branch `v0.10/integration`, to be merged after the `v0.9.0`
-tag: program arguments and ITFS space reclamation are implemented and
-verified there. The rest below is planned.)*
+*(Every item below is implemented and verified on branch
+`v0.10/integration` — full local gate 50/50 QEMU legs and 456 host tests at
+`11e9fb5`, each step with a negative control; the release waits for its CI
+run.)*
 
 A userspace `init` as the first process, starting services from configuration;
 an always-on scheduler so services keep running whatever the console is doing;
