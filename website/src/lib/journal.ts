@@ -20,6 +20,19 @@ export interface JournalEntry {
 export const JOURNAL: JournalEntry[] = [
   {
     date: '2026-09-13',
+    time: '20:05',
+    session: 'Session 4 — V0.10',
+    title: 'A denial of service in every release so far — found, shown and fixed on the V0.10 branch',
+    what:
+      'The kernel’s user-copy helper checked that each page of a program’s buffer was mapped, never that the program could write it. A program that points cap_list — which needs no capability — at its own code makes the kernel write there in Ring 0, and the resulting page fault panics the kernel. v0.9.0 has the same code; the limitations and security pages now say so.',
+    detail:
+      'Found while writing V0.10’s wait_nohang, which returns a status into a buffer the program names. A small probe showed the panic on the V0.10 kernel before the fix (a write-protect page fault in Ring 0). The fix walks all four levels of the page tables and requires the user bit at every level, and the writable bit at every level for a kernel write; the same probe then gets ERR_FAULT, and the leg that shows it joins the V0.10 gate. v0.9.0 stays as released — a release is never rebuilt in place.',
+    evidence:
+      'leg uaccess-bios · unfixed: [ITISYOU:PANIC] page fault … PROTECTION_VIOLATION | CAUSED_BY_WRITE · fixed: UACCESS-ARGS-RO-REFUSED, UACCESS-CAPLIST-RO-REFUSED, Exit(0) · requirement SEC10-001',
+    status: 'implemented',
+  },
+  {
+    date: '2026-09-13',
     time: '15:10',
     session: 'Session 4 — V0.9 release',
     title: 'v0.9.0: V0.9 — Transport, Interrupt Cutover & Trust is released',

@@ -80,7 +80,13 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
   save`), not automatic on every record.
 - SMEP, SMAP and UMIP are enabled when the CPU advertises them (the harness's
   CPU model does); W^X for user segments, a guard page below the user stack, and
-  user-pointer validation are always on. Since V0.9 two static kernel stacks —
+  user-pointer validation are always on — but **user-pointer validation in
+  v0.9.0 is incomplete**: it checks that a buffer is mapped, not that the
+  program itself may write it, so any program, holding no capability at all,
+  can crash the kernel by pointing `cap_list` at its own read-only code or
+  data (the kernel's write faults in Ring 0, and a kernel page fault panics).
+  Found after the release (SEC10-001); fixed and regression-tested on the V0.10
+  branch, not in the v0.9.0 images. Since V0.9 two static kernel stacks —
   the RSP0 stack (interrupts and exceptions arriving from Ring 3) and the
   double-fault IST stack — have unmapped guard pages, so an overflow of either
   stops the machine with a double fault naming the stack. **The syscall stack is

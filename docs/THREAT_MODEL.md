@@ -63,7 +63,7 @@ only network this OS has ever been attached to is a test harness on localhost.
 | A hostile package installed | a package from any source | Ed25519 signature over context + lengths + digest, verified against a compiled-in trust root; unsigned, foreign and forged packages refused as three distinct outcomes; re-verified at launch as well as install |
 | A stolen or misused signing key | the development key is published | V0.8: ACCEPTED for a pre-alpha build. Superseded in V0.9 (ADR-0021): the published key is now a scope-limited test key (`hello-*` only); trust flows from an offline root through certificates with scopes and epoch windows, and a compromised key is retired by a root-signed revocation list |
 | Evidence tampering | editing the persisted trail | records hash-chained, chain extended before the bounded ring drops anything, verified on every boot. Does NOT cover an attacker who rewrites the file including its head |
-| Kernel dereferencing a user pointer by accident | a logic bug | SMAP: forbidden by default, permitted only inside three declared windows |
+| Kernel dereferencing a user pointer by accident | a logic bug | SMAP: forbidden by default, permitted only inside three declared windows. Residual in v0.9.0, found after the release: inside a window the kernel writes to any MAPPED user page, including the program's own read-only code, and the resulting Ring 0 fault panics the kernel — a denial of service any program can trigger through `cap_list` (SEC10-001, fixed in V0.10) |
 | Ring 3 leaking kernel addresses | `sgdt`/`sidt`/`sldt`/`str`/`smsw` | UMIP; verified by a probe whose success marker is forbidden from the log |
 
 ### Explicit non-threats — V0.8 (superseded by the V0.9 additions below)
