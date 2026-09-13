@@ -339,6 +339,39 @@ jobs:
           cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --nvme-persist artifacts/audit-test.img             --expect B210             --send "store put audit.log itisyou-audit v1 boot=0 count=1 head=0000000000000000000000000000000000000000000000000000000000000000"             --send "audit verify" --send "shutdown"             --require "trail_recovered status=verified"             --require "trail_recovered status=TAMPERED"             --timeout-secs 300 --label audit-persist-tamper
           rm -f artifacts/audit-test.img
 
+      - name: QEMU audit anchoring against an off-disk witness (four boots)
+        run: |
+          # An unkeyed chain cannot see a whole-trail rewrite: boot 3 writes a
+          # valid EMPTY trail, boot 4's recovery calls it verified, and only
+          # the witness's copy of the saved head exposes it (MISMATCH).
+          rm -f artifacts/anchor-test.img artifacts/anchor-witness.txt
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
+            --net-user --nvme-persist artifacts/anchor-test.img --audit-witness artifacts/anchor-witness.txt \
+            --expect B210 --send "pkg install /pkgs/hello-app-1.itpkg" --send "audit save" \
+            --send "audit anchor 10.0.2.2 {WITNESS_PORT}" --send "shutdown" \
+            --require "trail_saved records=" --require "witness_ack=ok" \
+            --require "[HOST:WITNESS] anchored count=" \
+            --timeout-secs 240 --label audit-anchor-save
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
+            --net-user --nvme-persist artifacts/anchor-test.img --audit-witness artifacts/anchor-witness.txt \
+            --expect B210 --send "audit check-anchor 10.0.2.2 {WITNESS_PORT}" --send "shutdown" \
+            --require "trail_recovered status=verified" --require "anchor_check result=MATCH" \
+            --timeout-secs 240 --label audit-anchor-match
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
+            --nvme-persist artifacts/anchor-test.img \
+            --expect B210 --send "store put audit.log itisyou-audit v1 boot=0 count=0 head=0000000000000000000000000000000000000000000000000000000000000000" \
+            --send "shutdown" --timeout-secs 240 --label audit-anchor-forge
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
+            --net-user --nvme-persist artifacts/anchor-test.img --audit-witness artifacts/anchor-witness.txt \
+            --expect B210 --send "audit check-anchor 10.0.2.2 {WITNESS_PORT}" --send "shutdown" \
+            --require "trail_recovered status=verified records=0 head=0000000000000000000000000000000000000000000000000000000000000000" \
+            --require "trail_count=0 trail_head=0000000000000000000000000000000000000000000000000000000000000000" \
+            --require "anchor_check result=MISMATCH" \
+            --require "action=audit_anchor_mismatch cap=0x0 result=denied" \
+            --forbid "anchor_check result=MATCH" \
+            --timeout-secs 240 --label audit-anchor-detect
+          rm -f artifacts/anchor-test.img artifacts/anchor-witness.txt
+
       - name: QEMU interrupted update -> recovery (two boots)
         run: |
           # Boot 1 installs v1 and stages v2 WITHOUT committing (simulated

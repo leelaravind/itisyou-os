@@ -580,6 +580,55 @@ Remove-Item $auditDisk -ErrorAction SilentlyContinue
     '--timeout-secs', '240', '--label', 'audit-persist-tamper')
 Remove-Item $auditDisk -ErrorAction SilentlyContinue
 
+Write-Output '=== QEMU audit anchoring against a witness off the disk (BIOS, four boots) ==='
+# The chain is unkeyed, so an attacker who rewrites the WHOLE trail can write
+# one that verifies - in the limit a valid EMPTY trail that erases the history.
+# The witness (the runner, over QEMU's user-mode network, persisting to a file
+# across the separate boots) keeps a copy of the saved head the disk cannot
+# reach. Boot 1 saves and anchors; boot 2 matches; boot 3 replaces the trail
+# with a valid empty one; boot 4's recovery calls the forgery VERIFIED (the
+# weakness) and the anchor check calls it MISMATCH (the defence).
+$anchorDisk = Join-Path $env:ITISYOU_SCRATCH 'itisyou-anchor-test.img'
+$anchorWitness = Join-Path $env:ITISYOU_SCRATCH 'itisyou-anchor-witness.txt'
+foreach ($f in @($anchorDisk, $anchorWitness)) { if (Test-Path $f) { Remove-Item -LiteralPath $f } }
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--net-user', '--nvme-persist', $anchorDisk, '--audit-witness', $anchorWitness,
+    '--expect', 'B210',
+    '--send', 'pkg install /pkgs/hello-app-1.itpkg',
+    '--send', 'audit save',
+    '--send', 'audit anchor 10.0.2.2 {WITNESS_PORT}',
+    '--send', 'shutdown',
+    '--require', 'trail_saved records=',
+    '--require', 'witness_ack=ok',
+    '--require', '[HOST:WITNESS] anchored count=',
+    '--timeout-secs', '180', '--label', 'audit-anchor-save')
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--net-user', '--nvme-persist', $anchorDisk, '--audit-witness', $anchorWitness,
+    '--expect', 'B210',
+    '--send', 'audit check-anchor 10.0.2.2 {WITNESS_PORT}',
+    '--send', 'shutdown',
+    '--require', 'trail_recovered status=verified',
+    '--require', 'anchor_check result=MATCH',
+    '--timeout-secs', '180', '--label', 'audit-anchor-match')
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $anchorDisk,
+    '--expect', 'B210',
+    '--send', 'store put audit.log itisyou-audit v1 boot=0 count=0 head=0000000000000000000000000000000000000000000000000000000000000000',
+    '--send', 'shutdown',
+    '--timeout-secs', '180', '--label', 'audit-anchor-forge')
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--net-user', '--nvme-persist', $anchorDisk, '--audit-witness', $anchorWitness,
+    '--expect', 'B210',
+    '--send', 'audit check-anchor 10.0.2.2 {WITNESS_PORT}',
+    '--send', 'shutdown',
+    '--require', 'trail_recovered status=verified records=0 head=0000000000000000000000000000000000000000000000000000000000000000',
+    '--require', 'trail_count=0 trail_head=0000000000000000000000000000000000000000000000000000000000000000',
+    '--require', 'anchor_check result=MISMATCH',
+    '--require', 'action=audit_anchor_mismatch cap=0x0 result=denied',
+    '--forbid', 'anchor_check result=MATCH',
+    '--timeout-secs', '180', '--label', 'audit-anchor-detect')
+foreach ($f in @($anchorDisk, $anchorWitness)) { if (Test-Path $f) { Remove-Item -LiteralPath $f } }
+
 Write-Output '=== QEMU interrupted update -> recovery (BIOS, two boots) ==='
 # Boot 1 installs v1 and STAGES v2 without committing (a simulated crash mid-
 # update), then powers off. Boot 2 (fresh guest, same disk) must find v1

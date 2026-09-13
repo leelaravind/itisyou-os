@@ -705,3 +705,17 @@ unicast, so the bug was invisible. Fixed; the DHCP leg is the regression test.
 That leg runs QEMU's DHCP server on 10.0.9.0/24 — not the guest's static plan —
 so the gateway is unreachable before the lease and reachable after, and the
 address can only have come from DHCP.
+
+**Anchoring the audit head — shown by attacking it first.** The roadmap item
+was "sign the audit head"; the amendment changed it to "anchor it", because a
+key stored beside the log protects nothing from an attacker who can rewrite the
+disk. The test demonstrates the weakness before the defence: boot 3 overwrites
+the trail with a perfectly valid *empty* one (`count=0`, genesis head), and
+boot 4's recovery reports `status=verified records=0` — the chain cannot tell,
+because there is nothing in it to be inconsistent with. The fix is a copy of
+the head somewhere else: `audit anchor` sends the saved head to a witness that
+must echo exactly what it stored, and `audit check-anchor` compares the
+witness's copy with the trail recovered at boot — `MISMATCH`, recorded as a
+denial. In the harness the witness is the runner itself, persisting anchors to
+a file across the four separate QEMU processes; on a real deployment it would
+be another machine, which is the whole point.
