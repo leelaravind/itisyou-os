@@ -465,9 +465,13 @@ Write-Output '=== QEMU TCP stream against the host OS TCP stack (BIOS) ==='
 # pattern itself. Three runs: a clean stream; the same stream with the next
 # two outgoing data segments discarded, recovered by the retransmission
 # timer; and the probe without the network capability, refused and audited.
+# First, the PASSIVE open: the console listens on port 7 and a host client
+# connects through a slirp port forward, sends the pattern and checks the
+# echo itself.
 & $runner @('--image', 'target/images/itisyou-kernel-bios.img',
-    '--net-user', '--tcp-echo-port', '47123',
+    '--net-user', '--tcp-echo-port', '47123', '--tcp-client-forward', '7',
     '--expect', 'B200',
+    '--send', 'tcp serve 7',
     '--send', 'run /bin/tcp-probe network',
     '--send', 'tcp drop 2',
     '--send', 'run /bin/tcp-probe network',
@@ -479,6 +483,12 @@ Write-Output '=== QEMU TCP stream against the host OS TCP stack (BIOS) ==='
     '--require', 'TCPPROBE-ECHO-OK bytes=3000',
     '--require', 'TCPPROBE-CLOSED',
     '--require', 'TCPPROBE-OK',
+    '--require', 'TCPSERVE-LISTENING port=7',
+    '--require', 'TCPSERVE-ACCEPTED from=10.0.2.2:',
+    '--require', 'TCPSERVE-ECHOED bytes=2500',
+    '--require', 'TCPSERVE-CLOSED echoed=2500',
+    '--require', '[HOST:TCPC] echo_ok',
+    '--require', 'echo_ok=true bytes=2500',
     '--require', '[ITISYOU:TCP] owner_exit pid=3 orphaned=1 aborted=0',
     '--require', '[ITISYOU:TCP] injected_loss seq=',
     '--require', '[ITISYOU:TCP] retransmit seq=',

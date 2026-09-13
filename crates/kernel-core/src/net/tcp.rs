@@ -662,14 +662,21 @@ impl Tcb {
     /// Passive open: wait in LISTEN for a SYN addressed to `local:local_port`.
     pub fn listen(local: Ipv4Addr, local_port: u16, iss: u32) -> Tcb {
         let mut t = Tcb::new();
-        if local_port != 0 {
-            t.local = local;
-            t.local_port = local_port;
-            t.state = State::Listen;
-            t.passive = true;
-            t.iss = iss;
-        }
+        t.listen_in_place(local, local_port, iss);
         t
+    }
+
+    /// [`Tcb::listen`] into an existing block (see [`Tcb::connect_in_place`]
+    /// for why a kernel needs the in-place form).
+    pub fn listen_in_place(&mut self, local: Ipv4Addr, local_port: u16, iss: u32) {
+        self.reset_in_place();
+        if local_port != 0 {
+            self.local = local;
+            self.local_port = local_port;
+            self.state = State::Listen;
+            self.passive = true;
+            self.iss = iss;
+        }
     }
 
     /// Current RFC 9293 state.
@@ -1320,6 +1327,49 @@ mod tests {
             let v = self.drain();
             v.iter().map(|s| (s.0.flags, s.0.seq, s.0.ack)).collect()
         }
+    }
+
+    #[test]
+    fn a_reused_block_listens_exactly_like_a_fresh_one() {
+        let mut used = established(8192, 1460);
+        used.t.send(b"stale", 0, &mut used.out);
+        used.out.clear();
+        used.t.listen_in_place(A, 7, 42);
+        let fresh = Tcb::listen(A, 7, 42);
+        assert_eq!(used.t.state(), State::Listen);
+        assert_eq!(
+            (
+                used.t.local(),
+                used.t.remote(),
+                used.t.iss(),
+                used.t.recv_available()
+            ),
+            (
+                fresh.local(),
+                fresh.remote(),
+                fresh.iss(),
+                fresh.recv_available()
+            )
+        );
+        // And it accepts a SYN the same way: SYN-RECEIVED, SYN|ACK out.
+        let (h, mut out) = (
+            SegmentHeader {
+                src_port: BP,
+                dst_port: 7,
+                seq: 900,
+                ack: 0,
+                flags: SYN,
+                window: 4096,
+            },
+            Outbox::new(),
+        );
+        let mut buf = [0u8; 64];
+        let n = build_into(&mut buf, B, A, &h, Some(1000), b"").unwrap();
+        let seg = parse(&buf[..n], B, A).unwrap();
+        used.t.on_segment(&seg, 0, &mut out);
+        assert_eq!(used.t.state(), State::SynReceived);
+        assert_eq!(used.t.remote(), (B, BP));
+        assert_eq!(out.segments()[0].header.flags, SYN | ACK);
     }
 
     #[test]

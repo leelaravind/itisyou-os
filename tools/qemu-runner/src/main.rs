@@ -30,6 +30,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
+mod tcp_client;
 mod tcp_echo;
 mod wire;
 mod witness;
@@ -163,6 +164,10 @@ struct Options {
     tcp_echo: bool,
     /// Fixed port for `--tcp-echo` (default: ephemeral).
     tcp_echo_port: u16,
+    /// Guest port to forward a host loopback port to (`hostfwd`), with a
+    /// host TCP client that connects once the guest prints
+    /// `TCPSERVE-LISTENING` — the guest's passive open (V0.9).
+    tcp_client_forward: Option<(u16, u16)>,
     /// Run an audit-anchor witness persisting to this file; `{WITNESS_PORT}`
     /// in a `--send` line is replaced with its UDP port (V0.9).
     audit_witness: Option<PathBuf>,
@@ -229,6 +234,7 @@ fn parse_args() -> Result<Options, String> {
     let mut net_user_extra = None;
     let mut tcp_echo = false;
     let mut tcp_echo_port = 0u16;
+    let mut tcp_client_forward = None;
     let mut audit_witness = None;
     let mut nvme = false;
     let mut nvme_persist = None;
@@ -291,6 +297,13 @@ fn parse_args() -> Result<Options, String> {
                 tcp_echo_port = value("--tcp-echo-port")?
                     .parse()
                     .map_err(|_| "--tcp-echo-port needs a port number".to_string())?;
+            }
+            "--tcp-client-forward" => {
+                let guest: u16 = value("--tcp-client-forward")?
+                    .parse()
+                    .map_err(|_| "--tcp-client-forward needs a guest port".to_string())?;
+                let host = tcp_client::free_port().map_err(|e| e.to_string())?;
+                tcp_client_forward = Some((host, guest));
             }
             "--audit-witness" => audit_witness = Some(PathBuf::from(value("--audit-witness")?)),
             "--nvme" => nvme = true,
@@ -357,6 +370,7 @@ fn parse_args() -> Result<Options, String> {
         net_user_extra,
         tcp_echo,
         tcp_echo_port,
+        tcp_client_forward,
         audit_witness,
         nvme,
         nvme_persist,
@@ -522,10 +536,13 @@ fn build_command(
             ]);
     }
     if opts.net_user {
-        let netdev = match &opts.net_user_extra {
+        let mut netdev = match &opts.net_user_extra {
             Some(extra) => format!("user,id=net0,{extra}"),
             None => "user,id=net0".to_string(),
         };
+        if let Some((host, guest)) = opts.tcp_client_forward {
+            netdev.push_str(&format!(",hostfwd=tcp:127.0.0.1:{host}-:{guest}"));
+        }
         cmd.arg("-netdev")
             .arg(netdev)
             .args(["-device", "e1000,netdev=net0,mac=52:54:00:12:34:56"]);
@@ -728,6 +745,19 @@ fn run(opts: &Options) -> RunResult {
         None
     };
     let echo_port = tcp_echo.as_ref().map(|e| e.port.to_string());
+    let (mut client_go, tcp_client) = match opts.tcp_client_forward {
+        Some((host, guest)) => {
+            let (go_tx, go_rx) = mpsc::channel();
+            let _ = net_tx.send(format!(
+                "[HOST:TCPC] ready host_port={host} guest_port={guest}"
+            ));
+            (
+                Some(go_tx),
+                Some(tcp_client::TcpClient::start(host, go_rx, net_tx.clone())),
+            )
+        }
+        None => (None, None),
+    };
     let witness_port = match &opts.audit_witness {
         Some(store) => match witness::Witness::start(store.clone(), net_tx.clone()) {
             Ok(w) => {
@@ -953,6 +983,12 @@ fn run(opts: &Options) -> RunResult {
                         Marker::Info(_) | Marker::Mode(_) => {}
                     }
                 }
+                // Release the host TCP client once the guest is listening.
+                if line.contains("TCPSERVE-LISTENING") {
+                    if let Some(go) = client_go.take() {
+                        let _ = go.send(());
+                    }
+                }
                 // Trip the injection gate the first time its substring shows.
                 if !tripped_gate {
                     if let Some(needle) = &opts.inject_after {
@@ -1039,6 +1075,12 @@ fn run(opts: &Options) -> RunResult {
     // fails here.
     if let Some(peer) = &wire_peer {
         let summary = peer.summary();
+        serial_lines.push(summary.clone());
+        log_text.push_str(&summary);
+        log_text.push('\n');
+    }
+    if let Some(client) = &tcp_client {
+        let summary = client.summary();
         serial_lines.push(summary.clone());
         log_text.push_str(&summary);
         log_text.push('\n');

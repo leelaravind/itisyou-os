@@ -214,6 +214,34 @@ pub fn connect(owner: u64, remote: Ipv4Addr, port: u16) -> Option<usize> {
     Some(slot)
 }
 
+/// Passive open on `port` for `owner`: the slot waits in LISTEN and becomes
+/// the connection when a SYN arrives (one connection per listen, like the
+/// state machine's own passive open). `None` when no slot is free or the
+/// port is taken.
+pub fn listen(owner: u64, port: u16) -> Option<usize> {
+    let local = IFACE.lock().ip;
+    let mut table = TABLE.lock();
+    let Table { conns, .. } = &mut *table;
+    if port == 0 || conns.iter().any(|c| c.used && c.tcb.local().1 == port) {
+        return None;
+    }
+    let slot = conns.iter().position(|c| !c.used)?;
+    let iss = initial_sequence(port, Ipv4Addr::UNSPECIFIED, 0);
+    let conn = &mut conns[slot];
+    conn.tcb.listen_in_place(local, port, iss);
+    conn.used = true;
+    conn.owner = owner;
+    conn.end = None;
+    conn.high_water = iss.wrapping_add(1);
+    Some(slot)
+}
+
+/// The peer of `index`, if `owner` holds it (unspecified while listening).
+pub fn peer(index: usize, owner: u64) -> Option<(Ipv4Addr, u16)> {
+    let mut table = TABLE.lock();
+    owned(&mut table.conns, index, owner).map(|c| c.tcb.remote())
+}
+
 fn owned(conns: &mut [Conn; MAX_CONNS], index: usize, owner: u64) -> Option<&mut Conn> {
     conns.get_mut(index).filter(|c| c.used && c.owner == owner)
 }
@@ -367,12 +395,19 @@ pub fn on_segment(src: Ipv4Addr, dst: Ipv4Addr, bytes: &[u8]) {
     let now = now_ms();
     let mut table = TABLE.lock();
     let Table { conns, out } = &mut *table;
-    let hit = conns.iter_mut().find(|c| {
+    // An established four-tuple first; failing that, a listener on the port.
+    let exact = conns.iter().position(|c| {
         c.used
             && c.tcb.local().1 == seg.header.dst_port
             && c.tcb.remote() == (seg.src, seg.header.src_port)
-            && c.tcb.state() != State::Closed
+            && !matches!(c.tcb.state(), State::Closed | State::Listen)
     });
+    let listener = || {
+        conns.iter().position(|c| {
+            c.used && c.tcb.state() == State::Listen && c.tcb.local().1 == seg.header.dst_port
+        })
+    };
+    let hit = exact.or_else(listener).map(|i| &mut conns[i]);
     match hit {
         Some(conn) => {
             let event = conn.tcb.on_segment(&seg, now, out);
