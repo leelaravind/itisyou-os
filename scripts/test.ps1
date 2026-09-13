@@ -984,6 +984,7 @@ Write-Output '=== QEMU Ring 3 DF/AC never reach kernel code (BIOS) ==='
     '--require', 'vector=13 addr=0x0 contained=true',
     '--require', 'dirty_timer=0 dirty_landing=0',
     '--forbid', 'ring3_entry_flag_checks=0 ',
+    '--forbid', 'user_set_seen=0 ',
     '--timeout-secs', '180', '--label', 'flags-hygiene-bios')
 
 Write-Output '=== QEMU kernel TASK stack guard (BIOS) ==='

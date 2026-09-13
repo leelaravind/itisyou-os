@@ -44,6 +44,11 @@ pub static FLAG_CHECKS: core::sync::atomic::AtomicU64 = core::sync::atomic::Atom
 pub static FLAG_DIRTY_TIMER: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 pub static FLAG_DIRTY_LANDING: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
+/// Timer entries from Ring 3 whose INTERRUPTED context had DF or AC set (read
+/// from the saved frame): proof the probe really set them, so `dirty_timer=0`
+/// is a measured result rather than a tautology.
+pub static FLAG_USER_SET_SEEN: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
 
 /// Clear DF and AC on kernel entry (V0.10, HARD10-002). `pushfq`/`popfq`
 /// rather than `clac`, which would #UD on a CPU without SMAP; interrupt
