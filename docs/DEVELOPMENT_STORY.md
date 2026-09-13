@@ -837,3 +837,14 @@ on exactly the digests the build job uploaded. The published images were then
 boot-tested byte for byte (UEFI and BIOS reporting `itisyou-os 0.9.0`,
 two-boot persistence, networking) before the site linked them, and v0.8.1 was
 kept downloadable beside them.
+
+**A second, shorter window.** The owner reopened the public window for an hour
+to get CI working again, and moved the signing keys onto an external drive to
+keep offline. The flaky leg turned out to be a test asserting a timing
+accident rather than a property: whether the probe's connection was still in
+its one-second TIME-WAIT when the program exited. On a fast laptop it always
+was; on a busy CI runner it sometimes was not, and the kernel correctly freed
+the slot earlier. The leg now checks the thing that matters — nothing is left
+owned by a program after it exits — and `main` went green. The V0.10 branch,
+brought up to date with the release, ran on GitHub's Linux runners for the
+first time through a draft pull request and passed everything.
