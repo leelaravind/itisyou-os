@@ -26,15 +26,15 @@ const layers = [
   {
     code: 'L4',
     name: 'Privileged services / capability engine',
-    note: 'deterministic policy layer',
-    tag: 'concept',
-    tagLabel: 'Concept',
+    note: 'capability handles enforced at every syscall, supervised services, signed packages (V0.7–V0.9); the AI policy engine on top is still concept',
+    tag: 'verified',
+    tagLabel: 'Verified',
     accent: false,
   },
   {
     code: 'L3',
     name: 'Userspace',
-    note: 'ring 3, per-process isolation, preemptive scheduling, GUI + device syscalls (V0.6)',
+    note: 'ring 3, per-process isolation, preemptive scheduling, GUI, device, network and TCP syscalls (V0.6–V0.9)',
     tag: 'verified',
     tagLabel: 'Verified',
     accent: true,
@@ -42,7 +42,7 @@ const layers = [
   {
     code: 'L2',
     name: 'Kernel',
-    note: 'Rust no_std, x86_64, ring 0; device model, PCI, USB, audio, NVMe (V0.6)',
+    note: 'Rust no_std, x86_64, ring 0; PCI, USB, audio, NVMe, e1000, ACPI + I/O APIC (V0.6–V0.9)',
     tag: 'verified',
     tagLabel: 'Verified',
     accent: false,

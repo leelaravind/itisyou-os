@@ -1,4 +1,4 @@
-# Architecture — ITISYOU OS V0.1
+# Architecture — ITISYOU OS
 
 This document describes what exists now and the boundaries later milestones
 build inside. Anything marked *(planned)* is design intent, not implemented
@@ -140,14 +140,17 @@ working at the next use. Datagram syscalls never block — inside a syscall
 `SFMASK` has cleared IF, so a wait there would freeze the machine — and return
 `ERR_AGAIN` for the caller to retry on its own slice.
 
-## Interrupt controllers (V0.8, ADR-0017)
+## Interrupt controllers (V0.8 ADR-0017, V0.9 ADR-0019)
 
-The legacy **PIC** still carries the timer and PS/2 input; the **local APIC**
-runs alongside it and is proved to deliver (one-shot APIC timer on vector
-0x41). **MSI-X** is programmed on the NVMe controller and delivered by a real
-block read's completion. The **I/O APIC** is discovered, mapped and programmed
-with a verified register round-trip, but its entry is left masked: line IRQs
-stay on the path that is already verified.
+Since V0.9 the **I/O APIC** delivers the line IRQs — PIT timer, PS/2 keyboard
+and mouse — on the routes the ACPI MADT declares (on QEMU's `pc` machine the
+PIT's IRQ0 arrives on GSI 2), with each route verified by read-back before the
+cutover. The legacy 8259 **PIC** is retired: both chips fully masked and the
+local APIC's LINT0 (the PIC's virtual-wire input) masked. The **local APIC**
+takes the EOI and is proved to deliver (one-shot APIC timer on vector 0x41).
+**MSI-X** is programmed on the NVMe controller and delivered by a real block
+read's completion. The PIT runs in mode 2 (mode 3 double-delivered through
+QEMU's edge-triggered I/O APIC path — found by the cutover).
 
 ## USB (V0.6 UHCI, V0.8 xHCI, ADR-0018)
 
