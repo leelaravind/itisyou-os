@@ -8,6 +8,7 @@
 // every `unsafe` in the kernel crate keeps docs/UNSAFE_INVENTORY.md complete.
 #![forbid(unsafe_code)]
 
+pub mod acpi;
 pub mod audit_chain;
 pub mod bitmap;
 pub mod capability;

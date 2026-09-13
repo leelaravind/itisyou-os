@@ -250,6 +250,26 @@ untouched.
 | CI-V081 | CI green for the V0.8.1 release commit | IMPLEMENTED+VERIFIED | CI run [34750316003](https://github.com/leelaravind/itisyou-os/actions/runs/34750316003) on `bf32b53` green (kernel matrix, reproducibility, website, gitleaks); the stamp commit `8af917c` had failed at the format check (run `34749657321`) and `bf32b53` fixed it. Earlier: CI run [34749240177](https://github.com/leelaravind/itisyou-os/actions/runs/34749240177) on `397ab80` green on ubuntu-24.04: fmt, both clippy gates, host tests, image build + release digests + `boot-images` upload, all 24 QEMU legs, website (incl. the consistency gate), gitleaks |
 | REG-V081 | Every V0.1–V0.8 leg still green at 0.8.1 | IMPLEMENTED+VERIFIED | Local `verify.ps1` → `VERIFY: OK` (24/24 QEMU legs, selftest 113/0 BIOS+UEFI, 292 host tests → 297 with the 5 GPT tests) and CI run `34749240177` (24/24 legs). The four UEFI legs were re-run on the GPT-normalized images: boot-smoke-uefi, selftest-uefi, fs-persist-write/verify all Success |
 
+## V0.9 — Transport, Interrupt Cutover & Trust (in progress)
+
+Scope per `docs/ROADMAP.md` (2026-09-13 amendment). Rows move to a terminal
+state only with QEMU/host evidence; the milestone is not released until every
+row is terminal.
+
+| ID | Requirement | Status | Evidence |
+|---|---|---|---|
+| IRQ09-001 | ACPI tables discovered and validated (RSDP → RSDT/XSDT → MADT, FADT, DSDT `\_S5_`) | IMPLEMENTED+VERIFIED | `kernel_core::acpi`, 10 host tests (RSDP v1/v2 checksums and truncation, table length/checksum/signature lies, zero-length and overrunning MADT entries, QEMU-shaped MADT routing IRQ0 → GSI 2, FADT with and without X_DSDT, `\_S5_` shapes and refusals). Kernel reads firmware only after confirming every page is mapped. BIOS boot: ACPI 1.0, RSDT, 4 tables, PM1a `0x604`; UEFI boot: ACPI 2.0, XSDT, 5 tables, PM1a `0xb004`; both MADT ok (1 CPU, 1 I/O APIC, 5 overrides), S5 = 0/0 |
+| IRQ09-002 | Line-based IRQs moved to the I/O APIC; 8259 PIC retired | IMPLEMENTED+VERIFIED | ADR-0019. Timer (ISA 0 → GSI 2), keyboard (1) and mouse (12) routed on the MADT's GSIs with their PIC-era vectors, read back; both PICs masked `0xff/0xff` and LAPIC LINT0 masked; lock-free EOI. `irq-bios`: routes `readback=ok`, `pic_retired masks=0xff/0xff lint0=masked legacy_lines=ioapic`, and adversarially `timer_route_proof masked_ticks=0 unmasked_ticks=20 result=ioapic_only` — with the timer's I/O APIC entry masked nothing else delivers a tick. Every other leg (preemption, PS/2 desktop input, all deadlines) runs on this path |
+| IRQ09-003 | The timer rate is unchanged by the cutover | IMPLEMENTED+VERIFIED | Found by measuring, not by a failing test: `timer_rate ticks_per_100ms before=10 after=20` — QEMU's edge-triggered I/O APIC delivered the PIT's mode-3 square wave twice per period, which would have halved every quantum and deadline. PIT now runs in mode 2 (rate generator): `before=10 after=10 rate_preserved=true` on BIOS and UEFI; `irq-bios` requires `rate_preserved=true` and forbids `rate_preserved=false` |
+| PWR09-001 | ACPI S5 soft power-off | IMPLEMENTED+VERIFIED | `poweroff` enables ACPI mode through SMI_CMD when firmware has not, then writes `SLP_TYP\|SLP_EN` to the FADT's PM1 control block(s). `acpi-poweroff-bios` (`pm1a_cnt=0x604`, `acpi_mode=enabled`) and `acpi-poweroff-uefi` (`pm1a_cnt=0xb004`, `acpi_mode=firmware`): QEMU exits on its own, `poweroff: failed` forbidden |
+| NET09-002 | DHCP client obtains and applies a lease | IMPLEMENTED+VERIFIED | `kernel_core::net::dhcp` (5 host tests: RFC message shape, QEMU-shaped OFFER/ACK, wrong transaction/client/op, bad cookie, option overrun, missing type, unusable lease, NAK). `net-dhcp-bios` against QEMU's own DHCP server serving 10.0.9.0/24 — deliberately not the guest's static plan: gateway ping fails before (`sent=1 received=0`), `dhcp_lease ip=10.0.9.50 mask=255.255.255.0 router=10.0.9.2 dns=10.0.9.3 … lease_secs=86400`, interface shows 10.0.9.50, gateway ping succeeds after (`sent=2 received=2`), lease audited |
+| NET09-004 | Broadcast UDP is checksummed against its real destination | IMPLEMENTED+VERIFIED | V0.8 passed the host's own address to the UDP pseudo-header instead of the header's destination, so every broadcast datagram failed its checksum and was dropped as malformed (found when the DHCP OFFERs showed `rx_malformed=5`). Fixed in `net::on_ipv4`; regression-covered by `net-dhcp-bios` (the OFFER/ACK are broadcasts) and `net-bios` still green |
+| NET09-001 | TCP: connection state machine, retransmission, Ring 3 streams | IN PROGRESS | Host-testable core (segment codec + state machine) being written; not yet integrated or QEMU-verified |
+| NET09-003 | IPv6 foundations: NDP, SLAAC, ICMPv6 echo | PLANNED | — |
+| KEY09-001 | Signing-key hierarchy: offline root, certified signing keys with validity, signed revocation, private keys outside the tree | PLANNED | — |
+| AUD09-001 | Audit head anchored outside the audited disk | PLANNED | — |
+| REL09-001 | Public boot images are bit-reproducible and CI-built | IMPLEMENTED+VERIFIED | Carried from V0.8.1 (REL081-004/005) and now a standing CI job (`reproducibility`) on every push |
+
 ## Testing & verification
 
 | ID | Requirement | Status | Evidence |

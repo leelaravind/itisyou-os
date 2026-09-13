@@ -5,7 +5,7 @@
 //! breakpoint handler is the only resumable exception (used by selftests).
 
 use core::arch::naked_asm;
-use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use pic8259::ChainedPics;
 use spin::{Lazy, Mutex};
 use x86_64::instructions::port::Port;
@@ -32,8 +32,9 @@ pub const MOUSE_VECTOR: u8 = PIC_2_OFFSET + 4; // IRQ12
 pub const VECTOR_APIC_TIMER: u8 = 0x41;
 /// Message-signalled interrupts from the NIC.
 pub const VECTOR_MSI: u8 = 0x42;
-/// I/O APIC redirection target used for the programming round-trip. The entry
-/// stays masked, so nothing is delivered on it.
+/// I/O APIC redirection target used for the V0.8 programming round-trip.
+/// Unused since the V0.9 cutover routes the real lines; kept reserved so the
+/// number is never reused for something else.
 pub const VECTOR_IOAPIC_PROBE: u8 = 0x43;
 /// Spurious-interrupt vector. The APIC raises these as normal behaviour; what
 /// would be a fault is having no handler installed for one.
@@ -45,6 +46,49 @@ const PIT_DIVISOR: u16 = 11932;
 
 static PICS: Mutex<ChainedPics> =
     Mutex::new(unsafe { ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET) });
+
+/// Set once the I/O APIC delivers the line-based IRQs (timer, PS/2) and the
+/// 8259s are retired (V0.9). Decides which controller an EOI goes to: sending
+/// it to the wrong one does not fail loudly, the right one just never
+/// delivers again.
+static LEGACY_VIA_IOAPIC: AtomicBool = AtomicBool::new(false);
+
+/// True when line-based IRQs come through the I/O APIC.
+pub fn legacy_via_ioapic() -> bool {
+    LEGACY_VIA_IOAPIC.load(Ordering::SeqCst)
+}
+
+/// Acknowledge a line-based interrupt on whichever controller delivered it.
+/// Lock-free on the I/O APIC path (the local APIC's EOI register is written
+/// directly), so an ISR can never spin on a lock the interrupted code holds.
+fn eoi_line(vector: u8) {
+    if LEGACY_VIA_IOAPIC.load(Ordering::Relaxed) {
+        crate::apic::eoi();
+    } else {
+        // SAFETY: acknowledging the PIC interrupt currently being serviced.
+        unsafe { PICS.lock().notify_end_of_interrupt(vector) };
+    }
+}
+
+/// The 8259 interrupt mask registers (primary, secondary), read from the chips.
+pub fn pic_masks() -> (u8, u8) {
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        // SAFETY: reading the PIC mask registers has no side effects.
+        let m = unsafe { PICS.lock().read_masks() };
+        (m[0], m[1])
+    })
+}
+
+/// Mask every line on both 8259s and mark the I/O APIC as the line-IRQ
+/// controller. Called by `apic::cutover_legacy_irqs` with interrupts disabled,
+/// after the replacement routes are programmed and before interrupts return,
+/// so no edge is ever acknowledged on the wrong controller.
+pub(crate) fn retire_pic() {
+    // SAFETY: masking all PIC lines; nothing is delivered through them after
+    // this, and the I/O APIC entries for the same sources are already armed.
+    unsafe { PICS.lock().write_masks(0xFF, 0xFF) };
+    LEGACY_VIA_IOAPIC.store(true, Ordering::SeqCst);
+}
 
 /// Monotonic tick counter incremented by the timer interrupt.
 static TICKS: AtomicU64 = AtomicU64::new(0);
@@ -151,7 +195,12 @@ pub fn enable_timer() {
 
         let mut cmd: Port<u8> = Port::new(0x43);
         let mut data: Port<u8> = Port::new(0x40);
-        cmd.write(0b0011_0110u8); // channel 0, lobyte/hibyte, mode 3
+        // Channel 0, lobyte/hibyte, mode 2 (rate generator): one short low
+        // pulse per period, i.e. exactly one rising edge. Mode 3 (square
+        // wave) was used until V0.9 and was fine behind the PIC, but through
+        // QEMU's edge-triggered I/O APIC it delivered TWICE per period —
+        // measured at the cutover as 10 -> 20 ticks per 100 ms (ADR-0019).
+        cmd.write(0b0011_0100u8);
         data.write((PIT_DIVISOR & 0xFF) as u8);
         data.write((PIT_DIVISOR >> 8) as u8);
     }
@@ -162,6 +211,12 @@ pub fn enable_timer() {
 /// timer (V0.5 input). Primary PIC keeps bits 0/1/2 enabled; secondary
 /// enables bit 4 (IRQ12).
 pub fn set_input_irqs_enabled() {
+    if legacy_via_ioapic() {
+        // After the cutover the lines live in the I/O APIC.
+        crate::apic::set_isa_line_masked(1, false);
+        crate::apic::set_isa_line_masked(12, false);
+        return;
+    }
     // Mask interrupts while holding the PICS lock: the timer/keyboard/mouse
     // ISRs also lock PICS (for EOI), so an interrupt here would deadlock.
     x86_64::instructions::interrupts::without_interrupts(|| {
@@ -268,11 +323,9 @@ extern "C" fn timer_handler_inner(frame: &mut TrapFrame) {
     // Was the interrupt taken from Ring 3 (a user process)?
     let from_user = frame.cs & 0b11 == 0b11;
 
-    // EOI before any possible long-jump, so the PIC delivers the next tick.
-    // SAFETY: acknowledging the interrupt currently being serviced.
-    unsafe {
-        PICS.lock().notify_end_of_interrupt(TIMER_VECTOR);
-    }
+    // EOI before any possible long-jump, so the controller delivers the next
+    // tick.
+    eoi_line(TIMER_VECTOR);
 
     if !from_user {
         return; // kernel-context tick: just account it
@@ -321,18 +374,13 @@ extern "C" fn timer_handler_inner(frame: &mut TrapFrame) {
 
 extern "x86-interrupt" fn keyboard_handler(_frame: InterruptStackFrame) {
     crate::input::on_keyboard_irq();
-    // SAFETY: acknowledging IRQ1.
-    unsafe {
-        PICS.lock().notify_end_of_interrupt(KEYBOARD_VECTOR);
-    }
+    eoi_line(KEYBOARD_VECTOR);
 }
 
 extern "x86-interrupt" fn mouse_handler(_frame: InterruptStackFrame) {
     crate::input::on_mouse_irq();
-    // SAFETY: acknowledging IRQ12 (chained: EOI to both PICs).
-    unsafe {
-        PICS.lock().notify_end_of_interrupt(MOUSE_VECTOR);
-    }
+    // On the PIC path this EOIs both chips (IRQ12 is on the secondary).
+    eoi_line(MOUSE_VECTOR);
 }
 
 extern "x86-interrupt" fn breakpoint_handler(frame: InterruptStackFrame) {

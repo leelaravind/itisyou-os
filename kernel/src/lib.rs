@@ -10,6 +10,7 @@
 
 extern crate alloc;
 
+pub mod acpi;
 pub mod apic;
 pub mod audit;
 pub mod bootstage;
@@ -229,15 +230,14 @@ pub fn init_subsystems(boot_info: &'static mut BootInfo) {
     );
     bootstage::emit(Stage::B200NetworkReady);
 
-    // B210: interrupt modernization. The local APIC comes up alongside the
-    // PIC — not instead of it — and MSI is armed on the NIC so a real packet
-    // can prove message-signalled delivery. Line-based IRQs stay on the
-    // verified PIC path; see ADR-0017.
+    // B210: interrupt modernization. ACPI first (V0.9): the MADT says where the
+    // I/O APIC is and which GSI each ISA IRQ arrives on. Then the local APIC,
+    // then the cutover — timer, keyboard and mouse move to the I/O APIC and the
+    // 8259s are retired (ADR-0019). Without a MADT the cutover is refused and
+    // the verified PIC path stays in charge.
+    acpi::init(boot_info.rsdp_addr.into_option());
     if apic::init() {
-        apic::ioapic_probe(
-            interrupts::KEYBOARD_VECTOR - interrupts::PIC_1_OFFSET,
-            interrupts::VECTOR_IOAPIC_PROBE,
-        );
+        apic::cutover_legacy_irqs();
         let armed = device::with_devices(|devices| {
             devices
                 .iter()

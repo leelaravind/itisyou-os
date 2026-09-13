@@ -91,9 +91,14 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
 
 - IPv4 over one e1000 NIC: ARP, ICMP echo (client and responder), UDP with
   capability-scoped Ring 3 sockets, and a DNS A-record resolver.
-- **No TCP**, **no DHCP** (static 10.0.2.15/24 via 10.0.2.2), **no IPv6**, no
-  routing beyond one gateway, no fragmentation, and no ICMP error generation —
-  an unreachable port is dropped silently. (V0.9: TCP, DHCP, IPv6 foundations.)
+- **No TCP** and **no IPv6** yet (V0.9, in progress). **DHCP** (V0.9) runs on
+  demand (`dhcp`) and applies address, mask, router and DNS; it is not run
+  automatically at boot and there is no background renewal at T1 — the lease
+  is simply used until the next boot. Without it the static plan (10.0.2.15/24
+  via 10.0.2.2) applies. No routing beyond one gateway, no fragmentation, and
+  no ICMP error generation — an unreachable port is dropped silently.
+- DNS through QEMU's user-mode forwarder failed on the Windows test host (no
+  reply at all); DNS is verified against the harness's own peer.
 - One NIC, polled; the receive path is drained from a scheduling slice, so a
   program that never yields also never receives.
 - QEMU's 82540EM exposes no MSI capability, so the NIC has no interrupt path at
@@ -101,14 +106,18 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
 
 ## Interrupts and platform
 
-- Line-based IRQs (timer, PS/2 keyboard and mouse) run on the **legacy 8259
-  PIC**. The local APIC is enabled and proved to deliver (one-shot timer), MSI-X
-  is proved on NVMe, and the I/O APIC is programmed and read back but its entries
-  stay **masked** — this is not yet a system that could run without the PIC. No
-  ACPI table parsing: the I/O APIC address is the architectural one. (V0.9:
-  ACPI MADT parsing and the I/O APIC cutover.)
-- No ACPI power management: `shutdown` exits QEMU through the `isa-debug-exit`
-  test device rather than an ACPI S5 transition. No suspend/resume.
+- Line-based IRQs (timer, PS/2 keyboard and mouse) are delivered by the
+  **I/O APIC** on the routes the ACPI MADT declares, and the 8259 PICs are
+  retired (fully masked, LAPIC LINT0 masked) — since V0.9. Only those three ISA
+  lines are routed; other devices are polled or use MSI-X. The PIT (mode 2) is
+  still the scheduler tick; the local APIC timer is only used for a delivery
+  proof. Single CPU: no IPIs, no AP startup, no x2APIC.
+- ACPI support is table discovery (RSDP, RSDT/XSDT, MADT, FADT) plus the DSDT's
+  `\_S5_` found by pattern match — **not an AML interpreter**, so methods,
+  devices and power resources described in AML are invisible to the kernel.
+- `poweroff` performs a real ACPI S5 soft-off; `shutdown` still uses QEMU's
+  `isa-debug-exit` test device (the harness relies on its exit code). No
+  suspend/resume, no thermal or battery handling.
 - PCI enumeration scans bus 0 only (complete on the `pc` machine; no bridge
   recursion).
 

@@ -129,6 +129,7 @@ fn execute(line: &str) {
         "net" => cmd_net(),
         "ping" => cmd_ping(args),
         "resolve" => cmd_resolve(args),
+        "dhcp" => cmd_dhcp(),
         "svc" => cmd_svc(),
         "pkg" => cmd_pkg(args),
         "audit" => cmd_audit(args),
@@ -142,6 +143,8 @@ fn execute(line: &str) {
             qemu::exit(qemu::ExitCode::Success);
         }
         "reboot" => cmd_reboot(),
+        "poweroff" => cmd_poweroff(),
+        "acpi" => cmd_acpi(),
         other => {
             crate::serial_println!("unknown command: {other} (try 'help')");
         }
@@ -150,7 +153,7 @@ fn execute(line: &str) {
 
 fn cmd_help() {
     crate::serial_println!(
-        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path> [caps|-] [prefix]  run a Ring 3 ELF (optionally sandboxed)\n  bg <path> [caps]  run a Ring 3 ELF co-scheduled with the background services\n  svc               supervise the on-demand services; show all service state\n  pkg <op> ...      app packages: install/stage/launch/rollback/recover/list\n  xhciwait          wait for USB HID input through the xHCI controller\n  harden            CPU-enforced kernel/user separation (SMEP/SMAP/UMIP)\n  irq               APIC state and interrupt-delivery counters\n  store <op> ...    persistent store: ls | put <name> <text> | cat <name> | rm <name>\n  net               interface address, counters and bound sockets\n  ping <ip> [n]     ICMP echo the given IPv4 address\n  resolve <name>    DNS A lookup through the configured server\n  audit [save|verify]  privileged-action trail; persist it or re-verify it\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  usbwait           wait for USB HID input (keyboard/mouse)\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU\n  reboot            8042 CPU reset"
+        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path> [caps|-] [prefix]  run a Ring 3 ELF (optionally sandboxed)\n  bg <path> [caps]  run a Ring 3 ELF co-scheduled with the background services\n  svc               supervise the on-demand services; show all service state\n  pkg <op> ...      app packages: install/stage/launch/rollback/recover/list\n  xhciwait          wait for USB HID input through the xHCI controller\n  harden            CPU-enforced kernel/user separation (SMEP/SMAP/UMIP)\n  irq               interrupt routing (I/O APIC), delivery proofs and counters\n  acpi              ACPI tables found: MADT routes, FADT, S5\n  store <op> ...    persistent store: ls | put <name> <text> | cat <name> | rm <name>\n  net               interface address, counters and bound sockets\n  ping <ip> [n]     ICMP echo the given IPv4 address\n  resolve <name>    DNS A lookup through the configured server\n  dhcp              obtain and apply an address from a DHCP server\n  audit [save|verify]  privileged-action trail; persist it or re-verify it\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  usbwait           wait for USB HID input (keyboard/mouse)\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU (test-exit device)\n  poweroff          ACPI S5 soft power-off\n  reboot            8042 CPU reset"
     );
 }
 
@@ -400,13 +403,47 @@ fn cmd_irq() {
         crate::serial_println!("irq: local APIC not enabled");
         return;
     }
-    // The legacy path is still the one carrying real work; report it first so
-    // nobody reads the APIC counters as a claim that the PIC was replaced.
+    // Which controller carries the line-based IRQs, read back from the
+    // hardware rather than from a flag: the PIC mask registers and each I/O
+    // APIC redirection entry (V0.9 cutover, ADR-0019).
+    let (m1, m2) = crate::interrupts::pic_masks();
     crate::serial_println!(
-        "irq: pic timer_ticks={} preemptions={} (legacy PIC path, still primary)",
+        "irq: legacy_lines={} pic_masks={m1:#04x}/{m2:#04x} timer_ticks={} preemptions={}",
+        if crate::interrupts::legacy_via_ioapic() {
+            "ioapic"
+        } else {
+            "pic"
+        },
         crate::interrupts::ticks(),
         crate::interrupts::preemption_count(),
     );
+    if let Some(madt) = crate::acpi::madt() {
+        for irq in [0u8, 1, 12] {
+            let route = madt.isa_route(irq);
+            if let Some((low, _)) = crate::apic::ioapic_entry(route.gsi) {
+                crate::serial_println!(
+                    "irq: route isa={irq} gsi={} vector={:#x} masked={}",
+                    route.gsi,
+                    low & 0xFF,
+                    low & (1 << 16) != 0,
+                );
+            }
+        }
+    }
+    // The adversarial half: mask the timer's I/O APIC entry and the tick count
+    // must stop dead, unmask it and it must move. If the PIC — or anything
+    // else — were still delivering the timer, the masked window would count.
+    match crate::apic::prove_timer_route(200) {
+        Some((masked, unmasked)) => crate::serial_println!(
+            "irq: timer_route_proof masked_ticks={masked} unmasked_ticks={unmasked} result={}",
+            if masked == 0 && unmasked > 0 {
+                "ioapic_only"
+            } else {
+                "FAILED"
+            }
+        ),
+        None => crate::serial_println!("irq: timer_route_proof skipped legacy_lines=pic"),
+    }
     let delivered = crate::apic::timer_oneshot(100_000, 500);
 
     // Message-signalled delivery. The NIC in this machine model exposes no MSI
@@ -609,6 +646,21 @@ fn cmd_ping(args: &[&str]) {
 }
 
 /// `resolve <name>` — a DNS A lookup, printing the answer or the failure.
+/// Configure the interface from a DHCP server (V0.9).
+fn cmd_dhcp() {
+    match crate::net::dhcp_configure(5000) {
+        Ok(lease) => {
+            let mut a = [0u8; 15];
+            crate::serial_println!(
+                "DHCP-OK ip={} lease_secs={}",
+                lease.address.format(&mut a),
+                lease.lease_secs.unwrap_or(0)
+            );
+        }
+        Err(e) => crate::serial_println!("DHCP-FAILED reason={e:?} (address plan unchanged)"),
+    }
+}
+
 fn cmd_resolve(args: &[&str]) {
     let Some(name) = args.first() else {
         crate::serial_println!("resolve: usage: resolve <host.name>");
@@ -905,6 +957,41 @@ fn cmd_panic_test(args: &[&str]) {
         panic!("panic-test invoked from shell");
     }
     crate::serial_println!("panic-test: pass 'confirm' to trigger a real kernel panic");
+}
+
+/// ACPI S5 (soft off) through the FADT's PM1 control block (V0.9). Unlike
+/// `shutdown`, which uses QEMU's test-exit device, this is the power-off a real
+/// machine would honour.
+fn cmd_poweroff() {
+    crate::serial_println!("poweroff: requesting ACPI S5 (soft off)");
+    let err = crate::acpi::power_off();
+    crate::serial_println!("poweroff: failed reason={err:?}");
+}
+
+/// What ACPI discovery found (V0.9).
+fn cmd_acpi() {
+    let Some(info) = crate::acpi::info() else {
+        crate::serial_println!("acpi: no validated tables");
+        return;
+    };
+    crate::serial_println!(
+        "acpi: rsdp_revision={} madt={} fadt={} s5={}",
+        info.revision,
+        info.madt.is_some(),
+        info.fadt.is_some(),
+        info.s5.is_some()
+    );
+    if let Some(m) = info.madt {
+        for irq in [0u8, 1, 9, 12] {
+            let r = m.isa_route(irq);
+            crate::serial_println!(
+                "acpi: isa={irq} gsi={} trigger={} polarity={}",
+                r.gsi,
+                if r.level { "level" } else { "edge" },
+                if r.active_low { "low" } else { "high" }
+            );
+        }
+    }
 }
 
 fn cmd_reboot() {

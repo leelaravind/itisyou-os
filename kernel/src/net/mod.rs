@@ -525,7 +525,11 @@ fn on_ipv4(payload: &[u8]) {
     }
     match packet.header.protocol {
         ipv4::proto::ICMP => on_icmp(packet.header.src, packet.payload),
-        ipv4::proto::UDP => on_udp(packet.header.src, our_ip, packet.payload),
+        // The UDP checksum covers the destination address actually in the
+        // header. Passing our own address here (as V0.8 did) made every
+        // BROADCAST datagram fail its checksum and be dropped as malformed —
+        // invisible until V0.9's DHCP client depended on a broadcast reply.
+        ipv4::proto::UDP => on_udp(packet.header.src, packet.header.dst, packet.payload),
         _ => IFACE.lock().stats.rx_unwanted += 1,
     }
 }
@@ -615,4 +619,157 @@ pub fn resolve_name(name: &str, timeout_ms: u64) -> Option<Ipv4Addr> {
     })();
     socket::close_kernel(sock);
     result
+}
+
+// --- DHCP (V0.9) -------------------------------------------------------------
+
+/// Why DHCP configuration did not complete.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DhcpFailure {
+    NoNic,
+    /// Port 68 is already bound (another configuration attempt, or an app).
+    PortBusy,
+    NoOffer,
+    NoAck,
+    /// The server declined the request (NAK).
+    Declined,
+}
+
+/// Broadcast a UDP datagram from the unconfigured address `0.0.0.0` — the
+/// only source a DHCP client may use before it holds a lease (RFC 2131 §4.1).
+fn send_unconfigured_broadcast(src_port: u16, dst_port: u16, payload: &[u8]) -> bool {
+    let mut datagram = [0u8; udp::MAX_PAYLOAD_LEN + udp::HEADER_LEN];
+    let Ok(n) = udp::build_into(
+        &mut datagram,
+        Ipv4Addr::UNSPECIFIED,
+        Ipv4Addr::BROADCAST,
+        src_port,
+        dst_port,
+        payload,
+    ) else {
+        return false;
+    };
+    let id = {
+        let mut iface = IFACE.lock();
+        iface.ip_id = iface.ip_id.wrapping_add(1);
+        iface.ip_id
+    };
+    let mut builder =
+        ipv4::Ipv4Builder::new(Ipv4Addr::UNSPECIFIED, Ipv4Addr::BROADCAST, ipv4::proto::UDP);
+    builder.identification = id;
+    let mut packet = [0u8; MAX_FRAME - eth::HEADER_LEN];
+    let Ok(len) = ipv4::build_into(&mut packet, &builder, &datagram[..n]) else {
+        return false;
+    };
+    tx_frame(MacAddr::BROADCAST, eth::EtherType::IPV4, &packet[..len])
+}
+
+/// Wait up to `ms` for a reply to transaction `xid` on socket `sock`.
+fn await_dhcp(sock: usize, xid: u32, ms: u64) -> Option<kernel_core::net::dhcp::Lease> {
+    use kernel_core::net::dhcp;
+    let mut deadline = crate::interrupts::Deadline::after_ms(ms);
+    let mut buf = [0u8; 600];
+    loop {
+        poll();
+        while let Some((len, _from, port)) = socket::take(sock, &mut buf) {
+            // Only a server may answer, and only this transaction for this
+            // card; everything else is someone else's conversation.
+            if port != dhcp::SERVER_PORT {
+                continue;
+            }
+            match dhcp::parse_reply(&buf[..len], xid, mac()) {
+                Ok(lease) => return Some(lease),
+                Err(e) => crate::serial_println!("[ITISYOU:NET] dhcp_reply refused={e:?}"),
+            }
+        }
+        if !deadline.pending() {
+            return None;
+        }
+    }
+}
+
+/// Obtain and apply a lease: DISCOVER → OFFER → REQUEST → ACK (RFC 2131).
+///
+/// Blocking with real deadlines, so kernel context only (the shell), never a
+/// syscall. Each message is retransmitted once per second until the overall
+/// budget runs out. On failure the interface keeps the address plan it had,
+/// so a network without a DHCP server still gets the static configuration.
+pub fn dhcp_configure(timeout_ms: u64) -> Result<kernel_core::net::dhcp::Lease, DhcpFailure> {
+    use kernel_core::net::dhcp;
+    if !e1000::present() {
+        return Err(DhcpFailure::NoNic);
+    }
+    let sock = socket::bind_kernel(dhcp::CLIENT_PORT).ok_or(DhcpFailure::PortBusy)?;
+    let xid = (crate::interrupts::tsc() as u32) ^ 0x4954_5953; // "ITYS"
+    let result = (|| {
+        let mut msg = [0u8; dhcp::MAX_MESSAGE_LEN];
+        let mut budget = timeout_ms;
+        // DISCOVER until an OFFER arrives.
+        let offer = loop {
+            let n = dhcp::build_discover(&mut msg, xid, mac()).map_err(|_| DhcpFailure::NoOffer)?;
+            send_unconfigured_broadcast(dhcp::CLIENT_PORT, dhcp::SERVER_PORT, &msg[..n]);
+            let wait = budget.min(1000);
+            match await_dhcp(sock, xid, wait) {
+                Some(l) if l.kind == dhcp::MessageType::Offer => break l,
+                _ if budget <= wait => return Err(DhcpFailure::NoOffer),
+                _ => budget -= wait,
+            }
+        };
+        let mut a = [0u8; 15];
+        let mut b = [0u8; 15];
+        crate::serial_println!(
+            "[ITISYOU:NET] dhcp_offer ip={} server={}",
+            offer.address.format(&mut a),
+            offer.server.format(&mut b)
+        );
+        // REQUEST the offered address until the server answers.
+        let mut budget = timeout_ms;
+        let ack = loop {
+            let n = dhcp::build_request(&mut msg, xid, mac(), &offer)
+                .map_err(|_| DhcpFailure::NoAck)?;
+            send_unconfigured_broadcast(dhcp::CLIENT_PORT, dhcp::SERVER_PORT, &msg[..n]);
+            let wait = budget.min(1000);
+            match await_dhcp(sock, xid, wait) {
+                Some(l) if l.kind == dhcp::MessageType::Ack => break l,
+                Some(l) if l.kind == dhcp::MessageType::Nak => return Err(DhcpFailure::Declined),
+                _ if budget <= wait => return Err(DhcpFailure::NoAck),
+                _ => budget -= wait,
+            }
+        };
+        Ok(ack)
+    })();
+    socket::close_kernel(sock);
+    let lease = result?;
+
+    // Apply. A lease without a mask falls back to the /24 the static plan
+    // used; without a router the server itself is the only known next hop.
+    let netmask = lease.netmask.unwrap_or(DEFAULT_NETMASK);
+    let gateway = lease.router.unwrap_or(lease.server);
+    let dns = lease.dns.unwrap_or(gateway);
+    {
+        let mut iface = IFACE.lock();
+        iface.ip = lease.address;
+        iface.netmask = netmask;
+        iface.gateway = gateway;
+        iface.dns = dns;
+        // Bindings learned under the old address plan may point at hosts that
+        // are no longer on-link.
+        for e in iface.arp.iter_mut() {
+            e.valid = false;
+        }
+    }
+    let (mut a, mut m, mut g, mut d, mut s) =
+        ([0u8; 15], [0u8; 15], [0u8; 15], [0u8; 15], [0u8; 15]);
+    crate::serial_println!(
+        "[ITISYOU:NET] dhcp_lease ip={} mask={} router={} dns={} server={} lease_secs={} renew_secs={}",
+        lease.address.format(&mut a),
+        netmask.format(&mut m),
+        gateway.format(&mut g),
+        dns.format(&mut d),
+        lease.server.format(&mut s),
+        lease.lease_secs.unwrap_or(0),
+        lease.renew_after().unwrap_or(0),
+    );
+    crate::audit::allowed("dhcp_lease", 0, None);
+    Ok(lease)
 }

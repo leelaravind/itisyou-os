@@ -131,7 +131,12 @@ written, and the change is recorded here rather than made silently:
    trust to seal one. Moving the head out of that attacker's reach is the
    honest form of the same goal.
 
-## V0.9 — Transport, Interrupt Cutover & Trust *(next)*
+## V0.9 — Transport, Interrupt Cutover & Trust *(in progress)*
+
+Verified so far: ACPI discovery, the I/O APIC cutover with the 8259 PIC
+retired (and the PIT-mode bug it exposed), ACPI S5 power-off, the DHCP client,
+and a fix for broadcast UDP checksums. Remaining: TCP, IPv6 foundations, the
+signing-key hierarchy, audit anchoring. Status per row in `docs/REQUIREMENTS.md`.
 
 - **TCP** with a connection state machine (active and passive open, orderly
   close, reset), a retransmission timer with backoff, and a receive window;

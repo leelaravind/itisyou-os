@@ -151,6 +151,10 @@ struct Options {
     /// independent IPv4 implementation with its own gateway (10.0.2.2), DHCP
     /// server and DNS forwarder. Mutually exclusive with `--net`.
     net_user: bool,
+    /// Extra `-netdev user` options, e.g. `net=10.0.9.0/24,dhcpstart=10.0.9.50`
+    /// — a network whose addresses differ from the guest's static defaults, so
+    /// a test can prove the guest applied what DHCP told it.
+    net_user_extra: Option<String>,
     /// Attach an emulated NVMe controller backed by a generated raw disk
     /// whose first sector carries a known magic (for storage read tests).
     nvme: bool,
@@ -211,6 +215,7 @@ fn parse_args() -> Result<Options, String> {
     let mut xhci = false;
     let mut net = false;
     let mut net_user = false;
+    let mut net_user_extra = None;
     let mut nvme = false;
     let mut nvme_persist = None;
     let mut timeout = Duration::from_secs(60);
@@ -265,6 +270,7 @@ fn parse_args() -> Result<Options, String> {
             "--xhci" => xhci = true,
             "--net" => net = true,
             "--net-user" => net_user = true,
+            "--net-user-extra" => net_user_extra = Some(value("--net-user-extra")?),
             "--nvme" => nvme = true,
             "--nvme-persist" => nvme_persist = Some(PathBuf::from(value("--nvme-persist")?)),
             "--timeout-secs" => {
@@ -326,6 +332,7 @@ fn parse_args() -> Result<Options, String> {
         xhci,
         net,
         net_user,
+        net_user_extra,
         nvme,
         nvme_persist,
         timeout,
@@ -490,12 +497,13 @@ fn build_command(
             ]);
     }
     if opts.net_user {
-        cmd.args([
-            "-netdev",
-            "user,id=net0",
-            "-device",
-            "e1000,netdev=net0,mac=52:54:00:12:34:56",
-        ]);
+        let netdev = match &opts.net_user_extra {
+            Some(extra) => format!("user,id=net0,{extra}"),
+            None => "user,id=net0".to_string(),
+        };
+        cmd.arg("-netdev")
+            .arg(netdev)
+            .args(["-device", "e1000,netdev=net0,mac=52:54:00:12:34:56"]);
     }
     if opts.xhci {
         cmd.args([
