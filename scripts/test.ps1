@@ -991,6 +991,44 @@ Write-Output '=== QEMU kernel copies refuse read-only user memory (BIOS) ==='
     '--forbid', 'UACCESS-FAILED',
     '--timeout-secs', '120', '--label', 'uaccess-bios')
 
+Write-Output '=== QEMU process model: parent-only wait, wait_nohang, sleep, orphans, ps (BIOS) ==='
+# V0.10 PROC10-002: a sibling may not collect another process's child;
+# wait_nohang and sleep work; a parent that exits without waiting leaves
+# an orphan that the kernel reaps when it ends (after `busy 500` no
+# proc-probe slot, live or zombie, may remain in `ps`). Every marker is
+# pid-agnostic.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B210',
+    '--send', 'bg /bin/proc-probe spawn -- all',
+    '--send', 'busy 500',
+    '--send', 'ps',
+    '--send', 'kill 999',
+    '--send', 'shutdown',
+    '--require', 'PROCPROBE-FOREIGN-WAIT-REFUSED pid=',
+    '--require', 'PROCPROBE-FOREIGN-NOHANG-REFUSED pid=',
+    '--require', 'PROCPROBE-SIBLING-REFUSED-OK',
+    '--require', 'action=wait_foreign cap=0x1 result=denied',
+    '--require', 'PROCPROBE-NOCHILD-OK',
+    '--require', 'PROCPROBE-NOHANG-AGAIN-OK',
+    '--require', 'PROCPROBE-NOHANG-REAPED status=7',
+    '--require', 'PROCPROBE-ANY-REAPED status=7',
+    '--require', 'PROCPROBE-SLEEP-OK requested=50',
+    '--require', 'PROCPROBE-SLEEP-BOUND-OK',
+    '--require', 'PROCPROBE-ORPHAN-SPAWNED',
+    '--require', 'PROCPROBE-OK',
+    '--require', 'bg: /bin/proc-probe: exit=0',
+    '--require', '[ITISYOU:PROC] reparent child=',
+    '--require', 'to=orphan',
+    '--require', 'PROCPROBE-ORPHAN-CHILD-DONE',
+    '--require', 'path=/bin/tickd state=runnable',
+    '--require', 'ps: processes=',
+    '--require', 'kill: pid=999: no such process',
+    '--require', 'shutting down (QEMU exit)',
+    '--forbid', 'PROCPROBE-FAILED',
+    '--forbid', 'PROCPROBE-SLEEP-SHORT',
+    '--forbid', 'path=/bin/proc-probe',
+    '--timeout-secs', '180', '--label', 'proc-model-bios')
+
 Write-Output '=== QEMU always-on co-scheduling (BIOS) ==='
 # V0.10 SCHED10-001: background processes run in bounded slices at the
 # audited safe points - the idle prompt (held idle by @pause), job waits,

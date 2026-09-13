@@ -1,4 +1,5 @@
-//! Process table and concurrent-process scheduler (V0.3, ADR-0006).
+//! Process table and concurrent-process scheduler (V0.3, ADR-0006; process
+//! tree V0.10, PROC10-002).
 //!
 //! Multiple Ring 3 processes run cooperatively on the resumable V0.2/V0.3
 //! transition. The run-loop owns every [`Process`]; it takes one out of the
@@ -7,12 +8,22 @@
 //! `yield` round-robins; `wait` blocks the caller until the child is a
 //! zombie, delivering the child's status as the syscall return value.
 //!
-//! Preemptive user scheduling is out of V0.3 scope (KNOWN_LIMITATIONS).
+//! V0.10: every process has a parent (0 = the console), and only the parent
+//! may collect a child (`wait`, `wait_nohang`). When a process dies its
+//! children go to the registered adopter (`/sbin/init`, once it runs) or,
+//! with none, a live child is reaped automatically when it ends and a dead
+//! one is removed at once. `sleep` parks a process until a tick; the
+//! run-loop wakes it. The console can `kill` a process and list them (`ps`).
 
 use crate::sync::Mutex;
-use crate::syscall::{ERR_2BIG, ERR_AGAIN, ERR_NOENT};
+use crate::syscall::{ERR_2BIG, ERR_AGAIN, ERR_INVAL, ERR_NOENT};
 use crate::user::{self, Process, UserExit};
 use alloc::collections::{BTreeMap, VecDeque};
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::sync::atomic::{AtomicU64, Ordering};
+use kernel_core::procstatus::{self, Status};
+use kernel_core::proctree::{self, Adopt, ORPHAN_PARENT};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProcState {
@@ -21,10 +32,26 @@ pub enum ProcState {
     Blocked {
         on: u64,
     },
+    /// Parked by `sleep` until this tick (V0.10).
+    Sleeping {
+        until: u64,
+    },
     Exited(u64),
     Faulted {
         vector: u8,
     },
+    /// Terminated by the console's `kill` (V0.10).
+    Killed,
+}
+
+impl ProcState {
+    /// Has the process ended (a zombie until its parent collects it)?
+    pub const fn is_terminal(self) -> bool {
+        matches!(
+            self,
+            ProcState::Exited(_) | ProcState::Faulted { .. } | ProcState::Killed
+        )
+    }
 }
 
 struct Slot {
@@ -32,6 +59,11 @@ struct Slot {
     process: Option<Process>,
     state: ProcState,
     started: bool,
+    /// Who may collect this process: its parent's pid, 0 for the console, or
+    /// [`ORPHAN_PARENT`] when the parent died with no adopter (V0.10).
+    parent: u64,
+    /// What it runs, for `ps`.
+    path: String,
 }
 
 struct Table {
@@ -40,6 +72,13 @@ struct Table {
 }
 
 static TABLE: Mutex<Option<Table>> = Mutex::new(None);
+
+/// The adopter of orphans: `/sbin/init` registers itself here once it runs
+/// (V0.10, S11). 0 = none, so orphans are reaped automatically.
+pub static ADOPT_PID: AtomicU64 = AtomicU64::new(0);
+
+/// The longest `sleep`, in ticks (60 s at 100 Hz).
+pub const SLEEP_MAX_TICKS: u64 = 6000;
 
 const SPAWN_PATH_MAX: u64 = 128;
 
@@ -50,9 +89,16 @@ pub fn init() {
     });
 }
 
-/// Admit an already-loaded process as RUNNABLE. Returns its pid.
+/// Admit an already-loaded process as RUNNABLE, a child of the console.
+/// Returns its pid.
 pub fn admit(process: Process) -> u64 {
+    admit_child(process, 0)
+}
+
+/// Admit a process as RUNNABLE, a child of `parent` (V0.10).
+pub fn admit_child(process: Process, parent: u64) -> u64 {
     let pid = process.pid;
+    let path = process.path.clone();
     let mut guard = TABLE.lock();
     let table = guard.as_mut().expect("proc table init");
     table.slots.insert(
@@ -61,6 +107,8 @@ pub fn admit(process: Process) -> u64 {
             process: Some(process),
             state: ProcState::Runnable,
             started: false,
+            parent,
+            path,
         },
     );
     table.runq.push_back(pid);
@@ -85,24 +133,27 @@ pub fn owner_state(owner: u64) -> &'static str {
         return "orphan";
     }
     match state_of(owner) {
-        Some(ProcState::Runnable) | Some(ProcState::Blocked { .. }) => "live",
+        Some(s) if !s.is_terminal() => "live",
         _ => "dead",
     }
 }
 
+/// The status word `wait` delivers (`kernel_core::procstatus`).
 fn encode_status(state: ProcState) -> u64 {
     match state {
-        ProcState::Exited(code) => code & 0xFFFF_FFFF,
-        ProcState::Faulted { vector } => 0x1_0000_0000 | vector as u64,
+        ProcState::Exited(code) => procstatus::encode(Status::Exited(code as u32)),
+        ProcState::Faulted { vector } => procstatus::encode(Status::Faulted(vector)),
+        ProcState::Killed => procstatus::KILLED,
         _ => 0,
     }
 }
 
-/// Run the scheduler until no process is runnable. Returns how many reached
-/// a terminal state. A leftover Blocked process with no runnable peer is a
-/// deadlock and is reported (should not happen in the tested programs).
+/// Run the scheduler until no process is runnable (sleepers are waited
+/// for). Returns how many reached a terminal state. A leftover Blocked
+/// process with no runnable peer is a deadlock and is reported (should not
+/// happen in the tested programs).
 pub fn run_until_idle() -> usize {
-    run_scheduler(|_| false)
+    run_scheduler(|_| false, true)
 }
 
 /// Run the scheduler preemptively until `target` reaches a terminal state or
@@ -112,13 +163,13 @@ pub fn run_until_idle() -> usize {
 /// there because it only stops when nothing is runnable.
 pub fn run_until_pid_exits(target: u64, max_ticks: u64) -> Option<ProcState> {
     let deadline = crate::interrupts::ticks() + max_ticks;
-    run_scheduler(|_| {
-        let done = matches!(
-            state_of(target),
-            Some(ProcState::Exited(_)) | Some(ProcState::Faulted { .. }) | None
-        );
-        done || crate::interrupts::ticks() >= deadline
-    });
+    run_scheduler(
+        |_| {
+            let done = !matches!(state_of(target), Some(s) if !s.is_terminal());
+            done || crate::interrupts::ticks() >= deadline
+        },
+        true,
+    );
     state_of(target)
 }
 
@@ -128,7 +179,7 @@ pub fn run_until_pid_exits(target: u64, max_ticks: u64) -> Option<ProcState> {
 static RUNLOOP_ACTIVE: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 
 pub fn runloop_active() -> bool {
-    RUNLOOP_ACTIVE.load(core::sync::atomic::Ordering::SeqCst)
+    RUNLOOP_ACTIVE.load(Ordering::SeqCst)
 }
 
 /// Clears [`RUNLOOP_ACTIVE`] however the run-loop returns.
@@ -136,7 +187,7 @@ struct RunLoopGuard;
 
 impl Drop for RunLoopGuard {
     fn drop(&mut self) {
-        RUNLOOP_ACTIVE.store(false, core::sync::atomic::Ordering::SeqCst);
+        RUNLOOP_ACTIVE.store(false, Ordering::SeqCst);
     }
 }
 
@@ -144,25 +195,31 @@ impl Drop for RunLoopGuard {
 /// quanta, `max_ticks` ticks or `max_ms` of wall time (TSC — it keeps
 /// counting while interrupts are masked), whichever comes first. The bounds
 /// are checked between quanta, so a slice overruns by at most one quantum.
+/// A slice never waits for a sleeper: it returns when nothing is runnable.
 /// Returns the quanta it ran.
 pub fn run_slice(max_ticks: u64, max_quanta: u32, max_ms: u64) -> u32 {
     let start_q = crate::sched::quanta_total();
     let tick_deadline = crate::interrupts::ticks() + max_ticks;
     let tsc_deadline = crate::interrupts::tsc() + crate::interrupts::cycles_for_ms(max_ms);
-    run_scheduler(|_| {
-        crate::sched::quanta_total() - start_q >= max_quanta as u64
-            || crate::interrupts::ticks() >= tick_deadline
-            || crate::interrupts::tsc() >= tsc_deadline
-    });
+    run_scheduler(
+        |_| {
+            crate::sched::quanta_total() - start_q >= max_quanta as u64
+                || crate::interrupts::ticks() >= tick_deadline
+                || crate::interrupts::tsc() >= tsc_deadline
+        },
+        false,
+    );
     (crate::sched::quanta_total() - start_q) as u32
 }
 
 /// Core scheduler loop. Runs each runnable process for one quantum (until it
 /// yields, is preempted, blocks, exits, or faults), updating state. Stops
-/// when the run queue drains or `stop(completed)` returns true.
-fn run_scheduler(stop: impl Fn(usize) -> bool) -> usize {
+/// when `stop(completed)` returns true, or when nothing is runnable — unless
+/// `wait_for_sleepers` and a process is sleeping, in which case it halts
+/// until the next interrupt and looks again (V0.10).
+fn run_scheduler(stop: impl Fn(usize) -> bool, wait_for_sleepers: bool) -> usize {
     assert!(
-        !RUNLOOP_ACTIVE.swap(true, core::sync::atomic::Ordering::SeqCst),
+        !RUNLOOP_ACTIVE.swap(true, Ordering::SeqCst),
         "run-loop re-entered"
     );
     let _active = RunLoopGuard;
@@ -171,10 +228,11 @@ fn run_scheduler(stop: impl Fn(usize) -> bool) -> usize {
         if stop(completed) {
             break;
         }
-        let taken = {
+        let (taken, sleepers) = {
             let mut guard = TABLE.lock();
             let table = guard.as_mut().expect("proc table init");
-            loop {
+            let sleepers = wake_due_sleepers(table, crate::interrupts::ticks());
+            let taken = loop {
                 match table.runq.pop_front() {
                     None => break None,
                     Some(pid) => match table.slots.get_mut(&pid) {
@@ -186,9 +244,16 @@ fn run_scheduler(stop: impl Fn(usize) -> bool) -> usize {
                         _ => continue, // stale queue entry
                     },
                 }
-            }
+            };
+            (taken, sleepers)
         };
         let Some((pid, mut process, first)) = taken else {
+            if wait_for_sleepers && sleepers && x86_64::instructions::interrupts::are_enabled() {
+                // Nothing runnable, but a sleeper will be: wait for the next
+                // tick (the timer interrupt ends the halt).
+                x86_64::instructions::hlt();
+                continue;
+            }
             crate::sched::note_runq_empty();
             break;
         };
@@ -208,47 +273,75 @@ fn run_scheduler(stop: impl Fn(usize) -> bool) -> usize {
                 }
             }
             UserExit::Blocked => {
-                // wait() already set this slot's state to Blocked{on}.
+                // wait() or sleep() already set this slot's state.
                 if let Some(s) = table.slots.get_mut(&pid) {
                     s.process = Some(process);
                 }
             }
-            terminal => {
-                // The process's last partial line comes before the kernel's
-                // exit report.
-                crate::console_out::flush_owner(pid);
-                let state = match terminal {
-                    UserExit::Exit(code) => {
-                        crate::serial_println!("[ITISYOU:INFO] user_exit pid={pid} code={code}");
-                        ProcState::Exited(code)
-                    }
-                    UserExit::Fault { vector, addr } => {
-                        crate::serial_println!(
-                            "[ITISYOU:INFO] user_fault pid={pid} vector={vector} addr={:#x} contained=true",
-                            addr.unwrap_or(0)
-                        );
-                        ProcState::Faulted { vector }
-                    }
-                    _ => unreachable!(),
-                };
+            UserExit::Exit(code) => {
                 completed += 1;
-                // Release everything it owned, then free its address space;
-                // keep a zombie slot for wait().
-                release_owned(pid);
-                process.space.teardown();
-                if let Some(s) = table.slots.get_mut(&pid) {
-                    s.process = None;
-                    s.state = state;
-                }
-                wake_waiters(table, pid, encode_status(state));
+                finish(table, pid, Some(process), ProcState::Exited(code), None);
+            }
+            UserExit::Fault { vector, addr } => {
+                completed += 1;
+                finish(
+                    table,
+                    pid,
+                    Some(process),
+                    ProcState::Faulted { vector },
+                    addr,
+                );
             }
         }
     }
     completed
 }
 
+/// A process has ended (exit, fault, or `kill`): the one path every
+/// termination takes (V0.10). Its last partial line, then the kernel's
+/// report; everything it owned released and its address space freed; its
+/// children handed on; its parent (if waiting) woken with the status; and
+/// the slot removed outright if nobody will ever collect it.
+fn finish(
+    table: &mut Table,
+    pid: u64,
+    process: Option<Process>,
+    state: ProcState,
+    fault_addr: Option<u64>,
+) {
+    crate::console_out::flush_owner(pid);
+    match state {
+        ProcState::Exited(code) => {
+            crate::serial_println!("[ITISYOU:INFO] user_exit pid={pid} code={code}");
+        }
+        ProcState::Faulted { vector } => crate::serial_println!(
+            "[ITISYOU:INFO] user_fault pid={pid} vector={vector} addr={:#x} contained=true",
+            fault_addr.unwrap_or(0)
+        ),
+        ProcState::Killed => crate::serial_println!("[ITISYOU:PROC] killed pid={pid}"),
+        _ => {}
+    }
+    release_owned(pid);
+    if let Some(p) = process {
+        p.space.teardown();
+    }
+    let parent = match table.slots.get_mut(&pid) {
+        Some(s) => {
+            s.process = None;
+            s.state = state;
+            s.parent
+        }
+        None => ORPHAN_PARENT,
+    };
+    adopt_orphans(table, pid);
+    wake_waiters(table, pid, encode_status(state));
+    if parent == ORPHAN_PARENT {
+        table.slots.remove(&pid);
+    }
+}
+
 /// Release everything a process owned, on EVERY exit path (V0.10): the
-/// scheduler's terminal path, `reap`, `drain_all` and the console's
+/// scheduler's terminal path, `kill`, `reap`, `drain_all` and the console's
 /// foreground `user::run`. Before V0.10 each path had its own list, and two
 /// of them forgot the process's windows (a leak: pids are never reused, so a
 /// leaked window could never be removed). Output is flushed first so a
@@ -268,12 +361,14 @@ pub fn release_owned(pid: u64) {
 /// the service supervisor's bounded scheduling slice (V0.7).
 pub fn run_until_pid_idle_bounded(max_ticks: u64) {
     let deadline = crate::interrupts::ticks() + max_ticks;
-    run_scheduler(|_| crate::interrupts::ticks() >= deadline);
+    run_scheduler(|_| crate::interrupts::ticks() >= deadline, true);
 }
 
 /// Remove one process's slot (V0.7 supervisor cleanup): tears down its
 /// address space if it never reached a terminal state. No waiters are woken —
-/// the caller owns this pid's lifecycle.
+/// the caller owns this pid's lifecycle. Its children are handed on exactly
+/// as if it had died (V0.10), so none is left with a parent that no longer
+/// exists.
 pub fn reap(pid: u64) {
     let mut guard = TABLE.lock();
     if let Some(table) = guard.as_mut() {
@@ -282,7 +377,17 @@ pub fn reap(pid: u64) {
                 release_owned(pid);
                 process.space.teardown();
             }
+            adopt_orphans(table, pid);
         }
+    }
+}
+
+/// The console's foreground `run` ended its program, which is not in the
+/// table: hand on any children it spawned (V0.10).
+pub fn orphan_children_of(pid: u64) {
+    let mut guard = TABLE.lock();
+    if let Some(table) = guard.as_mut() {
+        adopt_orphans(table, pid);
     }
 }
 
@@ -292,7 +397,7 @@ pub fn reap(pid: u64) {
 pub fn drain_all() -> usize {
     let mut guard = TABLE.lock();
     let table = guard.as_mut().expect("proc table init");
-    let pids: alloc::vec::Vec<u64> = table.slots.keys().copied().collect();
+    let pids: Vec<u64> = table.slots.keys().copied().collect();
     let mut n = 0;
     for pid in pids {
         if let Some(slot) = table.slots.remove(&pid) {
@@ -316,7 +421,7 @@ pub fn live_count() -> usize {
 /// Wake any process blocked in wait() on `child`, delivering `status`, and
 /// reap the child slot.
 fn wake_waiters(table: &mut Table, child: u64, status: u64) {
-    let waiters: alloc::vec::Vec<u64> = table
+    let waiters: Vec<u64> = table
         .slots
         .iter()
         .filter_map(|(&pid, s)| match s.state {
@@ -336,6 +441,114 @@ fn wake_waiters(table: &mut Table, child: u64, status: u64) {
             }
             w.state = ProcState::Runnable;
             table.runq.push_back(wpid);
+        }
+    }
+}
+
+/// Hand the children of `dying` on (V0.10): to the adopter if one is
+/// registered and alive; otherwise a child that already ended is removed now
+/// and a live one is marked to be removed when it ends.
+fn adopt_orphans(table: &mut Table, dying: u64) {
+    let target = match proctree::adopt_target(ADOPT_PID.load(Ordering::SeqCst), dying) {
+        Adopt::Init(init)
+            if table
+                .slots
+                .get(&init)
+                .is_some_and(|s| !s.state.is_terminal()) =>
+        {
+            Adopt::Init(init)
+        }
+        _ => Adopt::AutoReap,
+    };
+    let children: Vec<u64> = table
+        .slots
+        .iter()
+        .filter(|(_, s)| s.parent == dying)
+        .map(|(&pid, _)| pid)
+        .collect();
+    for child in children {
+        match target {
+            Adopt::Init(init) => {
+                if let Some(s) = table.slots.get_mut(&child) {
+                    s.parent = init;
+                }
+                crate::serial_println!(
+                    "[ITISYOU:PROC] reparent child={child} from={dying} to={init}"
+                );
+            }
+            Adopt::AutoReap => {
+                let ended = table
+                    .slots
+                    .get(&child)
+                    .is_some_and(|s| s.state.is_terminal());
+                if ended {
+                    table.slots.remove(&child);
+                    crate::serial_println!(
+                        "[ITISYOU:PROC] reaped child={child} from={dying} reason=orphaned_zombie"
+                    );
+                } else {
+                    if let Some(s) = table.slots.get_mut(&child) {
+                        s.parent = ORPHAN_PARENT;
+                    }
+                    crate::serial_println!(
+                        "[ITISYOU:PROC] reparent child={child} from={dying} to=orphan"
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Make every sleeper whose tick has come runnable again. Returns whether any
+/// process is still sleeping.
+fn wake_due_sleepers(table: &mut Table, now: u64) -> bool {
+    let Table { slots, runq } = table;
+    let mut still = false;
+    for (&pid, s) in slots.iter_mut() {
+        if let ProcState::Sleeping { until } = s.state {
+            if proctree::due(until, now) {
+                s.state = ProcState::Runnable;
+                runq.push_back(pid);
+            } else {
+                still = true;
+            }
+        }
+    }
+    still
+}
+
+/// What the console's `kill` did.
+pub enum KillResult {
+    NoSuch,
+    AlreadyTerminated,
+    Killed { path: String },
+}
+
+/// Terminate a process from the console (V0.10). Only between run-loops:
+/// then every process's state is in its slot, none is mid-quantum.
+pub fn kill(pid: u64) -> KillResult {
+    assert!(!runloop_active(), "kill from inside a run-loop");
+    let mut guard = TABLE.lock();
+    let table = guard.as_mut().expect("proc table init");
+    let Some(slot) = table.slots.get_mut(&pid) else {
+        return KillResult::NoSuch;
+    };
+    if slot.state.is_terminal() {
+        return KillResult::AlreadyTerminated;
+    }
+    let process = slot.process.take();
+    let path = slot.path.clone();
+    finish(table, pid, process, ProcState::Killed, None);
+    KillResult::Killed { path }
+}
+
+/// Every process in the table, lowest pid first: pid, parent, path, state
+/// (for `ps`).
+pub fn for_each(mut f: impl FnMut(u64, u64, &str, ProcState)) {
+    let guard = TABLE.lock();
+    if let Some(table) = guard.as_ref() {
+        for (&pid, s) in &table.slots {
+            f(pid, s.parent, &s.path, s.state);
         }
     }
 }
@@ -400,9 +613,7 @@ pub fn sys_spawn_args(path_ptr: u64, path_len: u64, req_ptr: u64) -> u64 {
             );
             return match err {
                 ArgError::TooMany | ArgError::TooLong => ERR_2BIG,
-                ArgError::Empty | ArgError::BadByte | ArgError::Unterminated => {
-                    crate::syscall::ERR_INVAL
-                }
+                ArgError::Empty | ArgError::BadByte | ArgError::Unterminated => ERR_INVAL,
             };
         }
     };
@@ -422,9 +633,9 @@ fn spawn_common(
     };
     let path = match core::str::from_utf8(&bytes) {
         Ok(p) => p,
-        Err(_) => return crate::syscall::ERR_INVAL,
+        Err(_) => return ERR_INVAL,
     };
-    let parent_caps = crate::syscall::CURRENT_CAPS.load(core::sync::atomic::Ordering::SeqCst);
+    let parent_caps = crate::syscall::CURRENT_CAPS.load(Ordering::SeqCst);
     let child_caps = kernel_core::caps::delegate(parent_caps, requested);
     // The child inherits the parent's FS sandbox (it can only stay as tight).
     let sandbox = crate::syscall::current_sandbox_for_child();
@@ -437,7 +648,7 @@ fn spawn_common(
             // authority was revoked or has expired cannot pass it on, and
             // amplification is refused by the same code that enforces every
             // other check.
-            let parent_pid = crate::syscall::CURRENT_PID.load(core::sync::atomic::Ordering::SeqCst);
+            let parent_pid = crate::syscall::CURRENT_PID.load(Ordering::SeqCst);
             // `load_with` minted a set straight from the bitmask; drop it
             // before installing the delegated one, so the child never holds
             // two sets (and the table never leaks the discarded slots).
@@ -450,9 +661,11 @@ fn spawn_common(
             );
             let argc = args.count();
             child.args = args;
-            let pid = admit(child);
+            // V0.10: the spawner is the parent — the only process that may
+            // collect this child.
+            let pid = admit_child(child, parent_pid);
             let detail = if action == "spawn" {
-                alloc::string::String::from(path)
+                String::from(path)
             } else {
                 alloc::format!("{path} argc={argc}")
             };
@@ -463,23 +676,73 @@ fn spawn_common(
     }
 }
 
+/// What `wait`/`wait_nohang` found for the caller.
+enum Found {
+    /// This child has ended: collect it.
+    Reap(u64),
+    /// Matching children exist but none has ended.
+    Alive,
+    /// No such process, or no children at all.
+    Missing,
+    /// The process exists but is not the caller's child.
+    Foreign,
+}
+
+/// Look for `pid` (0 = any child of the caller, lowest pid first).
+fn find_child(table: &Table, caller: u64, pid: u64) -> Found {
+    if pid == 0 {
+        let children: Vec<(u64, bool)> = table
+            .slots
+            .iter()
+            .filter(|(_, s)| proctree::may_wait(s.parent, caller))
+            .map(|(&p, s)| (p, s.state.is_terminal()))
+            .collect();
+        if children.is_empty() {
+            return Found::Missing;
+        }
+        return match proctree::pick_reapable(children) {
+            Some(p) => Found::Reap(p),
+            None => Found::Alive,
+        };
+    }
+    match table.slots.get(&pid) {
+        None => Found::Missing,
+        Some(s) if !proctree::may_wait(s.parent, caller) => Found::Foreign,
+        Some(s) if s.state.is_terminal() => Found::Reap(pid),
+        Some(_) => Found::Alive,
+    }
+}
+
+/// A process tried to collect a process that is not its child (V0.10).
+fn refuse_foreign() -> u64 {
+    crate::audit::denied("wait_foreign", kernel_core::caps::CAP_SPAWN);
+    ERR_NOENT
+}
+
 /// wait(pid) — if the child is a zombie, reap and return its status;
-/// otherwise block the caller until it is.
+/// otherwise block the caller until it is. Only the parent may wait
+/// (V0.10): for any other process — even one that exists — the answer is
+/// `ERR_NOENT`, and the attempt is audited.
 pub fn sys_wait(child: u64) -> u64 {
-    let caller = sched::current();
+    // The syscall layer's pid: under the console's foreground `run` the
+    // run-loop's notion of "current" is the console, not the caller.
+    let caller = crate::syscall::CURRENT_PID.load(Ordering::SeqCst);
     let mut guard = TABLE.lock();
     let table = guard.as_mut().expect("proc table init");
-    let Some(slot) = table.slots.get(&child) else {
-        return ERR_NOENT;
-    };
-    match slot.state {
-        ProcState::Exited(_) | ProcState::Faulted { .. } => {
-            let status = encode_status(slot.state);
-            table.slots.remove(&child);
-            status
+    match find_child(table, caller, child) {
+        Found::Missing => ERR_NOENT,
+        Found::Foreign => {
+            drop(guard);
+            refuse_foreign()
         }
-        _ => {
-            // Block: mark the caller and hand control back to the run-loop.
+        Found::Reap(pid) => table
+            .slots
+            .remove(&pid)
+            .map_or(0, |s| encode_status(s.state)),
+        Found::Alive => {
+            // Block: mark the caller and hand control back to the run-loop,
+            // which delivers the status when the child ends. A foreground
+            // program (no slot, no run-loop) is simply resumed and gets 0.
             if let Some(s) = table.slots.get_mut(&caller) {
                 s.state = ProcState::Blocked { on: child };
             }
@@ -488,6 +751,62 @@ pub fn sys_wait(child: u64) -> u64 {
             crate::user::transition::abort_block();
         }
     }
+}
+
+/// wait_nohang(pid, status_out) — collect an ended child WITHOUT blocking
+/// (V0.10, syscall 37). `pid = 0` means any child of the caller, lowest pid
+/// first. Returns the collected child's pid and writes its 8-byte status to
+/// `status_out`; `ERR_AGAIN` if the matching children are all still running;
+/// `ERR_NOENT` if there is no matching child, or the process is not the
+/// caller's child (audited). `status_out` is checked first, so a status that
+/// could not be delivered never costs the caller its child.
+pub fn sys_wait_nohang(pid: u64, status_out: u64) -> u64 {
+    if let Err(e) = crate::syscall::validate_user_write(status_out, 8) {
+        return e;
+    }
+    let caller = crate::syscall::CURRENT_PID.load(Ordering::SeqCst);
+    let mut guard = TABLE.lock();
+    let table = guard.as_mut().expect("proc table init");
+    let target = match find_child(table, caller, pid) {
+        Found::Reap(p) => p,
+        Found::Alive => return ERR_AGAIN,
+        Found::Missing => return ERR_NOENT,
+        Found::Foreign => {
+            drop(guard);
+            return refuse_foreign();
+        }
+    };
+    let status = table
+        .slots
+        .remove(&target)
+        .map_or(0, |s| encode_status(s.state));
+    drop(guard);
+    match crate::syscall::copy_to_user(status_out, &status.to_le_bytes()) {
+        Ok(_) => target,
+        Err(e) => e,
+    }
+}
+
+/// sleep(ticks) — park the caller for `ticks` timer ticks (V0.10, syscall
+/// 38; no capability: a process can only ever delay itself). At most
+/// [`SLEEP_MAX_TICKS`], else `ERR_INVAL`; 0 behaves like `yield`. Nothing
+/// blocks inside the syscall (R4): the caller is marked and the run-loop
+/// wakes it when the tick comes. A foreground program (no slot) is resumed
+/// at once — the console's `run` has no run-loop to wake it.
+pub fn sys_sleep(ticks: u64) -> u64 {
+    if ticks > SLEEP_MAX_TICKS {
+        return ERR_INVAL;
+    }
+    crate::user::transition::save_yield_context(0);
+    if ticks == 0 {
+        crate::user::transition::abort_yield();
+    }
+    let caller = crate::syscall::CURRENT_PID.load(Ordering::SeqCst);
+    let until = proctree::deadline(crate::interrupts::ticks(), ticks);
+    if let Some(s) = TABLE.lock().as_mut().and_then(|t| t.slots.get_mut(&caller)) {
+        s.state = ProcState::Sleeping { until };
+    }
+    crate::user::transition::abort_block();
 }
 
 /// Scheduler's notion of "who is running", used by syscalls.

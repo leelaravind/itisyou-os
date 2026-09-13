@@ -139,7 +139,16 @@
     The control leg pauses scheduling on the same image and requires the
     foreground client to time out. `sched` also reports `lock_skips` (must be
     0) and the console stack's painted high-water mark (`stack_margin_ok`).
-24. **Negative cases** (grown alongside subsystems): intentional panic,
+24. **Process model** (V0.10, `proc-model-bios`): `/bin/proc-probe` checks the
+    process tree from inside — a sibling may not collect another process's
+    child (refused and audited, and the child is still its parent's to
+    collect), `wait_nohang` on no child / a running child / "any", `sleep`
+    duration and bound, and an orphan that the kernel reaps once it ends (a
+    `--forbid` on its path in the final `ps` states that nothing is left).
+25. **Kernel copies into user memory** (V0.10, `uaccess-bios`): a program with
+    no capability points `args` and `cap_list` at its own read-only code and
+    data; the kernel must refuse (`ERR_FAULT`) — before SEC10-001 it panicked.
+26. **Negative cases** (grown alongside subsystems): intentional panic,
     allocator exhaustion, malformed inputs, timeout classification.
 
 The harness gained `--audio`/`--audio-out` (AC97 → WAV capture, with a non-

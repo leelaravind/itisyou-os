@@ -64,6 +64,7 @@ pub fn run_all(suite: &mut Suite) {
     scheduler_tests(suite);
     vfs_tests(suite);
     userspace_tests(suite);
+    proc_tree_tests(suite);
     storage_tests(suite);
     graphics_tests(suite);
     device_tests(suite);
@@ -73,6 +74,95 @@ pub fn run_all(suite: &mut Suite) {
     suite.check(
         "sched_runloop_clear_at_rest",
         !crate::proc::runloop_active() && crate::sched::no_sched_depth() == 0,
+    );
+}
+
+/// `/bin/proc-probe` with the given argument block.
+fn load_probe(args: &[u8]) -> Option<crate::user::Process> {
+    let mut p = crate::user::load("/bin/proc-probe").ok()?;
+    p.args = crate::user::Args::new(args).ok()?;
+    Some(p)
+}
+
+/// V0.10 (PROC10-002): parentage, parent-only wait, `wait_nohang`, `sleep`,
+/// orphans and `kill`, driven by `/bin/proc-probe`.
+fn proc_tree_tests(suite: &mut Suite) {
+    use crate::proc::{self, KillResult, ProcState};
+    let free_before = memory::stats().map(|(f, _)| f).unwrap_or(0);
+
+    // Only the parent may collect a child. Before V0.10 the probe's `wait`
+    // on a process that is not its child blocked until that process ended —
+    // here never, because it is an infinite spinner.
+    let ok = match crate::user::load("/bin/spin-forever") {
+        Ok(spinner) => {
+            let d = proc::admit(spinner);
+            let block = alloc::format!("foreign\0{d}\0");
+            match load_probe(block.as_bytes()) {
+                Some(p) => {
+                    let pid = proc::admit(p);
+                    matches!(
+                        proc::run_until_pid_exits(pid, 500),
+                        Some(ProcState::Exited(0))
+                    ) && proc::state_of(d) == Some(ProcState::Runnable)
+                }
+                None => false,
+            }
+        }
+        Err(_) => false,
+    };
+    suite.check("proc_wait_parent_only", ok);
+    proc::drain_all();
+
+    // `sleep(50)` parks the probe for at least 50 ticks, and the run-loop
+    // wakes it (nothing else is runnable meanwhile).
+    let t0 = crate::interrupts::ticks();
+    let ok = load_probe(b"sleep\0").map(proc::admit).is_some_and(|pid| {
+        proc::run_until_idle();
+        proc::state_of(pid) == Some(ProcState::Exited(0))
+    }) && crate::interrupts::ticks() - t0 >= 50;
+    suite.check("proc_sleep_wakes_on_time", ok);
+    proc::drain_all();
+
+    // `wait_nohang`: no child, a running child, collecting it and "any".
+    let ok = load_probe(b"nohang\0").map(proc::admit).is_some_and(|pid| {
+        proc::run_until_idle();
+        proc::state_of(pid) == Some(ProcState::Exited(0))
+    });
+    suite.check("proc_nohang", ok);
+    proc::drain_all();
+
+    // A parent that exits without waiting: its child runs on and is removed
+    // when it ends, so only the parent's own zombie is left.
+    let ok = load_probe(b"orphan\0").map(proc::admit).is_some_and(|pid| {
+        proc::run_until_idle();
+        let only_parent =
+            proc::live_count() == 1 && proc::state_of(pid) == Some(ProcState::Exited(0));
+        proc::reap(pid);
+        only_parent && proc::live_count() == 0
+    });
+    suite.check("proc_orphan_auto_reaped", ok);
+
+    // `kill`: a live process ends as Killed; killing it again, or a process
+    // that is gone, is refused.
+    let ok = match crate::user::load("/bin/spin-forever") {
+        Ok(p) => {
+            let pid = proc::admit(p);
+            let killed = matches!(proc::kill(pid), KillResult::Killed { .. });
+            let state = proc::state_of(pid) == Some(ProcState::Killed);
+            let again = matches!(proc::kill(pid), KillResult::AlreadyTerminated);
+            proc::reap(pid);
+            let gone = matches!(proc::kill(pid), KillResult::NoSuch);
+            killed && state && again && gone
+        }
+        Err(_) => false,
+    };
+    suite.check("proc_kill_live_process", ok);
+    proc::drain_all();
+
+    let free_after = memory::stats().map(|(f, _)| f).unwrap_or(0);
+    suite.check(
+        "proc_tree_no_frame_leaks",
+        free_after == free_before && proc::live_count() == 0,
     );
 }
 

@@ -118,6 +118,28 @@ pub fn wait(pid: u64) -> u64 {
     raw_syscall(SYS_WAIT, pid, 0, 0)
 }
 
+// --- Process model (V0.10) ------------------------------------------------------
+
+pub const SYS_WAIT_NOHANG: u64 = 37;
+pub const SYS_SLEEP: u64 = 38;
+/// The status `wait` reports for a process the console killed.
+pub const STATUS_KILLED: u64 = 2 << 32;
+
+/// Collect an ended child WITHOUT blocking: `pid`, or any child for 0 (the
+/// lowest pid first). Returns the collected child's pid and stores its status
+/// in `status`; `ERR_AGAIN` while the matching children are all running;
+/// `ERR_NOENT` if there is no such child — including a process that exists
+/// but is not this process's child. Needs the Process capability.
+pub fn wait_nohang(pid: u64, status: &mut u64) -> u64 {
+    raw_syscall(SYS_WAIT_NOHANG, pid, status as *mut u64 as u64, 0)
+}
+
+/// Sleep for `ticks` timer ticks (100 Hz; at most 6000, else `ERR_INVAL`);
+/// 0 is a yield. Returns 0.
+pub fn sleep_ticks(ticks: u64) -> u64 {
+    raw_syscall(SYS_SLEEP, ticks, 0, 0)
+}
+
 /// Send a message on a channel. Returns bytes queued or ERR_*.
 pub fn msg_send(channel: u64, data: &[u8]) -> u64 {
     raw_syscall(

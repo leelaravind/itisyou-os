@@ -377,6 +377,7 @@ pub fn prepare_launch(
     let mut process =
         user::load_from_bytes(parsed.payload).map_err(|_| PlatformError::LaunchFailed)?;
     process.set_authority(granted, Some(sandbox));
+    process.path = format!("pkg:{app}");
     crate::audit::allowed("pkg_launch", granted, Some(format!("{app} v{v}")));
     crate::serial_println!(
         "[ITISYOU:PKG] launch name={app} v={v} caps={granted:#x} manifest_version={}",

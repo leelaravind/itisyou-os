@@ -111,6 +111,13 @@ pub const SYS_ARGS: u64 = 35;
 /// capability gate and the same delegation rule as `spawn_caps`; the block is
 /// validated by the same code as the console's `run … -- args`.
 pub const SYS_SPAWN_ARGS: u64 = 36;
+/// Collect an ended child without blocking (V0.10): `pid` (0 = any child),
+/// and where to write its status. Process capability, like `wait`; only the
+/// parent may collect a child.
+pub const SYS_WAIT_NOHANG: u64 = 37;
+/// Park the caller for a number of ticks (V0.10). No capability, like
+/// `yield`: a process can only ever delay itself.
+pub const SYS_SLEEP: u64 = 38;
 
 pub const ERR_NOSYS: u64 = u64::MAX;
 pub const ERR_FAULT: u64 = u64::MAX - 1;
@@ -428,6 +435,13 @@ extern "C" fn syscall_dispatch(a1: u64, a2: u64, a3: u64, nr: u64) -> u64 {
             Ok(()) => crate::proc::sys_wait(a1),
             Err(e) => e,
         },
+        // The gate comes first, as for wait: without the Process capability
+        // a process learns nothing about any other process.
+        SYS_WAIT_NOHANG => match require_any(CapabilityKind::Process, rights::USE, "wait_nohang") {
+            Ok(()) => crate::proc::sys_wait_nohang(a1, a2),
+            Err(e) => e,
+        },
+        SYS_SLEEP => crate::proc::sys_sleep(a1),
         // The channel id is the scoped resource: a service handed a
         // channel-scoped handle cannot talk on any other channel.
         SYS_MSG_SEND => {

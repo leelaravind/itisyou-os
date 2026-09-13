@@ -133,6 +133,8 @@ fn execute(line: &str) {
         "tcp" => cmd_tcp(args),
         "svc" => cmd_svc(),
         "sched" => cmd_sched(args),
+        "ps" => cmd_ps(),
+        "kill" => cmd_kill(args),
         "busy" => cmd_busy(args),
         "pkg" => cmd_pkg(args),
         "audit" => cmd_audit(args),
@@ -156,7 +158,7 @@ fn execute(line: &str) {
 
 fn cmd_help() {
     crate::serial_println!(
-        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path> [caps|-] [prefix|-] [-- args...]  run a Ring 3 ELF (optionally sandboxed, with arguments)\n  bg <path> [caps|-] [-- args...]  run a Ring 3 ELF co-scheduled with the background services\n  svc               supervise the on-demand services; show all service state\n  sched [last|pause|resume]  always-on scheduling: counters, the last command's window, pause/resume\n  busy <ms>         keep the console busy for <ms> (safe points only): does the background still run?\n  pkg <op> ...      app packages: install/stage/launch/rollback/recover/list\n  xhciwait          wait for USB HID input through the xHCI controller\n  harden            CPU-enforced kernel/user separation (SMEP/SMAP/UMIP)\n  irq               interrupt routing (I/O APIC), delivery proofs and counters\n  acpi              ACPI tables found: MADT routes, FADT, S5\n  store <op> ...    persistent store: ls | put <name> <text> | cat <name> | rm <name> | df\n  net               interface address, counters and bound sockets\n  ping <ip> [n]     ICMP echo the given IPv4 address\n  resolve <name>    DNS A lookup through the configured server\n  dhcp              obtain and apply an address from a DHCP server\n  ipv6              bring up IPv6: link-local, router solicitation, SLAAC\n  ping6 <addr> [n]  ICMPv6 echo\n  tcp [drop <n>]    TCP connections and counters; drop <n> discards the next n data segments (test)\n  audit [save|verify|anchor <ip> <port>|check-anchor <ip> <port>]  privileged-action trail\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  usbwait           wait for USB HID input (keyboard/mouse)\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU (test-exit device)\n  poweroff          ACPI S5 soft power-off\n  reboot            8042 CPU reset"
+        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path> [caps|-] [prefix|-] [-- args...]  run a Ring 3 ELF (optionally sandboxed, with arguments)\n  bg <path> [caps|-] [-- args...]  run a Ring 3 ELF co-scheduled with the background services\n  svc               supervise the on-demand services; show all service state\n  sched [last|pause|resume]  always-on scheduling: counters, the last command's window, pause/resume\n  busy <ms>         keep the console busy for <ms> (safe points only): does the background still run?\n  ps                processes: pid, parent, program, state\n  kill <pid>        terminate a process\n  pkg <op> ...      app packages: install/stage/launch/rollback/recover/list\n  xhciwait          wait for USB HID input through the xHCI controller\n  harden            CPU-enforced kernel/user separation (SMEP/SMAP/UMIP)\n  irq               interrupt routing (I/O APIC), delivery proofs and counters\n  acpi              ACPI tables found: MADT routes, FADT, S5\n  store <op> ...    persistent store: ls | put <name> <text> | cat <name> | rm <name> | df\n  net               interface address, counters and bound sockets\n  ping <ip> [n]     ICMP echo the given IPv4 address\n  resolve <name>    DNS A lookup through the configured server\n  dhcp              obtain and apply an address from a DHCP server\n  ipv6              bring up IPv6: link-local, router solicitation, SLAAC\n  ping6 <addr> [n]  ICMPv6 echo\n  tcp [drop <n>]    TCP connections and counters; drop <n> discards the next n data segments (test)\n  audit [save|verify|anchor <ip> <port>|check-anchor <ip> <port>]  privileged-action trail\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  usbwait           wait for USB HID input (keyboard/mouse)\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU (test-exit device)\n  poweroff          ACPI S5 soft power-off\n  reboot            8042 CPU reset"
     );
 }
 
@@ -387,6 +389,11 @@ fn bg_wait(pid: u64, path: &str) {
             Some(crate::proc::ProcState::Faulted { vector }) => {
                 crate::proc::reap(pid);
                 crate::serial_println!("bg: {path}: faulted vector={vector} contained=true");
+                return;
+            }
+            Some(crate::proc::ProcState::Killed) => {
+                crate::proc::reap(pid);
+                crate::serial_println!("bg: {path}: killed");
                 return;
             }
             None => {
@@ -1231,6 +1238,52 @@ fn cmd_sched(args: &[&str]) {
             crate::serial_println!("[ITISYOU:SCHED] paused=false");
         }
         Some(other) => crate::serial_println!("sched: unknown option \"{other}\" (try `sched`)"),
+    }
+}
+
+/// `ps` — every process in the table (V0.10, PROC10-002).
+fn cmd_ps() {
+    use crate::proc::ProcState;
+    use alloc::string::String;
+    let mut n = 0;
+    crate::proc::for_each(|pid, parent, path, state| {
+        n += 1;
+        let path = if path.is_empty() { "-" } else { path };
+        let ppid = match parent {
+            kernel_core::proctree::ORPHAN_PARENT => String::from("orphan"),
+            p => alloc::format!("{p}"),
+        };
+        let st = match state {
+            ProcState::Runnable => String::from("runnable"),
+            ProcState::Blocked { on } => alloc::format!("blocked-child:{on}"),
+            ProcState::Sleeping { .. } => String::from("sleeping"),
+            ProcState::Exited(code) => alloc::format!("exited:{code}"),
+            ProcState::Faulted { vector } => alloc::format!("faulted:{vector}"),
+            ProcState::Killed => String::from("killed"),
+        };
+        crate::serial_println!("  pid={pid} ppid={ppid} path={path} state={st}");
+    });
+    crate::serial_println!("ps: processes={n}");
+}
+
+/// `kill <pid>` — terminate a process (V0.10). Its resources are released,
+/// its children handed on, and a waiting parent sees the `killed` status.
+fn cmd_kill(args: &[&str]) {
+    let Some(pid) = args.first().and_then(|a| a.parse::<u64>().ok()) else {
+        crate::serial_println!("kill: usage: kill <pid>");
+        return;
+    };
+    match crate::proc::kill(pid) {
+        crate::proc::KillResult::Killed { path } => {
+            crate::audit::allowed("console_kill", 0, Some(alloc::format!("pid={pid} {path}")));
+            crate::serial_println!("kill: pid={pid} path={path} state=killed");
+        }
+        crate::proc::KillResult::NoSuch => {
+            crate::serial_println!("kill: pid={pid}: no such process")
+        }
+        crate::proc::KillResult::AlreadyTerminated => {
+            crate::serial_println!("kill: pid={pid}: already terminated")
+        }
     }
 }
 
