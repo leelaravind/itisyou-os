@@ -809,3 +809,27 @@ The test does it on purpose — the console switches onto the syscall stack and
 recurses — and the leg requires the machine to stop with
 `kernel_stack_overflow stack=priv`. Heap-allocated task stacks are still
 unguarded, and the limitation says so.
+
+## 2026-09-13 — V0.10: ITFS stops leaking space (FS10-001)
+
+ITFS had leaked every removed or overwritten extent since V0.4, on purpose:
+a bump allocator never has to prove that the block it hands out is unused.
+Reuse turned out not to need a free list at all. Every file is one
+contiguous extent and the superblock lists every live one, so free space is
+just the gaps between them, recomputed from the directory on demand — the
+on-disk format did not change. The work was in saying precisely which gaps
+are safe. The obvious answer, "whatever the committed superblock does not
+reference", is not enough: an overwrite built as remove-then-allocate on the
+working copy would be handed the file's own old extent, still the only good
+copy until the commit lands. So an overwrite chooses its new run while the
+old entry is still in the directory. And the double buffer means a mount can
+fall back to the OTHER slot, so its extents are pinned too: an extent is
+reused only once neither slot references it, which keeps the V0.9 property
+that whichever valid superblock a mount picks points at intact data. The
+kernel re-checks that against both slots before writing a single data block,
+independently of the allocator. The QEMU leg writes 21 one-block files' worth
+into a disk with 14 data blocks — the old allocator would have failed on the
+15th — and both boots print a space report whose numbers a host test
+predicted before the run. What remains is stated: files are still
+contiguous, so a write larger than every gap is refused as `Fragmented` even
+when enough blocks are free in total; there is no compaction.

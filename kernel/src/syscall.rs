@@ -961,7 +961,11 @@ fn sys_fs_write(path_ptr: u64, path_len: u64, req_ptr: u64) -> u64 {
             );
             data.len() as u64
         }
-        Some(Err(crate::fs_disk::Error::Fs(kernel_core::itfs::FsError::NoSpace))) => ERR_2BIG,
+        // Fragmented (V0.10): enough free blocks, but not contiguous — to the
+        // caller it is the same "does not fit" as a full disk.
+        Some(Err(crate::fs_disk::Error::Fs(
+            kernel_core::itfs::FsError::NoSpace | kernel_core::itfs::FsError::Fragmented,
+        ))) => ERR_2BIG,
         Some(Err(_)) => ERR_INVAL,
         None => ERR_NOENT,
     }
