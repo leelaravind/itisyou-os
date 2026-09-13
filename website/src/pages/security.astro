@@ -47,7 +47,7 @@ const boundaries = [
     n: 7,
     name: 'External network boundary',
     now: true,
-    text: 'V0.8, verified: an IPv4 stack (e1000, ARP, ICMP, UDP, DNS) that treats every received byte as hostile — parsers refuse what they do not fully understand, every drop is counted with a reason, and nothing received can grow kernel memory. It answers only ARP for its own address and ICMP echo; the harness sends five hostile frames and asserts the guest answers none of them. A Ring 3 program reaches the network only through a capability handle scoped to one port, re-checked on every call. No TCP, DHCP or IPv6 yet.',
+    text: 'V0.8, verified and in the released v0.8.1 image: an IPv4 stack (e1000, ARP, ICMP, UDP, DNS) that treats every received byte as hostile — parsers refuse what they do not fully understand, every drop is counted with a reason, and nothing received can grow kernel memory. That image answers only ARP for its own address and ICMP echo; the harness sends five hostile frames and asserts the guest answers none of them. A Ring 3 program reaches the network only through a capability handle scoped to one port, re-checked on every call. The v0.8.1 image has no TCP, DHCP or IPv6. V0.9, verified in QEMU but not yet released, adds TCP (Ring 3 programs connect and listen, each connection re-checked against the port it was opened for), a DHCP client and IPv6 foundations; the new attack surface is in the threat model below.',
   },
 ];
 
@@ -59,10 +59,13 @@ const threats = [
   ['Supply-chain drift', 'dependencies with unexpected code', 'small pinned dependency set, Cargo.lock committed, rationale per kernel dependency'],
   ['Secret leakage', 'tokens in commits/logs/CI', 'secret scan before pushes; env-var/platform secret stores only'],
   ['Fake completion', 'claims without evidence', 'requirement matrix + machine-readable QEMU evidence; website generated from status/current.json; the build fails when the kernel version, status metadata or requirement states disagree'],
-  ['Hostile network input', 'malformed, spoofed or unsolicited frames', 'allocation-free parsers that refuse VLAN tags, fragments, bad checksums and every truncation; bounded ARP cache and socket queues; only ARP-for-us and ICMP echo are answered (verified with five hostile frames, zero replies)'],
-  ['Tampered or foreign package', 'modified payload, unsigned or stranger-signed package, forged signature', 'SHA-256 integrity plus Ed25519 authenticity against a compiled-in trust root — four distinct refusals, verified; the trust root is still a published development key (V0.9: key hierarchy with rotation and revocation)'],
-  ['Edited audit trail', 'records altered, deleted, reordered or inserted on disk', 'hash-chained records verified on every boot and reported TAMPERED; an attacker who rewrites the whole file including its head is not yet detected (V0.9: anchoring)'],
+  ['Hostile network input', 'malformed, spoofed or unsolicited frames', 'allocation-free parsers that refuse VLAN tags, fragments, bad checksums and every truncation; bounded ARP cache and socket queues; five hostile frames draw zero replies (verified). The released v0.8.1 image answers only ARP-for-us and ICMP echo; V0.9 (not yet released) also answers TCP, and neighbour discovery and ICMPv6 echo once IPv6 is brought up'],
+  ['Hostile TCP peer', 'forged resets or SYNs, segments for no connection, connection-table exhaustion', 'V0.9, in development — the released v0.8.1 image has no TCP. Every segment is checksummed against the pseudo-header of the addresses it arrived between and its options are length-checked; a RST is accepted only at exactly the expected sequence number, and a SYN or in-window RST elsewhere draws a challenge ACK (RFC 5961); a segment for no connection gets a RST, never to broadcast; 8 connections with fixed buffers. Not yet: keyed initial sequence numbers (RFC 6528) or rate-limited challenge ACKs'],
+  ['Tampered or foreign package', 'modified payload, unsigned or stranger-signed package, forged signature', 'SHA-256 integrity, then Ed25519 authenticity: corrupt, unsigned, stranger-signed and forged packages are each refused for their own reason (verified). Released v0.8.1: the signature is checked against one compiled-in development key whose seed is published, so it proves the mechanism but anchors no trust. V0.9, verified in QEMU but not yet released: only an offline root is compiled in, and a signing key is trusted only through a root-signed certificate limited to a package-name scope and a release-epoch window — revoked, expired, out-of-scope and uncertified signers are each refused'],
+  ['Stolen or misused signing key', 'the v0.8.1 development key is published; any signing key can leak', 'Released v0.8.1: not mitigated — accepted for a pre-alpha build, and stated. V0.9, verified in QEMU but not yet released: a leaked signing key is bounded by its certificate’s scope and validity window and retired by a root-signed revocation list, and replaying an older list is refused; the published test key is certified only for hello-* fixture packages. Not covered: a stolen root key (it is kept offline for that reason), or an attacker who can rewrite the unauthenticated boot image'],
+  ['Edited audit trail', 'records altered, deleted, reordered or inserted on disk; the whole trail rewritten', 'hash-chained records verified on every boot and reported TAMPERED. A whole-trail rewrite (in the limit, a valid empty trail) still passes the chain, and the released v0.8.1 image cannot detect it. V0.9, verified in QEMU but not yet released, anchors the saved head with a witness off the disk and reports MISMATCH when the trail recovered at boot disagrees — an explicit command, and the witness must be reachable'],
   ['Kernel touching user memory by accident', 'confused-deputy bugs, user pointers', 'SMAP forbids kernel access to user pages outside three declared windows; SMEP and UMIP on; W^X for user segments; a guard page below the user stack'],
+  ['Kernel stack overflow', 'a deep or oversized kernel call path — V0.9’s first TCP run overflowed the then-unguarded syscall stack into the capability table', 'V0.9, in development — not in the released v0.8.1 image: the stack every syscall and every interrupt from Ring 3 runs on, and the double-fault stack, sit on unmapped guard pages, so an overflow ends in a double fault that names the stack instead of silent corruption, verified by a deliberate overflow in QEMU. Heap-allocated kernel task stacks still have no guard page'],
 ];
 ---
 
@@ -158,8 +161,9 @@ const threats = [
         <h2 id="s3-title" class="font-mono text-mono-label text-ink tracking-widest mb-4">03 // IN FORCE NOW</h2>
         <p class="text-body-base text-meta-bright">
           Each control below is enforced by the current build and exercised by a QEMU leg that must see the refusal
-          happen — a control never observed failing is not counted. The environment is still a single-CPU virtual
-          machine; nothing here is a claim about physical hardware.
+          happen — a control never observed failing is not counted. Where the released v0.8.1 image and the V0.9 work
+          on the main branch (verified in QEMU, not yet released) differ, the row says which. The environment is still
+          a single-CPU virtual machine; nothing here is a claim about physical hardware.
         </p>
       </div>
       <ul class="md:col-span-8 flex flex-col gap-px bg-line border border-line list-none">
@@ -168,9 +172,9 @@ const threats = [
             ['CAPABILITY HANDLES', 'Every privileged syscall revalidates the caller’s handle in a kernel table — owner-bound, scoped to one resource (a port, a channel, a device), expiring, revocable. Forged, expired and revoked handles are each refused with the reason audited.'],
             ['DEFAULT DENY', 'A process holds nothing it was not granted and delegation only narrows: a zero-capability probe sees every privileged class refused, and a child can never hold what its parent lacked.'],
             ['SANDBOXED FILESYSTEM', 'Reads and writes are confined to per-process path prefixes checked on the normalized path; writing also needs the write right. Traversal and root escapes are refused.'],
-            ['SIGNED PACKAGES', 'Installs verify SHA-256 integrity, then an Ed25519 signature against a compiled-in trust root. The current root is a published development key: the mechanism is verified, a real signer is not yet provisioned.'],
-            ['CPU-ENFORCED SEPARATION', 'SMEP, SMAP and UMIP on; W^X for user segments; a guard page below the user stack; user pointers validated before any kernel dereference.'],
-            ['AUDIT TRAIL', 'Every privileged action and every denial is recorded, hash-chained, persisted, and re-verified at boot — an edited trail is reported TAMPERED.'],
+            ['SIGNED PACKAGES', 'Installs verify SHA-256 integrity, then an Ed25519 signature. Released v0.8.1: against one compiled-in development key whose seed is published — the mechanism is verified, the key anchors no trust. V0.9, verified in QEMU but not yet released: against an offline root, through root-signed certificates limited by package-name scope and release-epoch validity, subject to a root-signed revocation list; the root and release private keys are kept outside the source tree, and no real package is signed by the release key yet.'],
+            ['CPU-ENFORCED SEPARATION', 'SMEP, SMAP and UMIP on; W^X for user segments; a guard page below the user stack; user pointers validated before any kernel dereference. V0.9 (not yet released) adds guard pages under the kernel’s syscall and double-fault stacks.'],
+            ['AUDIT TRAIL', 'Every privileged action and every denial is recorded, hash-chained, persisted, and re-verified at boot — an edited trail is reported TAMPERED. V0.9 (not yet released) can also anchor the saved head with a witness off the disk and check the trail against it, which detects a whole-trail rewrite.'],
             ['VM CONTAINMENT', 'QEMU launches attach only project-generated disposable images; no host filesystem sharing and no disk passthrough (SEC-002). The test network is the harness’s own peer.'],
             ['UNSAFE MINIMIZED', 'unsafe localized and documented with invariants in docs/UNSAFE_INVENTORY.md; the kernel panics on a violated invariant rather than continuing corrupted.'],
           ].map(([label, text]) => (
@@ -217,9 +221,11 @@ const threats = [
       <div class="panel p-6">
         <h3 class="font-mono text-mono-label text-ink uppercase tracking-widest mb-3">Explicitly out of scope today</h3>
         <p class="text-body-base text-meta-bright max-w-3xl">
-          Physical attacks, side channels, multi-core races (there is one CPU), malicious firmware, and an attacker who
-          can rewrite the whole persistent disk including the audit trail’s stored head. Network input is in scope and
-          treated as hostile; every milestone extends this model before its feature ships. The highest-value asset is
+          Physical attacks, side channels, multi-core races (there is one CPU), malicious firmware, and — for the
+          released v0.8.1 image — an attacker who can rewrite the whole persistent disk including the audit trail’s
+          stored head. V0.9 (not yet released) can detect that rewrite by checking the trail against a head anchored
+          off the disk; an attacker who also controls the witness stays out of scope. Network input is in scope and treated as hostile; every
+          milestone extends this model before its feature ships. The highest-value asset is
           still the host machine the VM runs on: the OS must never touch it.
         </p>
       </div>

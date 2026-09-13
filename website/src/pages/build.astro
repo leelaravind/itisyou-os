@@ -4,9 +4,17 @@ import Breadcrumbs from '../components/Breadcrumbs.astro';
 import StatusTag from '../components/StatusTag.astro';
 import BuildCard from '../components/BuildCard.astro';
 import { status, STATUS_LABELS } from '../lib/status';
+import { MILESTONES } from '../lib/roadmap';
 
 const description =
   'Current build status of ITISYOU OS, generated from status/current.json: per-module statuses with the verification rules that decide when a status may change.';
+
+/** The milestone in development, if any — verified work that is not yet released. */
+const building = MILESTONES.find((m) => m.current && m.status !== 'verified');
+const verificationLabel = STATUS_LABELS[status.verification] ?? status.verification;
+const stampNote = status.commit
+  ? `This build is stamped to commit ${status.commit.slice(0, 7)}, whose full QEMU matrix passed in CI${status.lastVerifiedAt ? ` (${status.lastVerifiedAt})` : ''}.`
+  : `This build is not stamped yet: COMMIT and LAST VERIFIED read “—” until a release commit has passed the full QEMU matrix in CI, and until then the build reads “${verificationLabel}” rather than Verified.`;
 
 const outcomes = [
   ['success', 'expected markers + clean exit (selftest: exit 33, fail=0)'],
@@ -63,6 +71,14 @@ const outcomes = [
           </tbody>
         </table>
       </div>
+      {
+        building?.release && (
+          <p class="font-mono text-mono-data text-meta-bright mt-4 max-w-3xl border-l-2 border-line-strong pl-4">
+            Modules marked Verified include {building.id} work that passed its host and QEMU tests locally but is not
+            yet released. {building.release}
+          </p>
+        )
+      }
     </section>
 
     <!-- ============ V0.5 desktop evidence ============ -->
@@ -216,10 +232,7 @@ const outcomes = [
             </tbody>
           </table>
         </div>
-        <p class="font-mono text-mono-data text-muted mt-4">
-          No QEMU verification matrix has completed yet for this build — which is why every field above that depends on
-          it reads “—” or Not Yet Verified.
-        </p>
+        <p class="font-mono text-mono-data text-muted mt-4">{stampNote}</p>
       </div>
     </section>
 

@@ -6,7 +6,7 @@ import { JOURNAL } from '../lib/journal';
 import { status, orDash } from '../lib/status';
 
 const description =
-  'The ITISYOU OS system ledger: a chronological record of engineering decisions, failures, root causes and fixes, mirrored from docs/DEVELOPMENT_STORY.md. No releases have shipped yet.';
+  'The ITISYOU OS system ledger: a chronological record of engineering decisions, failures, root causes and fixes, mirrored from docs/DEVELOPMENT_STORY.md. Tagged releases are listed on the releases page.';
 ---
 
 <Base title="Changelog" description={description}>
@@ -16,8 +16,9 @@ const description =
       <h1 class="font-sans font-light text-[36px] sm:text-display-lg text-ink mb-4">System Ledger</h1>
       <p class="text-body-base text-meta-bright max-w-2xl">
         Chronological record of engineering changes, decisions and failures, mirrored from
-        <span class="font-mono text-mono-data">docs/DEVELOPMENT_STORY.md</span>. There are no release entries yet — the
-        project is pre-alpha and nothing has shipped. Failures are logged with their root causes, not hidden.
+        <span class="font-mono text-mono-data">docs/DEVELOPMENT_STORY.md</span>. Releases — tags, commits, CI runs and
+        downloads — are on the <a href="/releases" class="underline underline-offset-2 hover:text-ink">releases page</a>;
+        this ledger is the engineering story between them. Failures are logged with their root causes, not hidden.
       </p>
     </header>
 
@@ -72,8 +73,8 @@ const description =
     </div>
 
     <p class="font-mono text-mono-data text-muted mt-16 max-w-2xl">
-      Release-grade changelog entries (version, commit, checksums, verification evidence) will appear here once the
-      first release exists. See <a href="/releases" class="underline underline-offset-2 hover:text-ink">/releases</a>.
+      Release-grade entries (version, commit, CI run, checksums, download) are on
+      <a href="/releases" class="underline underline-offset-2 hover:text-ink">/releases</a>.
     </p>
   </div>
 </Base>

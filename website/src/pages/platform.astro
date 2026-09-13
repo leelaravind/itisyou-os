@@ -15,7 +15,7 @@ const caps = [
   ['dev', 'device-table queries'],
   ['fs_read', 'filesystem reads (within the sandbox prefixes)'],
   ['fs_write', 'filesystem writes to the persistent store (V0.8)'],
-  ['network', 'UDP sockets and DNS — scoped to a port (V0.8)'],
+  ['network', 'UDP sockets and DNS — scoped to a port (V0.8); TCP connect and listen — scoped to the port the connection is opened for (V0.9, in development)'],
   ['audio', 'reserved — no userspace audio syscall yet'],
   ['sys_admin', 'reserved — userspace service/package control'],
 ];
@@ -169,9 +169,12 @@ const evidence = [
           <strong>one crash-atomic filesystem transition</strong> — an interrupted update can never activate.
         </p>
         <p class="text-body-base text-meta-bright">
-          Honesty note: SHA-256 is <em>integrity</em>, not authenticity. Package <em>signing</em> requires key
-          provisioning and a root of trust the platform does not yet have — deferred and documented in ADR-0012, and
-          listed as Planned on the build page.
+          Honesty note: SHA-256 is <em>integrity</em>, not authenticity, so since V0.8 a package also carries an
+          Ed25519 signature, checked after the digest. In the released v0.8.1 image it is checked against one
+          compiled-in development key whose seed is published: the mechanism is real, the key anchors no trust. V0.9
+          (verified in QEMU, not yet released) trusts only an offline root, and signing keys only through root-signed
+          certificates limited by package-name scope and release-epoch validity, subject to a signed revocation list
+          (ADR-0021).
         </p>
       </div>
       <div class="md:col-span-8">

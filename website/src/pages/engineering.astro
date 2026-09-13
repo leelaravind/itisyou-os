@@ -8,13 +8,17 @@ import { JOURNAL } from '../lib/journal';
 const description =
   'How ITISYOU OS is engineered: the verification loop, the deterministic QEMU test harness, requirement traceability with evidence, and the running development story.';
 
+/**
+ * V0.9 rows mirrored from docs/REQUIREMENTS.md. Matrix states map onto the
+ * site vocabulary: IMPLEMENTED+VERIFIED -> verified, IN PROGRESS -> in-development.
+ */
 const traceability = [
-  { id: 'BOOT-001', req: 'QEMU reaches kernel entry (B010)', status: 'in-development', evidence: 'qemu-runner label boot-smoke-*' },
-  { id: 'BOOT-002', req: 'Serial logging works (B020)', status: 'in-development', evidence: 'qemu-runner label boot-smoke-*' },
-  { id: 'MEM-001', req: 'Physical memory manager works', status: 'planned', evidence: 'unit + QEMU selftests' },
-  { id: 'INT-001', req: 'Exceptions/IDT installed', status: 'planned', evidence: 'controlled exception test' },
-  { id: 'TASK-001', req: 'Scheduler runs multiple tasks', status: 'planned', evidence: 'deterministic task output tests' },
-  { id: 'DIAG-001', req: 'Panic produces useful serial evidence', status: 'in-development', evidence: 'panic handler emits [ITISYOU:PANIC]; negative test pending' },
+  { id: 'IRQ09-002', req: 'Line-based IRQs moved to the I/O APIC; 8259 PIC retired', status: 'verified', evidence: 'irq-bios · pic_retired masks=0xff/0xff · timer_route_proof masked_ticks=0 result=ioapic_only' },
+  { id: 'NET09-001', req: 'TCP: connection state machine, retransmission, Ring 3 streams', status: 'verified', evidence: 'net-tcp-bios against the host TCP stack · injected_losses=2 · pattern_ok=true' },
+  { id: 'KEY09-001', req: 'Signing-key hierarchy: offline root, certified signing keys, signed revocation', status: 'verified', evidence: 'trust-bios · revoked_signer · certificate_expired · out_of_scope' },
+  { id: 'HARD09-001', req: 'A kernel stack overflow faults instead of corrupting kernel data', status: 'verified', evidence: 'stack-guard-bios · kernel_stack_overflow stack=priv … guard_hit=true' },
+  { id: 'REG-V09', req: 'Every V0.1–V0.8 leg stays green on the V0.9 interrupt path', status: 'in-development', evidence: 'full local gate at each exact commit; terminal at the V0.9 release' },
+  { id: 'CI-V09', req: 'CI green for V0.9', status: 'in-development', evidence: 'GitHub refuses to start jobs on this account (billing; run 34755059496); terminal on the release commit' },
 ];
 
 const pyramid = [
@@ -100,14 +104,14 @@ const pyramid = [
     <section aria-labelledby="trace-title">
       <div class="flex flex-wrap items-end justify-between gap-4 border-b border-line-soft pb-4 mb-8">
         <h2 id="trace-title" class="font-sans text-headline-md text-ink">Requirement traceability</h2>
-        <p class="font-mono text-mono-data text-meta">Excerpt — full matrix lives in docs/REQUIREMENTS.md</p>
+        <p class="font-mono text-mono-data text-meta">V0.9 excerpt — full matrix lives in docs/REQUIREMENTS.md</p>
       </div>
       <div class="table-scroll panel">
         <table class="w-full border-collapse min-w-[640px]">
           <caption class="sr-only">Requirement traceability excerpt with status and evidence convention</caption>
           <thead>
             <tr>
-              {['ID', 'Requirement', 'Status', 'Evidence convention'].map((h) => (
+              {['ID', 'Requirement', 'Status', 'Evidence'].map((h) => (
                 <th scope="col" class="text-left font-mono text-[11px] font-medium tracking-widest uppercase text-muted bg-log border-b border-line px-4 py-3">{h}</th>
               ))}
             </tr>
@@ -130,7 +134,7 @@ const pyramid = [
       </div>
       <p class="font-mono text-mono-data text-muted mt-4">
         A requirement is never deleted because it is difficult. Statuses collapse to implemented+verified / blocked /
-        not-applicable at reporting time.
+        not-applicable at reporting time; the two In Development rows close with the V0.9 release, which waits on CI.
       </p>
     </section>
 

@@ -4,6 +4,7 @@ import Breadcrumbs from '../components/Breadcrumbs.astro';
 import StatusTag from '../components/StatusTag.astro';
 import WarningBanner from '../components/WarningBanner.astro';
 import { status } from '../lib/status';
+import { MILESTONES } from '../lib/roadmap';
 import downloads from '../data/downloads.json';
 
 interface DownloadFile {
@@ -26,6 +27,8 @@ const base = `/downloads/${downloads.tag}`;
 const mib = (n: number) => `${(n / (1024 * 1024)).toFixed(2)} MiB`;
 const uefi = files.find((f) => f.firmware.startsWith('UEFI'));
 const bios = files.find((f) => f.firmware.startsWith('BIOS'));
+/** The milestone in development, if any — its work is not in these images. */
+const building = MILESTONES.find((m) => m.current && m.status !== 'verified');
 
 const description = published
   ? `Download ITISYOU OS ${downloads.tag}: checksummed x86_64 boot images for QEMU (UEFI and BIOS), with SHA-256, tested environments, instructions and known limitations. Experimental, virtual machines only.`
@@ -169,7 +172,7 @@ const description = published
               <p>&nbsp;&nbsp;... -drive file=data.img,if=none,format=raw,id=nvme0 -device nvme,serial=itisyou1,drive=nvme0</p>
               <p class="text-muted mt-3">// optional: let the console's `shutdown` command exit QEMU</p>
               <p>&nbsp;&nbsp;... -device isa-debug-exit,iobase=0xf4,iosize=0x04</p>
-              <p class="text-muted mt-3">// optional: network (static 10.0.2.15; no TCP, no DHCP yet)</p>
+              <p class="text-muted mt-3">// optional: network (static 10.0.2.15; this release has no TCP or DHCP)</p>
               <p>&nbsp;&nbsp;... -netdev user,id=net0 -device e1000,netdev=net0</p>
             </div>
             <p class="mt-4 text-sm text-meta">
@@ -223,6 +226,12 @@ const description = published
                 stack (ARP/ICMP/UDP/DNS) with capability-scoped sockets, Ed25519-signed packages with atomic update and
                 rollback, a hash-chained audit trail, SMEP/SMAP/UMIP.
               </p>
+              {building && (
+                <p class="text-sm text-meta-bright mb-3">
+                  Not in these images: {building.id} — {building.name} ({building.components.join('; ')}), which is
+                  verified in QEMU but not yet released.
+                </p>
+              )}
               <a class="btn" href="/releases">All releases</a>
             </div>
             <div class="panel p-gutter">
