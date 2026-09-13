@@ -166,6 +166,17 @@ fn proc_tree_tests(suite: &mut Suite) {
     suite.check("proc_kill_live_process", ok);
     proc::drain_all();
 
+    // console_read (V0.10, SHELL10-001): nobody owns the console's input in
+    // the selftest image, so every caller is refused.
+    let ok = load_probe(b"console-read\0")
+        .map(proc::admit)
+        .is_some_and(|pid| {
+            proc::run_until_idle();
+            proc::state_of(pid) == Some(ProcState::Exited(0))
+        });
+    suite.check("console_read_refused_without_ownership", ok);
+    proc::drain_all();
+
     // svc_report (V0.10, SVC10-001): refused at the gate without the Service
     // capability; with it, only reports about the reporter's own child are
     // accepted, never a reserved name or `ready` from a non-init.

@@ -15,6 +15,7 @@ pub mod apic;
 pub mod audit;
 pub mod bootstage;
 pub mod capability;
+pub mod console;
 pub mod console_out;
 pub mod cpu;
 pub mod desktop;

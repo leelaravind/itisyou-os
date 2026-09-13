@@ -141,6 +141,26 @@ pub fn sleep_ticks(ticks: u64) -> u64 {
 }
 
 pub const SYS_SVC_REPORT: u64 = 39;
+pub const SYS_CONSOLE_READ: u64 = 40;
+
+/// Read one line from the console (no newline). Only the process the kernel
+/// handed the console's input to (`rsh`) may; others get `ERR_PERM`. Waits
+/// until a line is complete; `ERR_2BIG` if `buf` is too small for it (the
+/// line is kept for the next call).
+pub fn console_read(buf: &mut [u8]) -> u64 {
+    loop {
+        let r = raw_syscall(
+            SYS_CONSOLE_READ,
+            buf.as_mut_ptr() as u64,
+            buf.len() as u64,
+            0,
+        );
+        // The kernel parked us until a line arrived: ask again.
+        if r != ERR_AGAIN {
+            return r;
+        }
+    }
+}
 
 /// Report one service lifecycle event to the kernel's service table: the
 /// 32-byte record of `kernel_core::svcreport`. Needs the Service capability

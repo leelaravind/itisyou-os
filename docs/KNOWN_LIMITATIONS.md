@@ -50,8 +50,15 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
   services have deterministic pids. If init dies the kernel ends its whole
   tree and restarts it at most 3 times. `svc_report` trust: the kernel
   verifies pid, parentage, caps and row ownership; a service's name and
-  policy are init's claim, attributed with `supervisor=`. The console is still
-  a kernel component (a Ring 3 shell is the next V0.10 increment).
+  policy are init's claim, attributed with `supervisor=`.
+- **Ring 3 shell** (V0.10): `/bin/sh` runs only when the kernel console's
+  `rsh` lends it the console's input, and the kernel console waits until it
+  exits; the kernel console is still where the system is administered
+  (`store`, `pkg`, `net`, `audit`, … exist only there). The shell has
+  builtins and `run` — no pipes, redirection, job control, quoting or
+  environment. Console input is polled (the UART interrupt is not routed),
+  and the kernel reads input for the shell only while the shell is waiting
+  for a line.
 - Process model (V0.10): spawn, wait and a non-blocking `wait_nohang`, only by
   the parent; `sleep`; orphans reaped automatically (no adopter until
   `/sbin/init` runs); the console's `ps` and `kill`. No fork/exec, no process

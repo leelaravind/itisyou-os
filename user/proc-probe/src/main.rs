@@ -306,6 +306,15 @@ extern "C" fn _start() -> ! {
         Some(b"nohang") => nohang(),
         Some(b"sleep") => sleep_check(),
         Some(b"orphan") => orphan(),
+        Some(b"console-read") => {
+            let mut line = [0u8; 16];
+            expect(
+                ulib::console_read(&mut line),
+                ERR_PERM,
+                "console-read",
+                "PROCPROBE-CONSOLE-READ-REFUSED\n",
+            )
+        }
         Some(b"svc-report") => svc(true),
         Some(b"svc-basic") => svc(false),
         Some(b"svc-denied") => expect(

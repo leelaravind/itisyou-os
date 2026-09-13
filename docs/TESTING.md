@@ -158,10 +158,14 @@
     config through to `svc`; an orphan goes to init; `kill 1` ends init's
     tree and the kernel restarts it, and a client is then served by the new
     tickd.
-26. **Kernel copies into user memory** (V0.10, `uaccess-bios`): a program with
+26. **Ring 3 shell** (V0.10, `rsh-bios`): the kernel lends the console's
+    input to `/bin/sh`; the leg's forbids prove which shell read each line —
+    the kernel never saw the shell's lines, and the shell never saw the ones
+    after `exit` — and a process that does not own the input is refused.
+27. **Kernel copies into user memory** (V0.10, `uaccess-bios`): a program with
     no capability points `args` and `cap_list` at its own read-only code and
     data; the kernel must refuse (`ERR_FAULT`) — before SEC10-001 it panicked.
-27. **Negative cases** (grown alongside subsystems): intentional panic,
+28. **Negative cases** (grown alongside subsystems): intentional panic,
     allocator exhaustion, malformed inputs, timeout classification.
 
 The harness gained `--audio`/`--audio-out` (AC97 → WAV capture, with a non-

@@ -26,8 +26,8 @@ pub fn run() -> ! {
     let _ = print_motd();
     loop {
         crate::serial_print!("itisyou> ");
-        let mut buf = [0u8; MAX_LINE];
-        let line = read_line(&mut buf);
+        let mut ld = kernel_core::linedisc::LineDisc::new();
+        let line = read_line(&mut ld);
         match line {
             Some(text) => execute(text),
             None => {
@@ -46,10 +46,11 @@ fn print_motd() -> Result<(), fs::FsError> {
 }
 
 /// Read one CR/LF-terminated line with echo + backspace. Returns None on
-/// overflow (input until terminator is discarded).
-fn read_line(buf: &mut [u8; MAX_LINE]) -> Option<&str> {
-    let mut len = 0usize;
-    let mut overflow = false;
+/// overflow (input until terminator is discarded). The editing rules are
+/// the host-tested `kernel_core::linedisc` (V0.10), shared with a Ring 3
+/// program that owns the console's input.
+fn read_line(ld: &mut kernel_core::linedisc::LineDisc) -> Option<&str> {
+    use kernel_core::linedisc::Event;
     loop {
         let Some(byte) = serial::try_read_byte() else {
             // Idle time belongs to the background (V0.8; always-on since
@@ -59,31 +60,20 @@ fn read_line(buf: &mut [u8; MAX_LINE]) -> Option<&str> {
             crate::sched::idle_point();
             continue;
         };
-        match byte {
-            b'\r' | b'\n' => {
-                crate::serial_println!();
-                if overflow {
-                    return None;
-                }
-                let text = core::str::from_utf8(&buf[..len]).ok()?;
-                return Some(text);
+        let (echo, event) = ld.feed(byte);
+        let mut scratch = [0u8; 3];
+        let bytes = echo.bytes(&mut scratch);
+        if bytes == b"\n" {
+            crate::serial_println!();
+        } else if let Ok(s) = core::str::from_utf8(bytes) {
+            if !s.is_empty() {
+                crate::serial_print!("{s}");
             }
-            0x08 | 0x7F => {
-                if len > 0 {
-                    len -= 1;
-                    crate::serial_print!("\x08 \x08");
-                }
-            }
-            b' '..=b'~' => {
-                if len < MAX_LINE {
-                    buf[len] = byte;
-                    len += 1;
-                    crate::serial_print!("{}", byte as char);
-                } else {
-                    overflow = true;
-                }
-            }
-            _ => {}
+        }
+        match event {
+            Event::Pending => {}
+            Event::Overflow => return None,
+            Event::Line => return core::str::from_utf8(ld.line()).ok(),
         }
     }
 }
@@ -134,6 +124,7 @@ fn execute(line: &str) {
         "svc" => cmd_svc(),
         "sched" => cmd_sched(args),
         "ps" => cmd_ps(),
+        "rsh" => cmd_rsh(args),
         "kill" => cmd_kill(args),
         "busy" => cmd_busy(args),
         "pkg" => cmd_pkg(args),
@@ -158,7 +149,7 @@ fn execute(line: &str) {
 
 fn cmd_help() {
     crate::serial_println!(
-        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path> [caps|-] [prefix|-] [-- args...]  run a Ring 3 ELF (optionally sandboxed, with arguments)\n  bg <path> [caps|-] [-- args...]  run a Ring 3 ELF co-scheduled with the background services\n  svc               supervise the on-demand services; show all service state\n  sched [last|pause|resume]  always-on scheduling: counters, the last command's window, pause/resume\n  busy <ms>         keep the console busy for <ms> (safe points only): does the background still run?\n  ps                processes: pid, parent, program, state\n  kill <pid>        terminate a process\n  pkg <op> ...      app packages: install/stage/launch/rollback/recover/list\n  xhciwait          wait for USB HID input through the xHCI controller\n  harden            CPU-enforced kernel/user separation (SMEP/SMAP/UMIP)\n  irq               interrupt routing (I/O APIC), delivery proofs and counters\n  acpi              ACPI tables found: MADT routes, FADT, S5\n  store <op> ...    persistent store: ls | put <name> <text> | cat <name> | rm <name> | df\n  net               interface address, counters and bound sockets\n  ping <ip> [n]     ICMP echo the given IPv4 address\n  resolve <name>    DNS A lookup through the configured server\n  dhcp              obtain and apply an address from a DHCP server\n  ipv6              bring up IPv6: link-local, router solicitation, SLAAC\n  ping6 <addr> [n]  ICMPv6 echo\n  tcp [drop <n>]    TCP connections and counters; drop <n> discards the next n data segments (test)\n  audit [save|verify|anchor <ip> <port>|check-anchor <ip> <port>]  privileged-action trail\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  usbwait           wait for USB HID input (keyboard/mouse)\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU (test-exit device)\n  poweroff          ACPI S5 soft power-off\n  reboot            8042 CPU reset"
+        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path> [caps|-] [prefix|-] [-- args...]  run a Ring 3 ELF (optionally sandboxed, with arguments)\n  bg <path> [caps|-] [-- args...]  run a Ring 3 ELF co-scheduled with the background services\n  svc               supervise the on-demand services; show all service state\n  sched [last|pause|resume]  always-on scheduling: counters, the last command's window, pause/resume\n  busy <ms>         keep the console busy for <ms> (safe points only): does the background still run?\n  ps                processes: pid, parent, program, state\n  rsh [caps|-]      the Ring 3 shell (/bin/sh) with the console's input; `exit` returns here\n  kill <pid>        terminate a process\n  pkg <op> ...      app packages: install/stage/launch/rollback/recover/list\n  xhciwait          wait for USB HID input through the xHCI controller\n  harden            CPU-enforced kernel/user separation (SMEP/SMAP/UMIP)\n  irq               interrupt routing (I/O APIC), delivery proofs and counters\n  acpi              ACPI tables found: MADT routes, FADT, S5\n  store <op> ...    persistent store: ls | put <name> <text> | cat <name> | rm <name> | df\n  net               interface address, counters and bound sockets\n  ping <ip> [n]     ICMP echo the given IPv4 address\n  resolve <name>    DNS A lookup through the configured server\n  dhcp              obtain and apply an address from a DHCP server\n  ipv6              bring up IPv6: link-local, router solicitation, SLAAC\n  ping6 <addr> [n]  ICMPv6 echo\n  tcp [drop <n>]    TCP connections and counters; drop <n> discards the next n data segments (test)\n  audit [save|verify|anchor <ip> <port>|check-anchor <ip> <port>]  privileged-action trail\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  usbwait           wait for USB HID input (keyboard/mouse)\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU (test-exit device)\n  poweroff          ACPI S5 soft power-off\n  reboot            8042 CPU reset"
     );
 }
 
@@ -368,6 +359,8 @@ fn run_job(pid: u64, timeout: Option<u64>) -> JobEnd {
     // "background" when starvation is judged.
     crate::sched::set_job(pid);
     let end = loop {
+        // A job that owns the console's input gets its lines from here.
+        crate::console::pump_rx();
         crate::sched::console_wait_step(pid);
         match crate::proc::state_of(pid) {
             Some(state) if state.is_terminal() => {
@@ -1292,6 +1285,7 @@ fn cmd_ps() {
             ProcState::Runnable => String::from("runnable"),
             ProcState::Blocked { on } => alloc::format!("blocked-child:{on}"),
             ProcState::Sleeping { .. } => String::from("sleeping"),
+            ProcState::ConsoleWait => String::from("console-read"),
             ProcState::Exited(code) => alloc::format!("exited:{code}"),
             ProcState::Faulted { vector } => alloc::format!("faulted:{vector}"),
             ProcState::Killed => String::from("killed"),
@@ -1299,6 +1293,43 @@ fn cmd_ps() {
         crate::serial_println!("  pid={pid} ppid={ppid} path={path} state={st}");
     });
     crate::serial_println!("ps: processes={n}");
+}
+
+/// `rsh [caps|-]` — run the Ring 3 shell with the console's input (V0.10,
+/// SHELL10-001). The kernel console waits until it exits; the input comes
+/// back to the kernel on every exit path.
+fn cmd_rsh(args: &[&str]) {
+    const SH: &str = "/bin/sh";
+    let caps = match args.first() {
+        None => kernel_core::caps::CAP_LEGACY_FULL,
+        Some(&"-") => 0,
+        Some(list) => match kernel_core::caps::parse(list) {
+            Ok(c) => c,
+            Err(_) => {
+                crate::serial_println!("rsh: unknown capability in \"{list}\"");
+                return;
+            }
+        },
+    };
+    let process = match crate::user::load_with(SH, caps, None) {
+        Ok(p) => p,
+        Err(err) => {
+            crate::serial_println!("rsh: {SH}: load failed: {err:?}");
+            return;
+        }
+    };
+    let pid = crate::proc::admit(process);
+    crate::console::hand_to(pid);
+    match run_job(pid, None) {
+        JobEnd::Ended(crate::proc::ProcState::Exited(code), _) => {
+            crate::serial_println!("rsh: {SH}: exit={code}")
+        }
+        JobEnd::Ended(crate::proc::ProcState::Faulted { vector }, _) => {
+            crate::serial_println!("rsh: {SH}: faulted vector={vector} contained=true")
+        }
+        JobEnd::Ended(_, _) => crate::serial_println!("rsh: {SH}: killed"),
+        JobEnd::TimedOut | JobEnd::Vanished => crate::serial_println!("rsh: {SH}: vanished"),
+    }
 }
 
 /// `kill <pid>` — terminate a process (V0.10). Its resources are released,

@@ -1117,6 +1117,51 @@ Write-Output '=== QEMU userspace init: configuration and supervision (BIOS) ==='
     '--forbid', 'TICKC-SEND-TIMEOUT',
     '--timeout-secs', '240', '--label', 'init-bios')
 
+Write-Output '=== QEMU Ring 3 shell with the console input (BIOS) ==='
+# V0.10 SHELL10-001: `rsh` hands the console's input to /bin/sh, which
+# reads lines with console_read (syscall 40), runs builtins and programs
+# (a genuinely blocking wait), and on `exit` the input comes back to the
+# kernel console. Forbids prove which shell read each line: the kernel
+# never saw the sh-only lines, and sh never saw the ones after exit. A
+# process that does not own the input is refused.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B210',
+    '--send', 'bg /bin/proc-probe - -- console-read',
+    '--send', 'rsh',
+    '--send', 'rsh-only-builtin',
+    '--send', 'pid',
+    '--send', 'run /bin/args-probe - -- x y',
+    '--send', 'run /bin/tick-client',
+    '--send', 'exit',
+    '--send', 'echo back-in-kernel',
+    '--send', 'version',
+    '--send', 'shutdown',
+    '--require', 'PROCPROBE-CONSOLE-READ-REFUSED',
+    '--require', 'action=console_read cap=0x0 result=denied',
+    '--require', '[ITISYOU:CONSOLE] owner=',
+    '--require', 'reason=granted',
+    '--require', 'RSH-READY pid=',
+    '--require', 'RSH-BUILTIN-OK',
+    '--require', 'rsh: pid=',
+    '--require', 'ARGS-COUNT n=2',
+    '--require', 'ARGS-ITEM i=1 value=y',
+    '--require', 'rsh: /bin/args-probe: exit=0',
+    '--require', 'TICKC-OK passes=',
+    '--require', 'rsh: /bin/tick-client: exit=0',
+    '--require', 'RSH-EXIT code=0',
+    '--require', '[ITISYOU:CONSOLE] owner=kernel reason=owner_exit',
+    '--require', 'rsh: /bin/sh: exit=0',
+    '--require', 'back-in-kernel',
+    '--require', 'itisyou-os 0.10',
+    '--require', 'shutting down (QEMU exit)',
+    '--forbid', 'unknown command: rsh-only-builtin',
+    '--forbid', 'unknown command: pid',
+    '--forbid', 'run: /bin/args-probe: Exit(',
+    '--forbid', 'RSH-READ-ERROR',
+    '--forbid', 'rsh: unknown command: echo',
+    '--forbid', 'rsh: unknown command: version',
+    '--timeout-secs', '180', '--label', 'rsh-bios')
+
 Write-Output '=== QEMU always-on co-scheduling (BIOS) ==='
 # V0.10 SCHED10-001: background processes run in bounded slices at the
 # audited safe points - the idle prompt (held idle by @pause), job waits,

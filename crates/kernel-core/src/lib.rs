@@ -20,6 +20,7 @@ pub mod font;
 pub mod initconf;
 pub mod itfs;
 pub mod linebuf;
+pub mod linedisc;
 pub mod manifest;
 pub mod marker;
 pub mod memmap;

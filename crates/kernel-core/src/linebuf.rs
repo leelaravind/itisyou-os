@@ -72,6 +72,16 @@ impl<const N: usize> LineBuf<N> {
         }
     }
 
+    /// Emit any pending partial line AS IS — no newline — and empty the
+    /// buffer (V0.10): a prompt, which the console's echo of the answer
+    /// completes.
+    pub fn flush_partial(&mut self, mut emit: impl FnMut(&[u8])) {
+        if self.len > 0 {
+            emit(&self.buf[..self.len]);
+            self.len = 0;
+        }
+    }
+
     /// Emit any pending partial line followed by a newline, and empty the
     /// buffer. Does nothing when there is no partial line.
     pub fn flush(&mut self, mut emit: impl FnMut(&[u8])) {
