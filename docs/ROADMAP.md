@@ -159,6 +159,10 @@ row in `docs/REQUIREMENTS.md`.
 
 ## V0.10 — Userspace System
 
+*(Started on branch `v0.10/integration`, to be merged after the `v0.9.0`
+tag: program arguments and ITFS space reclamation are implemented and
+verified there. The rest below is planned.)*
+
 A userspace `init` as the first process, starting services from configuration;
 an always-on scheduler so services keep running whatever the console is doing;
 program arguments; a Ring 3 shell; filesystem space reclamation so a long-lived

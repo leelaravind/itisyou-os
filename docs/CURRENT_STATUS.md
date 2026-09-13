@@ -20,10 +20,22 @@ from injected loss by retransmission (and two bugs that work exposed: a kernel
 stack overflow corrupting the capability table, and a V0.8 socket leak on the
 console's `run` exit path); and the package-signing key hierarchy — an
 offline root, certified signing keys limited by name scope and release-epoch
-window, a signed revocation list (ADR-0021). Every V0.9 feature is verified
-locally; the release (CI, website, download, tag) is pending — GitHub Actions
-is currently refusing to start jobs on this account for a billing reason. The
-website stays on the `v0.8.1` release until V0.9 is released.
+window, a signed revocation list (ADR-0021); Ring 3 TCP listen; and guard
+pages under the kernel's static stacks (HARD09-001). Every V0.9 feature is
+verified locally — last full gate `7367b89`: VERIFY OK, 36/36 QEMU legs, 366
+host tests. The release (CI, tag, new download) is pending: GitHub Actions is
+refusing to start jobs on this account for a billing reason. The website
+(deployed 13:36, `b0c4d05`) shows V0.9 as in development with that evidence;
+the download is still `v0.8.1`.
+
+## V0.10 (started on a branch)
+
+Two V0.10 items are implemented and verified on branch `v0.10/integration`
+(kept off `main` so `main` stays the V0.9 release candidate; merge after the
+`v0.9.0` tag): program arguments for Ring 3 programs (PROC10-001, syscalls 35
+`args` and 36 `spawn_args`, `run … -- args`) and ITFS space reclamation
+(FS10-001, gap allocator with no format change). Evidence in that branch's
+`docs/REQUIREMENTS.md` § V0.10 and `docs/SESSION_CHECKPOINT.md` here.
 
 ## V0.8.1 (release)
 
