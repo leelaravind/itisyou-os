@@ -61,10 +61,12 @@ pub fn priv_stack_top() -> VirtAddr {
 }
 
 /// The guard page of each static kernel stack: `(name, first byte)`.
-pub fn stack_guards() -> [(&'static str, u64); 2] {
+pub fn stack_guards() -> [(&'static str, u64); 3] {
     [
         ("priv", stack_base(&raw const PRIV_STACK)),
         ("ist_double_fault", stack_base(&raw const IST_STACK)),
+        // The syscall stack lives in syscall.rs with the entry stub (V0.10).
+        ("syscall", crate::syscall::syscall_stack_guard()),
     ]
 }
 

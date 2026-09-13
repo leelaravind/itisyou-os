@@ -446,6 +446,13 @@ fn cmd_harden() {
     crate::serial_println!(
         "harden: wx_enforced=true user_pointer_validation=active stack_guard=unmapped"
     );
+    use core::sync::atomic::Ordering::Relaxed;
+    crate::serial_println!(
+        "harden: ring3_entry_flag_checks={} dirty_timer={} dirty_landing={}",
+        crate::harden::FLAG_CHECKS.load(Relaxed),
+        crate::harden::FLAG_DIRTY_TIMER.load(Relaxed),
+        crate::harden::FLAG_DIRTY_LANDING.load(Relaxed)
+    );
 }
 
 /// `irq` — the state of both interrupt controllers and what each has
@@ -1280,6 +1287,7 @@ fn cmd_panic_test(args: &[&str]) {
         Some(&"confirm") => panic!("panic-test invoked from shell"),
         Some(&"stack-overflow") => overflow_priv_stack(),
         Some(&"task-stack-overflow") => overflow_task_stack(),
+        Some(&"syscall-stack-overflow") => overflow_syscall_stack(),
         _ => crate::serial_println!(
             "panic-test: pass 'confirm' to trigger a real kernel panic, or 'stack-overflow' / 'task-stack-overflow' to overflow the syscall / a task stack into its guard page"
         ),
@@ -1296,6 +1304,26 @@ fn overflow_priv_stack() -> ! {
     // SAFETY: test-only and terminal. The RSP0 stack is idle (the console is
     // not inside a syscall), `top` is its 16-byte-aligned end, and `call`
     // leaves the ABI's entry alignment. Nothing returns from here.
+    unsafe {
+        core::arch::asm!(
+            "mov rsp, {top}",
+            "call {f}",
+            "ud2",
+            top = in(reg) top,
+            f = sym recurse_until_guard,
+            options(noreturn)
+        );
+    }
+}
+
+/// Deliberately overflow the SYSCALL stack (V0.10, HARD10-003) — the stack
+/// every syscall runs on, and the one V0.9's TCP bug overflowed. Same method
+/// as the RSP0 test: switch onto it (idle at the console) and recurse.
+fn overflow_syscall_stack() -> ! {
+    let top = crate::syscall::syscall_stack_top();
+    crate::serial_println!("panic-test: overflowing the syscall stack (top={top:#x})");
+    // SAFETY: test-only and terminal. No syscall is in progress at the
+    // console, so the syscall stack is idle; `top` is its 16-byte-aligned end.
     unsafe {
         core::arch::asm!(
             "mov rsp, {top}",

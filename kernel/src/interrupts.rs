@@ -153,6 +153,7 @@ static IDT: Lazy<InterruptDescriptorTable> = Lazy::new(|| {
 
 /// Local APIC timer. Counts and acknowledges; the test reads the counter.
 extern "x86-interrupt" fn apic_timer_handler(_frame: InterruptStackFrame) {
+    crate::harden::clear_user_flags();
     crate::apic::TIMER_COUNT.fetch_add(1, Ordering::SeqCst);
     crate::apic::eoi();
 }
@@ -164,6 +165,7 @@ extern "x86-interrupt" fn apic_timer_handler(_frame: InterruptStackFrame) {
 /// to become a second, interrupt-driven data path with its own locking rules.
 /// The device's own interrupt cause register is cleared by the polling side.
 extern "x86-interrupt" fn msi_handler(_frame: InterruptStackFrame) {
+    crate::harden::clear_user_flags();
     crate::apic::MSI_COUNT.fetch_add(1, Ordering::SeqCst);
     crate::apic::eoi();
 }
@@ -172,6 +174,7 @@ extern "x86-interrupt" fn msi_handler(_frame: InterruptStackFrame) {
 /// vector does not set the in-service bit, so acknowledging it would retire
 /// some *other* interrupt.
 extern "x86-interrupt" fn spurious_handler(_frame: InterruptStackFrame) {
+    crate::harden::clear_user_flags();
     crate::apic::SPURIOUS_COUNT.fetch_add(1, Ordering::SeqCst);
 }
 
@@ -291,6 +294,13 @@ unsafe extern "C" fn timer_isr() {
         "push r13",
         "push r14",
         "push r15",
+        // A Ring 3 program's DF and AC survive interrupt delivery; clear
+        // both before any kernel code runs (V0.10, HARD10-002). The user's
+        // own RFLAGS are in the frame and restored by iretq.
+        "cld",
+        "pushfq",
+        "and qword ptr [rsp], -262145",
+        "popfq",
         "mov rdi, rsp", // &TrapFrame
         "call {handler}",
         "pop r15",
@@ -318,10 +328,18 @@ unsafe extern "C" fn timer_isr() {
 /// expired — saves its full context and preempts it (never returns in that
 /// case).
 extern "C" fn timer_handler_inner(frame: &mut TrapFrame) {
+    // Sampled first, before any kernel code could clobber the evidence.
+    let dirty = crate::harden::user_flags_now();
     TICKS.fetch_add(1, Ordering::Relaxed);
 
     // Was the interrupt taken from Ring 3 (a user process)?
     let from_user = frame.cs & 0b11 == 0b11;
+    if from_user {
+        crate::harden::FLAG_CHECKS.fetch_add(1, Ordering::Relaxed);
+        if dirty != 0 {
+            crate::harden::FLAG_DIRTY_TIMER.fetch_add(1, Ordering::Relaxed);
+        }
+    }
 
     // EOI before any possible long-jump, so the controller delivers the next
     // tick.
@@ -373,17 +391,20 @@ extern "C" fn timer_handler_inner(frame: &mut TrapFrame) {
 }
 
 extern "x86-interrupt" fn keyboard_handler(_frame: InterruptStackFrame) {
+    crate::harden::clear_user_flags();
     crate::input::on_keyboard_irq();
     eoi_line(KEYBOARD_VECTOR);
 }
 
 extern "x86-interrupt" fn mouse_handler(_frame: InterruptStackFrame) {
+    crate::harden::clear_user_flags();
     crate::input::on_mouse_irq();
     // On the PIC path this EOIs both chips (IRQ12 is on the secondary).
     eoi_line(MOUSE_VECTOR);
 }
 
 extern "x86-interrupt" fn breakpoint_handler(frame: InterruptStackFrame) {
+    crate::harden::clear_user_flags();
     BREAKPOINTS.fetch_add(1, Ordering::Relaxed);
     crate::serial_println!(
         "[ITISYOU:INFO] exception=breakpoint rip={:#x} (resumed)",
@@ -392,6 +413,7 @@ extern "x86-interrupt" fn breakpoint_handler(frame: InterruptStackFrame) {
 }
 
 extern "x86-interrupt" fn invalid_opcode_handler(frame: InterruptStackFrame) {
+    crate::harden::clear_user_flags();
     if from_user(&frame) {
         crate::serial_println!(
             "[ITISYOU:INFO] exception=invalid_opcode cs_rpl=3 rip={:#x} action=terminate_process",
@@ -406,6 +428,7 @@ extern "x86-interrupt" fn invalid_opcode_handler(frame: InterruptStackFrame) {
 }
 
 extern "x86-interrupt" fn general_protection_handler(frame: InterruptStackFrame, error_code: u64) {
+    crate::harden::clear_user_flags();
     if from_user(&frame) {
         // A privileged instruction executed at CPL=3 lands here — this is
         // both containment and direct evidence the code ran in Ring 3.
@@ -427,6 +450,7 @@ extern "x86-interrupt" fn page_fault_handler(
     frame: InterruptStackFrame,
     error_code: PageFaultErrorCode,
 ) {
+    crate::harden::clear_user_flags();
     let addr = x86_64::registers::control::Cr2::read();
     if from_user(&frame) {
         use crate::user::transition;
@@ -451,6 +475,7 @@ extern "x86-interrupt" fn page_fault_handler(
 }
 
 extern "x86-interrupt" fn double_fault_handler(frame: InterruptStackFrame, error_code: u64) -> ! {
+    crate::harden::clear_user_flags();
     // A kernel stack overflow reaches here, not the page-fault handler: the
     // #PF on the guard page cannot be delivered because delivering it means
     // pushing onto the very stack that just ran out, so the CPU escalates to

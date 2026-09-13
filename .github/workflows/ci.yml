@@ -385,6 +385,27 @@ jobs:
             --forbid "armed=false" \
             --timeout-secs 120 --label stack-guard-bios
 
+      - name: QEMU kernel syscall stack guard (BIOS)
+        run: |
+          cargo run -q -p qemu-runner -- \
+            --image target/images/itisyou-kernel-bios.img \
+            --expect B080 --expect B200 --send "panic-test syscall-stack-overflow" --expect-panic \
+            --require "stack_guard stack=syscall" --require "kernel_stack_overflow stack=syscall" \
+            --require "kernel stack overflow: stack=syscall hit its guard page" \
+            --forbid "armed=false" \
+            --timeout-secs 120 --label stack-guard-syscall-bios
+
+      - name: QEMU Ring 3 DF/AC never reach kernel code (BIOS)
+        run: |
+          cargo run -q -p qemu-runner -- \
+            --image target/images/itisyou-kernel-bios.img --expect B200 \
+            --send "run /bin/flags-probe" --send "run /bin/flags-probe - - -- fault" \
+            --send "harden" --send "shutdown" \
+            --require "FLAGSPROBE-SPIN df=1 ac=1" --require "FLAGSPROBE-SPUN" \
+            --require "FLAGSPROBE-FAULT-ARMED df=1 ac=1" --require "user_fault pid=4 vector=13" \
+            --require "dirty_timer=0 dirty_landing=0" --forbid "ring3_entry_flag_checks=0 " \
+            --timeout-secs 240 --label flags-hygiene-bios
+
       - name: QEMU kernel task stack guard (BIOS)
         run: |
           cargo run -q -p qemu-runner -- \

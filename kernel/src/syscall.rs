@@ -151,7 +151,30 @@ static mut SYSCALL_KSTACK_TOP: u64 = 0;
 #[unsafe(no_mangle)]
 static mut SYSCALL_SNAP: [u64; 8] = [0; 8];
 
-static mut SYSCALL_STACK: [u8; KSTACK_SIZE] = [0; KSTACK_SIZE];
+/// The stack every syscall runs on, on a guard page (V0.10, HARD10-003).
+/// V0.9 guarded the RSP0 and double-fault stacks but not this one — and this
+/// is the stack the first TCP integration overflowed into the capability
+/// table. Page-aligned so the guard is a whole page; `gdt::arm_stack_guards`
+/// unmaps it with the others.
+#[repr(C, align(4096))]
+struct GuardedSyscallStack {
+    guard: [u8; 4096],
+    stack: [u8; KSTACK_SIZE],
+}
+static mut SYSCALL_STACK: GuardedSyscallStack = GuardedSyscallStack {
+    guard: [0; 4096],
+    stack: [0; KSTACK_SIZE],
+};
+
+/// First byte of the syscall stack's guard page (address-of only).
+pub fn syscall_stack_guard() -> u64 {
+    (&raw const SYSCALL_STACK) as u64
+}
+
+/// Top of the syscall stack (16-byte aligned).
+pub fn syscall_stack_top() -> u64 {
+    (syscall_stack_guard() + 4096 + KSTACK_SIZE as u64) & !0xF
+}
 
 /// PID of the currently running user process (0 = none).
 pub static CURRENT_PID: AtomicU64 = AtomicU64::new(0);
@@ -316,8 +339,7 @@ pub fn init() {
                 | RFlags::DIRECTION_FLAG
                 | RFlags::ALIGNMENT_CHECK,
         );
-        let base = (&raw const SYSCALL_STACK) as u64;
-        let top = (base + KSTACK_SIZE as u64) & !0xF;
+        let top = syscall_stack_top();
         core::ptr::write(&raw mut SYSCALL_KSTACK_TOP, top);
     }
 }
