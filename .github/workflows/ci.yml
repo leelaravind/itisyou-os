@@ -128,7 +128,7 @@ jobs:
             --send help --send version --send memory --send tasks \
             --send "ls /" --send "cat /etc/version" \
             --send "run /bin/init" --send shutdown \
-            --require "itisyou-os 0.9.0" \
+            --require "itisyou-os 0.10.0-dev" \
             --require "task 0: kmain" \
             --require "RING3-DONE" \
             --require "run: /bin/init: Exit(0)" \
