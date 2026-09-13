@@ -2,7 +2,10 @@
 
 ## Status
 
-Accepted for V0.8 implementation; kernel/QEMU integration is pending.
+Accepted and verified for V0.8. Handles are the enforcement path on the syscall
+boundary (`require_handle` in `kernel/src/syscall.rs`), not a parallel record.
+(This status line read "integration is pending" until the 2026-09-13 audit,
+which found it stale.)
 
 ## Decision
 
@@ -28,5 +31,10 @@ each syscall has a handle-based boundary and QEMU negative evidence.
 The host-testable contract is implemented in
 `crates/kernel-core/src/capability.rs`, including forged/stale handle,
 ownership, scope, rights, delegation, revocation, teardown, and expiry tests.
-It must not be described as runtime-verified until kernel and QEMU evidence is
-added.
+Runtime evidence: QEMU `cap-handle-uefi` (a forged generation denied) and
+`platform-bios`, where `cap-handle-probe` drives the real syscalls and a forged,
+an expired and a revoked handle are each refused with the precise reason in the
+audit trail (`CAPH-FORGED-DENIED`, `CAPH-EXPIRED-DENIED`, `CAPH-REVOKED-DENIED`,
+`reason=expired`, `reason=no_handle`) — requirements CAPH-001/002. The V0.7
+static bits no longer gate syscalls; they remain the request vocabulary for
+manifests and `spawn_caps`.

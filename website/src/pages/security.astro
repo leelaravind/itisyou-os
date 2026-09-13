@@ -4,7 +4,7 @@ import Breadcrumbs from '../components/Breadcrumbs.astro';
 import StatusTag from '../components/StatusTag.astro';
 
 const description =
-  'ITISYOU OS security and authority model: AI has intelligence, not authority. Trust boundaries, V0.1 concrete security requirements, the future capability model, and the V0.1 threat model.';
+  'ITISYOU OS security and authority model: AI has intelligence, not authority. Trust boundaries, the capability-handle model enforced at the syscall boundary, package authenticity, hardening, and the threat model.';
 
 const boundaries = [
   {
@@ -43,7 +43,12 @@ const boundaries = [
     now: false,
     text: 'Future — but the V0.7 request → capability check → deterministic service → action → audit path IS the pipeline an agent will use; agents get no other entry point.',
   },
-  { n: 7, name: 'External network boundary', now: false, text: 'Future — no network stack exists in V0.1.' },
+  {
+    n: 7,
+    name: 'External network boundary',
+    now: true,
+    text: 'V0.8, verified: an IPv4 stack (e1000, ARP, ICMP, UDP, DNS) that treats every received byte as hostile — parsers refuse what they do not fully understand, every drop is counted with a reason, and nothing received can grow kernel memory. It answers only ARP for its own address and ICMP echo; the harness sends five hostile frames and asserts the guest answers none of them. A Ring 3 program reaches the network only through a capability handle scoped to one port, re-checked on every call. No TCP, DHCP or IPv6 yet.',
+  },
 ];
 
 const threats = [
@@ -53,7 +58,11 @@ const threats = [
   ['Malformed initramfs', 'corrupt/hostile archive bytes', 'strict bounds-checked parsing with negative-case tests (planned with FS-001)'],
   ['Supply-chain drift', 'dependencies with unexpected code', 'small pinned dependency set, Cargo.lock committed, rationale per kernel dependency'],
   ['Secret leakage', 'tokens in commits/logs/CI', 'secret scan before pushes; env-var/platform secret stores only'],
-  ['Fake completion', 'claims without evidence', 'requirement matrix + machine-readable QEMU evidence; website generated from status/current.json'],
+  ['Fake completion', 'claims without evidence', 'requirement matrix + machine-readable QEMU evidence; website generated from status/current.json; the build fails when the kernel version, status metadata or requirement states disagree'],
+  ['Hostile network input', 'malformed, spoofed or unsolicited frames', 'allocation-free parsers that refuse VLAN tags, fragments, bad checksums and every truncation; bounded ARP cache and socket queues; only ARP-for-us and ICMP echo are answered (verified with five hostile frames, zero replies)'],
+  ['Tampered or foreign package', 'modified payload, unsigned or stranger-signed package, forged signature', 'SHA-256 integrity plus Ed25519 authenticity against a compiled-in trust root — four distinct refusals, verified; the trust root is still a published development key (V0.9: key hierarchy with rotation and revocation)'],
+  ['Edited audit trail', 'records altered, deleted, reordered or inserted on disk', 'hash-chained records verified on every boot and reported TAMPERED; an attacker who rewrites the whole file including its head is not yet detected (V0.9: anchoring)'],
+  ['Kernel touching user memory by accident', 'confused-deputy bugs, user pointers', 'SMAP forbids kernel access to user pages outside three declared windows; SMEP and UMIP on; W^X for user segments; a guard page below the user stack'],
 ];
 ---
 
@@ -78,12 +87,12 @@ const threats = [
         <h2 id="s1-title" class="font-mono text-mono-label text-ink tracking-widest">01 // THE CENTRAL PRINCIPLE</h2>
         <p class="text-body-base text-meta-bright">
           Any future AI/agent layer reasons about the system and proposes actions; it never executes privileged kernel
-          operations directly. Nothing in the V0.1 runtime contains an AI component — the principle exists now because
-          it constrains interface design: kernel APIs must remain callable only through narrow, deterministic,
-          auditable paths.
+          operations directly. The current runtime contains no AI component — the principle exists now because it
+          constrains interface design: every privileged operation is reachable only through a narrow, deterministic,
+          capability-checked and audited path, and an agent will get that path and nothing else.
         </p>
         <div class="log-block mt-4" aria-label="Intended authority pipeline">
-          <p class="text-muted mb-2">// intended pipeline (design, not implemented)</p>
+          <p class="text-muted mb-2">// capability check, service and audit exist today; the agent layer is planned</p>
           <p>agent intent → policy engine</p>
           <p>&nbsp;&nbsp;→ risk/permission evaluation</p>
           <p>&nbsp;&nbsp;→ user approval (where required)</p>
@@ -133,7 +142,7 @@ const threats = [
             <li class="bg-surface p-6 flex flex-col gap-3">
               <div class="flex items-center justify-between gap-3">
                 <span class="font-mono text-mono-label text-muted tracking-widest">BOUNDARY_{String(b.n).padStart(2, '0')}</span>
-                <StatusTag status={b.now ? 'in-development' : 'concept'} label={b.now ? 'Current' : 'Future'} />
+                <StatusTag status={b.now ? 'verified' : 'concept'} label={b.now ? 'Current' : 'Future'} />
               </div>
               <h3 class="font-sans text-body-base font-medium text-ink">{b.name}</h3>
               <p class="text-sm text-meta-bright">{b.text}</p>
@@ -143,25 +152,27 @@ const threats = [
       </ol>
     </section>
 
-    <!-- ============ 03 V0.1 concrete requirements ============ -->
+    <!-- ============ 03 controls in force now ============ -->
     <section class="grid grid-cols-1 md:grid-cols-12 gap-gutter" aria-labelledby="s3-title">
       <div class="md:col-span-4">
-        <h2 id="s3-title" class="font-mono text-mono-label text-ink tracking-widest mb-4">03 // V0.1 IN PRACTICE</h2>
+        <h2 id="s3-title" class="font-mono text-mono-label text-ink tracking-widest mb-4">03 // IN FORCE NOW</h2>
         <p class="text-body-base text-meta-bright">
-          The current security posture is honest about its stage: the kernel runs ring 0 inside QEMU with one
-          Ring 3 process at a time under MMU-enforced separation, and isolation
-          research starts at the boundary definitions, not premature claims. These are the concrete requirements in
-          force now.
+          Each control below is enforced by the current build and exercised by a QEMU leg that must see the refusal
+          happen — a control never observed failing is not counted. The environment is still a single-CPU virtual
+          machine; nothing here is a claim about physical hardware.
         </p>
       </div>
       <ul class="md:col-span-8 flex flex-col gap-px bg-line border border-line list-none">
         {
           [
-            ['UNSAFE MINIMIZED', 'unsafe localized and documented with invariants; inventory tracked in docs/UNSAFE_INVENTORY.md (SEC-001).'],
-            ['PAGE PERMISSIONS', 'NX / page-permission separation where the boot path permits; no writable+executable mappings by design once paging is owned by the kernel.'],
-            ['PANIC ON VIOLATION', 'Panic on violated kernel invariants rather than continuing corrupted.'],
-            ['VM CONTAINMENT', 'No network services. No host filesystem sharing into the guest. QEMU launches attach only project-generated disposable images (SEC-002).'],
-            ['SECRET HYGIENE', 'Dependency and secret scans before pushes; secrets never in source, logs, or history.'],
+            ['CAPABILITY HANDLES', 'Every privileged syscall revalidates the caller’s handle in a kernel table — owner-bound, scoped to one resource (a port, a channel, a device), expiring, revocable. Forged, expired and revoked handles are each refused with the reason audited.'],
+            ['DEFAULT DENY', 'A process holds nothing it was not granted and delegation only narrows: a zero-capability probe sees every privileged class refused, and a child can never hold what its parent lacked.'],
+            ['SANDBOXED FILESYSTEM', 'Reads and writes are confined to per-process path prefixes checked on the normalized path; writing also needs the write right. Traversal and root escapes are refused.'],
+            ['SIGNED PACKAGES', 'Installs verify SHA-256 integrity, then an Ed25519 signature against a compiled-in trust root. The current root is a published development key: the mechanism is verified, a real signer is not yet provisioned.'],
+            ['CPU-ENFORCED SEPARATION', 'SMEP, SMAP and UMIP on; W^X for user segments; a guard page below the user stack; user pointers validated before any kernel dereference.'],
+            ['AUDIT TRAIL', 'Every privileged action and every denial is recorded, hash-chained, persisted, and re-verified at boot — an edited trail is reported TAMPERED.'],
+            ['VM CONTAINMENT', 'QEMU launches attach only project-generated disposable images; no host filesystem sharing and no disk passthrough (SEC-002). The test network is the harness’s own peer.'],
+            ['UNSAFE MINIMIZED', 'unsafe localized and documented with invariants in docs/UNSAFE_INVENTORY.md; the kernel panics on a violated invariant rather than continuing corrupted.'],
           ].map(([label, text]) => (
             <li class="bg-surface p-5 flex flex-col sm:flex-row sm:items-start gap-3">
               <span class="font-mono text-mono-label text-ink tracking-widest sm:w-56 shrink-0">{label}</span>
@@ -175,14 +186,14 @@ const threats = [
     <!-- ============ 04 threat model ============ -->
     <section aria-labelledby="s4-title">
       <div class="flex flex-wrap items-end justify-between gap-4 mb-6">
-        <h2 id="s4-title" class="font-mono text-mono-label text-ink tracking-widest">04 // THREAT MODEL (V0.1 SCOPE)</h2>
+        <h2 id="s4-title" class="font-mono text-mono-label text-ink tracking-widest">04 // THREAT MODEL</h2>
         <p class="font-mono text-mono-data text-meta">
-          Scoped to development reality: a pre-alpha kernel running only inside QEMU on the developer’s machine.
+          Scoped to development reality: a pre-alpha OS running only inside QEMU.
         </p>
       </div>
       <div class="table-scroll panel mb-6">
         <table class="w-full border-collapse min-w-[720px]">
-          <caption class="sr-only">V0.1 risks, vectors and mitigations</caption>
+          <caption class="sr-only">Risks, vectors and mitigations</caption>
           <thead>
             <tr>
               {['Risk', 'Vector', 'Mitigation'].map((h) => (
@@ -204,12 +215,12 @@ const threats = [
         </table>
       </div>
       <div class="panel p-6">
-        <h3 class="font-mono text-mono-label text-ink uppercase tracking-widest mb-3">Explicit non-threats for V0.1</h3>
+        <h3 class="font-mono text-mono-label text-ink uppercase tracking-widest mb-3">Explicitly out of scope today</h3>
         <p class="text-body-base text-meta-bright max-w-3xl">
-          Remote attackers (no network stack), malicious local users (single-developer VM), physical attacks, and side
-          channels are out of scope until the relevant subsystems exist. Each later milestone — userspace, storage,
-          networking — must extend the threat model before shipping the feature. The highest-value asset is the
-          developer’s host machine: the OS must never touch it.
+          Physical attacks, side channels, multi-core races (there is one CPU), malicious firmware, and an attacker who
+          can rewrite the whole persistent disk including the audit trail’s stored head. Network input is in scope and
+          treated as hostile; every milestone extends this model before its feature ships. The highest-value asset is
+          still the host machine the VM runs on: the OS must never touch it.
         </p>
       </div>
     </section>
@@ -217,15 +228,19 @@ const threats = [
     <!-- ============ 05 capability model ============ -->
     <section class="panel p-gutter" aria-labelledby="s5-title">
       <div class="flex items-start justify-between gap-4 flex-wrap mb-4">
-        <h2 id="s5-title" class="font-mono text-mono-label text-ink tracking-widest">05 // FUTURE CAPABILITY MODEL</h2>
-        <StatusTag status="concept" />
+        <h2 id="s5-title" class="font-mono text-mono-label text-ink tracking-widest">05 // CAPABILITY MODEL</h2>
+        <StatusTag status="verified" />
       </div>
       <div class="log-block mb-4" aria-label="Capability model shape">
         <p>subject → capability → object → permitted operation → constraints → provenance</p>
       </div>
       <p class="text-body-base text-meta-bright max-w-3xl">
-        Capabilities explicit, inspectable, revocable, and narrower than blanket administrator privilege. Recorded now
-        — as documented direction, not implementation — so V0.2+ interfaces grow toward it instead of retrofitting.
+        Explicit, inspectable, revocable, and narrower than blanket administrator privilege. Since V0.8 a capability is
+        an opaque handle — an index plus a generation — into a kernel-owned table binding the owner, the resource
+        scope, the rights and an optional expiry. Holding a handle number grants nothing: the table is consulted on
+        every use, so revocation, expiry and narrowing take effect at the next call, and a handle presented by the
+        wrong process is refused. Not yet present: a user-facing policy editor and capability kinds defined at run
+        time.
       </p>
       <div class="mt-6 flex flex-wrap gap-4">
         <a href="/docs/security-model" class="btn btn-primary">Full security model</a>

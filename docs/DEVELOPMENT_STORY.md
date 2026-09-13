@@ -529,3 +529,77 @@ someone to trust it.
 
 Local evidence: 24/24 QEMU legs Success, selftest pass=113 fail=0, 278 host
 tests.
+
+---
+
+## 2026-09-13 — Session 4: independent audit, then V0.8.1 (release-integrity closeout)
+
+**Starting state.** `main` = `v0.8.0` = `84d6b24`, clean, CI green. The session
+brief was to establish the true state from evidence — runtime first, then code,
+then Git/CI, then documents — before building anything, then take the project
+version by version toward V1.0. Mid-session the owner set a strict six-hour
+deadline (hard stop 15:44 BST), which bounds how far this session goes.
+
+**The first failure was the environment, not the code.** `G:` (the external
+scratch drive) was not attached, and `scripts/env.ps1` created
+`G:\claude-tmp\tmp` unconditionally, so every gate script died before doing
+anything. The fix uses `G:` when present and `E:\claude-tmp` otherwise, and the
+doctor now checks that `TEMP` is off `C:` instead of demanding a drive that
+may be absent.
+
+**Runtime evidence before documents.** With that fixed, the full gate ran on the
+tagged commit: `VERIFY: OK`, 24/24 QEMU legs, selftest pass=113 fail=0 on BIOS
+and UEFI, 292 host tests (278 in kernel-core), website clean, secret scan
+clean. The V0.8 engineering reproduces on today's toolchain.
+
+**The release did not agree with itself.**
+
+- The `v0.8.0` kernel printed `itisyou-os 0.7.0-dev`. The workspace version had
+  not been bumped since V0.7 — and both shell-test legs `--require`d the same
+  stale string, so the one test that could have caught the drift pinned it in
+  place. A test that asserts whatever the code currently prints is a snapshot,
+  not a check.
+- NET08-003 (TCP) and NET08-004 (DHCP/IPv6) were "NOT DONE", a state the plan
+  does not have. They were deferred to V0.9 by an explicit roadmap entry, so
+  the honest terminal state is `NOT APPLICABLE` naming that amendment, with the
+  work carried forward as NET09-001..003.
+- The live site said "no network stack exists in V0.1" on the security page,
+  presented the verified capability model as a "future concept", and described
+  release rules for V0.1. The README said the current milestone was V0.1.
+  KNOWN_LIMITATIONS contained V0.7-era bullets ("capabilities are bits, not
+  handles", "no filesystem write syscall", "SMEP/SMAP not enabled") directly
+  above the V0.8 bullets that contradicted them. ADR-0013 said integration was
+  pending. The V0.8 APIC, e1000, xHCI and SMAP `unsafe` code had no inventory
+  rows.
+- The V0.8 site had been verified over HTTP only; the browser extension was
+  unavailable, which was recorded, but no browser ever looked at it.
+
+**Why a patch release.** A tag is immutable and a release whose artifact
+misnames itself is a defect, so the correction is `v0.8.1` rather than a moved
+tag. It changes no kernel behaviour beyond the version string.
+
+**What makes it not recur.** `website/scripts/check-consistency.mjs` runs in
+every website build — so in `verify.ps1` and every CI run — and fails when the
+status version differs from the Cargo workspace version the kernel reports,
+when a requirement state is outside the vocabulary, or when a `verified` status
+carries unstarted rows; `--release` refuses any non-terminal row before a tag.
+Run against the `v0.8.0` tree it exits 1 naming exactly the three defects that
+shipped, which is its regression test. `website/scripts/browser-verify.mjs`
+drives the installed Chrome headless over the DevTools protocol — no new
+dependency — and fails on console errors, CSP or blocked-resource log errors,
+failed requests, horizontal overflow at 1440 and 390 px, broken internal links,
+a wrong 404, or missing security headers. `crates/kernel-core` is now
+`#![forbid(unsafe_code)]`, which it already satisfied by convention.
+
+**Roadmap amendment.** The sequence after V0.8 was re-derived from
+dependencies rather than kept as written: the AI layer assumes an agent that is
+an ordinary supervised Ring 3 service, but today processes only run while the
+kernel console drives the scheduler and there is no userspace init — so a
+Userspace System milestone (V0.10) now precedes the AI layer (V0.11), and
+daily-driver hardware research moves after V1.0 because it cannot be verified
+in QEMU and needs a per-device hardware authorization. Recorded in
+`docs/ROADMAP.md` with the reasons.
+
+**Left alone deliberately.** Draft PR #1 (`W0-01: Freeze normative inputs`)
+proposes a different architecture chain whose source documents are not in the
+repository; it is unmerged and owner-gated, so this session did not touch it.

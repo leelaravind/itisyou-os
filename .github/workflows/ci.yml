@@ -45,6 +45,26 @@ jobs:
       - name: Build bootable images
         run: cargo run -p image-builder -- target/images
 
+      # The release pipeline: these exact bytes are what a release publishes.
+      # image-builder normalizes the GPT GUIDs, so two runs over the same
+      # kernel source must print identical digests - the reproducibility
+      # evidence is the comparison of this line across runs.
+      - name: Release image digests
+        run: |
+          cat target/images/manifest.txt
+          sha256sum target/images/itisyou-kernel-bios.img target/images/itisyou-kernel-uefi.img
+
+      - name: Upload release boot images
+        uses: actions/upload-artifact@v4
+        with:
+          name: boot-images
+          path: |
+            target/images/itisyou-kernel-bios.img
+            target/images/itisyou-kernel-uefi.img
+            target/images/manifest.txt
+          if-no-files-found: error
+          retention-days: 90
+
       - name: Install QEMU + OVMF
         run: |
           sudo apt-get update
@@ -108,7 +128,7 @@ jobs:
             --send help --send version --send memory --send tasks \
             --send "ls /" --send "cat /etc/version" \
             --send "run /bin/init" --send shutdown \
-            --require "itisyou-os 0.7.0-dev" \
+            --require "itisyou-os 0.8.1" \
             --require "task 0: kmain" \
             --require "RING3-DONE" \
             --require "run: /bin/init: Exit(0)" \

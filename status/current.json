@@ -1,12 +1,12 @@
 {
-  "version": "0.8.0",
+  "version": "0.8.1",
   "maturity": "pre-alpha",
   "architecture": "x86_64",
   "environment": "QEMU",
-  "milestone": "V0.8 \u2014 Networking, Authenticity & Hardening",
-  "commit": "e6e3496d129f5f9d753ddd90b875bccafbe5cefe",
-  "lastVerifiedAt": "2026-09-05T19:47:32Z",
-  "verification": "verified",
+  "milestone": "V0.8 \u2014 Networking, Authenticity & Hardening (v0.8.1 release-integrity closeout)",
+  "commit": null,
+  "lastVerifiedAt": null,
+  "verification": "in-development",
   "modules": [
     {
       "id": "boot",

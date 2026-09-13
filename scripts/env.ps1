@@ -9,9 +9,15 @@ $env:OVMF_CODE = 'E:\tools\qemu\share\edk2-x86_64-code.fd'
 if ($env:PATH -notlike '*E:\tools\qemu*') {
     $env:PATH = "E:\tools\qemu;$env:PATH"
 }
-# Bulk scratch for anything transient and large.
-$env:ITISYOU_SCRATCH = 'G:\claude-tmp'
+# Bulk scratch for anything transient and large. G: is an external drive that
+# is not always attached; when it is absent, fall back to E: (the main work
+# drive) rather than failing or silently landing on C: (operating rules §5).
+if (Test-Path 'G:\') {
+    $env:ITISYOU_SCRATCH = 'G:\claude-tmp'
+} else {
+    $env:ITISYOU_SCRATCH = 'E:\claude-tmp'
+}
 # Route temp files off C: for all build tooling (operating rules §5).
-New-Item -ItemType Directory -Force 'G:\claude-tmp\tmp' | Out-Null
-$env:TEMP = 'G:\claude-tmp\tmp'
-$env:TMP = 'G:\claude-tmp\tmp'
+New-Item -ItemType Directory -Force "$env:ITISYOU_SCRATCH\tmp" | Out-Null
+$env:TEMP = "$env:ITISYOU_SCRATCH\tmp"
+$env:TMP = "$env:ITISYOU_SCRATCH\tmp"

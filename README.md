@@ -8,10 +8,21 @@ privilege boundaries, strong kernel/user isolation, recoverable and auditable
 system changes, reproducible builds, and local-first intelligence — where AI
 can reason about the system but never holds unrestricted kernel authority.
 
-The current milestone is **V0.1 — Kernel Foundation**: an independently
-bootable x86_64 kernel written in Rust (`no_std`), developed and verified
-exclusively inside QEMU. It is not a Linux distribution and contains no Linux
-kernel code at runtime.
+It is an independently bootable x86_64 operating system written in Rust
+(`no_std`), developed and verified exclusively inside QEMU. It is not a Linux
+distribution and contains no Linux kernel code at runtime.
+
+The latest release is **V0.8 — Networking, Authenticity & Hardening**
+(`v0.8.1`, a release-integrity closeout of `v0.8.0`): Ring 3 processes in
+per-process address spaces with preemptive scheduling, capability handles
+enforced at the syscall boundary, a persistent crash-consistent filesystem on
+NVMe, a compositor and desktop with PS/2 and USB (UHCI and xHCI) input, AC97
+audio, an IPv4 network stack (ARP/ICMP/UDP/DNS) with capability-scoped
+sockets, Ed25519-signed packages with atomic update and rollback, a
+hash-chained persistent audit trail, and SMEP/SMAP/UMIP hardening. What is
+*not* there yet — TCP, DHCP, IPv6, a userspace init, physical hardware — is
+listed in [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) and
+sequenced in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Current reality
 
@@ -49,7 +60,9 @@ here should ever be pointed at a physical disk.
 ## Repository layout
 
 - `kernel/` — the x86_64 kernel (library + interactive/selftest binaries)
-- `crates/kernel-core` — pure host-testable kernel logic (stage/marker contract)
+- `crates/kernel-core` — pure host-testable kernel logic (parsers, protocol
+  codecs, crypto, filesystem format, capability table)
+- `user/` — Ring 3 programs and the `ulib` syscall library
 - `tools/image-builder` — builds bootable disk images (pure Rust)
 - `tools/qemu-runner` — deterministic QEMU test harness with JSON evidence
 - `scripts/` — doctor / build / run / test / verify / secret-scan gates

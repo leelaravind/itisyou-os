@@ -199,7 +199,7 @@ dependencies = [
 
 [[package]]
 name = "image-builder"
-version = "0.7.0-dev"
+version = "0.8.1"
 dependencies = [
  "anyhow",
  "bootloader",
@@ -207,7 +207,7 @@ dependencies = [
 
 [[package]]
 name = "itisyou-kernel"
-version = "0.7.0-dev"
+version = "0.8.1"
 dependencies = [
  "bootloader_api",
  "kernel-core",
@@ -238,7 +238,7 @@ dependencies = [
 
 [[package]]
 name = "kernel-core"
-version = "0.7.0-dev"
+version = "0.8.1"
 
 [[package]]
 name = "libc"
@@ -333,7 +333,7 @@ dependencies = [
 
 [[package]]
 name = "qemu-runner"
-version = "0.7.0-dev"
+version = "0.8.1"
 dependencies = [
  "kernel-core",
  "serde",
@@ -554,7 +554,7 @@ dependencies = [
 
 [[package]]
 name = "ulib"
-version = "0.7.0-dev"
+version = "0.8.1"
 
 [[package]]
 name = "unicode-ident"
@@ -564,196 +564,196 @@ checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
 
 [[package]]
 name = "user-cap-child"
-version = "0.7.0-dev"
+version = "0.8.1"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-cap-handle-probe"
-version = "0.7.0-dev"
+version = "0.8.1"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-cap-parent"
-version = "0.7.0-dev"
+version = "0.8.1"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-child"
-version = "0.7.0-dev"
+version = "0.8.1"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-crashy-svc"
-version = "0.7.0-dev"
+version = "0.8.1"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-echo-svc"
-version = "0.7.0-dev"
+version = "0.8.1"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-flapd"
-version = "0.7.0-dev"
+version = "0.8.1"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-fs-probe"
-version = "0.7.0-dev"
+version = "0.8.1"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-fs-user-persist"
-version = "0.7.0-dev"
+version = "0.8.1"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-fs-write-denied"
-version = "0.7.0-dev"
+version = "0.8.1"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-fs-writer"
-version = "0.7.0-dev"
+version = "0.8.1"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-gp-test"
-version = "0.7.0-dev"
+version = "0.8.1"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-gui-demo"
-version = "0.7.0-dev"
+version = "0.8.1"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-harden-probe"
-version = "0.7.0-dev"
+version = "0.8.1"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-hello-app"
-version = "0.7.0-dev"
+version = "0.8.1"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-init"
-version = "0.7.0-dev"
+version = "0.8.1"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-lsdev"
-version = "0.7.0-dev"
+version = "0.8.1"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-net-denied"
-version = "0.7.0-dev"
+version = "0.8.1"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-net-probe"
-version = "0.7.0-dev"
+version = "0.8.1"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-parent"
-version = "0.7.0-dev"
+version = "0.8.1"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-pf-test"
-version = "0.7.0-dev"
+version = "0.8.1"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-sandbox-probe"
-version = "0.7.0-dev"
+version = "0.8.1"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-spin-finite"
-version = "0.7.0-dev"
+version = "0.8.1"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-spin-forever"
-version = "0.7.0-dev"
+version = "0.8.1"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-stack-guard-probe"
-version = "0.7.0-dev"
+version = "0.8.1"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-svc-client"
-version = "0.7.0-dev"
+version = "0.8.1"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-tick-client"
-version = "0.7.0-dev"
+version = "0.8.1"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-tickd"
-version = "0.7.0-dev"
+version = "0.8.1"
 dependencies = [
  "ulib",
 ]

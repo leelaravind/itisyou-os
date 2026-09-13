@@ -61,7 +61,7 @@ timer/PS-2 interrupt path intact. Remaining for a fuller platform: **USB xHCI**,
 multi-device USB enumeration, bulk/isochronous transfers, audio capture,
 APIC/IOAPIC/MSI interrupt routing, and ACPI/power foundations.
 
-## V0.7 — System Platform *(current)*
+## V0.7 — System Platform *(complete — tag v0.7.0)*
 
 Achieved: an explicit **capability model** (default deny at the syscall
 boundary; delegation only narrows — a child can never hold what its parent
@@ -82,7 +82,13 @@ fuller platform: capability handles + revocation, signed packages (key
 provisioning), userspace FS writes, long-running background services,
 kernel-image updates.
 
-## V0.8 — Networking, Authenticity & Hardening (delivered)
+## V0.8 — Networking, Authenticity & Hardening *(complete — tags v0.8.0, v0.8.1)*
+
+`v0.8.1` is a release-integrity closeout, not new function: the `v0.8.0`
+kernel reported `0.7.0-dev`, two requirement rows used a state outside the
+plan's vocabulary, and the public site still made V0.1-era claims. It fixes
+those, adds a build gate that fails on version or requirement-state drift, and
+adds real-browser verification of the deployed site.
 
 Delivered and verified: an e1000 driver with polled descriptor rings; ARP,
 IPv4, ICMP echo (client and responder), UDP and DNS; capability-scoped Ring 3
@@ -97,27 +103,77 @@ Deliberately NOT delivered, and recorded as such rather than reworded: **TCP**,
 IPv6, DHCP, and routing beyond a single gateway. The I/O APIC is programmed but
 its entries stay masked — line IRQs remain on the verified PIC path.
 
-## V0.9 — Transport, Interrupt Cutover & Key Management
+## Amendment — 2026-09-13 (Phase 1 audit)
 
-TCP with a real retransmission timer and connection state machine; DHCP and
-IPv6 foundations; moving line-based IRQs onto the I/O APIC (with ACPI MADT
-parsing) so the PIC can be retired; a signing key that never enters the source
-tree, with rotation and revocation; signing the audit chain head; ACPI/power
-foundations, additional device classes, laptop hardware research.
+The sequence below V0.8 was re-derived from dependencies rather than kept as
+written, and the change is recorded here rather than made silently:
 
-## V0.10 — AI-Native System Layer
+1. **A userspace-system milestone is inserted before the AI layer (new V0.10).**
+   The AI layer's own premise is an agent that runs as an ordinary, supervised,
+   least-privilege Ring 3 service and reaches the system only through the
+   capability/policy/service path. Today processes run only while the kernel
+   console drives the scheduler, services starve during a foreground command,
+   there is no userspace `init`, and a Ring 3 program cannot keep a window on
+   the live desktop. An agent built on that would be a kernel-console feature
+   in disguise. The foundations come first — the plan's own rule is not to
+   delay OS correctness for AI branding.
+2. **The AI-native layer moves from V0.10 to V0.11**, unchanged in scope.
+3. **Daily-driver research moves after V1.0.** Wi-Fi, Bluetooth, GPU
+   acceleration, power management and suspend/resume need physical hardware;
+   QEMU offers no Wi-Fi or Bluetooth device to verify against, and physical
+   hardware requires an explicit per-device authorization gate
+   (`docs/IMPLEMENTATION_PLAN.md` §27). A requirement that cannot be
+   *verified* cannot gate V1.0, so V1.0 is defined as a VM-verified
+   experimental release and says so.
+4. **"Signing the audit chain head" becomes "anchoring it"** in V0.9: a key
+   stored beside the log on the same disk protects nothing against the
+   whole-disk attacker the item exists for, and there is no hardware root of
+   trust to seal one. Moving the head out of that attacker's reach is the
+   honest form of the same goal.
 
-Local inference service **outside** the kernel, system knowledge over
-approved local state, diagnostic agent, policy-controlled system actions
-with preview/approval, provenance/audit, post-action verification.
+## V0.9 — Transport, Interrupt Cutover & Trust *(next)*
 
-## V0.11 — Daily-Driver Research
+- **TCP** with a connection state machine (active and passive open, orderly
+  close, reset), a retransmission timer with backoff, and a receive window;
+  Ring 3 stream sockets behind the port-scoped network capability; verified
+  against a *real* host TCP stack, with loss injected to force retransmission.
+- **DHCP** client and **IPv6 foundations** (NDP, SLAAC, ICMPv6 echo), verified
+  against QEMU's user-mode network as an independent implementation.
+- **ACPI** table discovery (RSDP → XSDT/RSDT → MADT, FADT) and the **I/O APIC
+  cutover**: timer, keyboard and mouse delivered through the I/O APIC using the
+  MADT's overrides, the 8259 PIC masked and retired; ACPI S5 power-off.
+- **Package-signing key hierarchy**: an offline root, signing-key certificates
+  with validity windows, a signed revocation list, rotation — and release
+  private keys that never enter the source tree.
+- **Audit head anchoring** outside the audited disk.
 
-Wi-Fi, Bluetooth, accelerated graphics strategy, power management,
-suspend/resume, application ecosystem — real hardware only on explicitly
-approved sacrificial devices.
+## V0.10 — Userspace System
+
+A userspace `init` as the first process, starting services from configuration;
+an always-on scheduler so services keep running whatever the console is doing;
+program arguments; a Ring 3 shell; filesystem space reclamation so a long-lived
+disk does not fill; and persistent Ring 3 applications on the live desktop with
+focus and input routed to the focused window.
+
+## V0.11 — AI-Native System Layer
+
+A local inference service **outside** the kernel (a small model running in
+Ring 3, trained reproducibly from the repository), system knowledge over an
+approved, read-only view of local state, a diagnostic agent, policy-controlled
+system actions with preview and explicit approval, provenance and audit, and
+post-action verification with rollback. The invariant is unchanged: the agent
+has intelligence, not authority.
 
 ## V1.0 — Experimental Personal OS
 
-Declared only when reliability, security, recovery, hardware support,
-installation and update safety criteria are defined and passed.
+Declared only when its acceptance criteria — reliability, security, recovery,
+update safety, installation/boot safety and supported environment — are
+written down in advance and passed. It ships as a reproducible, checksummed,
+downloadable boot image for virtual machines, with the tested environments
+stated exactly and physical hardware explicitly unsupported.
+
+## After V1.0 — Daily-Driver Research
+
+Wi-Fi, Bluetooth, accelerated graphics strategy, power management,
+suspend/resume, SMP, application ecosystem — real hardware only on explicitly
+approved sacrificial devices, one device at a time.

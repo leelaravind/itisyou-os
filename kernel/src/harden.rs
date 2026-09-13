@@ -85,7 +85,9 @@ pub fn init() {
 /// A guard rather than a bare pair of calls: an early return between `stac`
 /// and `clac` would leave the kernel running with user access permitted, which
 /// is precisely the state SMAP exists to prevent. `Drop` closes the window on
-/// every path, including a panic unwind.
+/// every return path. A panic does not unwind (the kernel is built
+/// `panic = "abort"`), so `Drop` does not run then — but the panic handler
+/// halts or exits QEMU, so no code ever runs with the window left open.
 pub struct UserAccess {
     active: bool,
 }

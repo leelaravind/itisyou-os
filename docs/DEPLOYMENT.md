@@ -35,10 +35,21 @@ drift — the deployed site cannot claim more than the repository evidence.
 
 ## Verification after deploy (required — deploy output is not proof)
 
-- fetch `https://os.itisyou.app` (status 200, expected content);
-- check TLS, headers (CSP, nosniff, frame-ancestors), 404 route;
-- browser-test major routes, mobile viewport, console errors;
-- record results in `docs/REQUIREMENTS.md` (CF-001).
+```powershell
+cd website
+node scripts/browser-verify.mjs --base https://os-itisyou-app-staging.kpleelaaravind.workers.dev --expect-text "v0.8.1"
+node scripts/browser-verify.mjs --base https://os.itisyou.app --expect-text "v0.8.1"
+```
+
+The verifier drives a real (headless) Chromium: every route at desktop and
+phone widths, console errors, CSP/blocked-resource errors, failed requests,
+horizontal overflow, every internal link, the 404 page and the security
+headers (`docs/TESTING.md`). Alongside it:
+
+- fetch `https://os.itisyou.app` over TLS and confirm the rendered version and
+  commit match `status/current.json`;
+- record the deployed Worker version IDs and the verifier result in
+  `docs/REQUIREMENTS.md` (the release's WEB rows) and `docs/CURRENT_STATUS.md`.
 
 ## Rollback
 

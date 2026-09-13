@@ -1,8 +1,9 @@
-# Threat model — ITISYOU OS V0.1
+# Threat model — ITISYOU OS
 
-V0.1 is a pre-alpha research kernel that runs **only inside QEMU on the
-developer's machine**. The threat model is therefore scoped to development
-reality, and grows with each milestone (plan §11).
+ITISYOU OS is a pre-alpha research OS that runs **only inside QEMU**. The
+threat model is scoped to that reality and grows with each milestone (plan
+§11): the V0.1 baseline below still holds, and each later section adds what a
+milestone changed — read the document top to bottom, newest additions last.
 
 ## Assets
 
@@ -13,7 +14,7 @@ reality, and grows with each milestone (plan §11).
 - The public website's truthfulness (a false capability claim is an
   integrity failure).
 
-## Adversary/failure assumptions for V0.1
+## Adversary/failure assumptions — V0.1 baseline
 
 There is no multi-user or network exposure yet; realistic risks are:
 
@@ -27,7 +28,7 @@ There is no multi-user or network exposure yet; realistic risks are:
 | Secret leakage | tokens in commits/logs/CI | `scripts/secret-scan.ps1` before pushes; env-var/platform secret stores only |
 | Fake completion | claims without evidence | requirement matrix + machine-readable QEMU evidence; website generated from `status/current.json` |
 
-## Explicit non-threats for V0.1
+## Explicit non-threats — V0.1 baseline (network input superseded by V0.8 below)
 
 Remote attackers (no network stack), malicious local users (single-developer
 VM), physical attacks, and side channels are out of scope until the relevant

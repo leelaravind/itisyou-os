@@ -1,107 +1,71 @@
 # Session checkpoint — resumable state
 
-**Timestamp:** 2026-09-05 Europe/London
-**Repository:** `E:\Project\itisyou-os` · branch `main`
-**Tags:** `v0.1.0` … `v0.7.0` (V0.8 is unreleased; no V0.8 tag yet)
-**Remote:** https://github.com/leelaravind/itisyou-os (private)
-**Milestone:** V0.8 in progress. The released V0.7 System Platform is immutable at `v0.7.0` and was locally and remotely verified (selftest pass=106 fail=0; platform-bios + two-boot update-recovery green; CI run 33810268090 green; staging and production website verified).
+**Timestamp:** 2026-09-13 ~10:30 Europe/London (session 4)
+**Repository:** `E:\Project\itisyou-os` · branch `main` · remote
+https://github.com/leelaravind/itisyou-os (private)
+**Tags:** `v0.1.0` … `v0.8.0` (all on green-CI commits); `v0.8.1` in progress
+**Owner deadline for this session:** hard stop **15:44 BST 2026-09-13**
+(6 hours from 09:44); wind-up starts 14:44. Whatever is not finished by then is
+left committed, pushed and described here.
 
-## V0.7 verified additions
+## Where things stand
 
-- **Capabilities** (kernel-core/caps + syscall gating): default-deny bits,
-  per-quantum publication, spawn inherits / spawn_caps intersects (no
-  amplification). New syscalls: SYS_FS_READ=13 (sandboxed), SYS_SPAWN_CAPS=14.
-- **FS sandbox**: per-process path prefixes checked on the normalized path
-  (kernel-core path::is_within — traversal-proof).
-- **Audit** (kernel/audit.rs): ring + [ITISYOU:AUDIT] markers for every
-  privileged action + denial; `audit` command.
-- **Services** (kernel/services.rs + kernel-core/service): registry with deps
-  + exact caps; deterministic cycle-checked order; bounded restart (3);
-  [ITISYOU:SVC] markers; `svc` command. proc gains reap() +
-  run_until_pid_idle_bounded().
-- **Packages/updates** (kernel/platform.rs + kernel-core/{manifest,pkg,
-  sha256,update}; ITFS atomic remove): ITPKG format; store `<app>.<v>.pkg`
-  + `.ok`; install/rollback/recover each ONE atomic superblock commit;
-  launch re-verifies digest + grants manifest∩launcher caps under the app
-  sandbox (/apps/<name> + /etc); `pkg` command. Fixtures packed by build.rs
-  (incl. corrupted + hostile-manifest) under /pkgs.
-- New user programs: sandbox-probe, cap-parent/child, fs-probe, echo-svc,
-  crashy-svc, svc-client, hello-app.
-- Harness: NVMe test disks 16 MiB (774 KB debug ELFs need the room).
+- **V0.8 is released** (`v0.8.0` → `84d6b24`, CI `33988391309` green, site
+  deployed). The 2026-09-13 audit re-ran the full gate on that commit:
+  `VERIFY: OK`, 24/24 QEMU legs, selftest 113/0 (BIOS and UEFI), 292 host
+  tests, secret scan clean. The engineering reproduces.
+- **V0.8.1 (release-integrity closeout) is in progress.** The `v0.8.0` kernel
+  reported `0.7.0-dev`; two requirement rows used "NOT DONE"; the public site
+  and several docs made V0.1-era claims. V0.8.1 fixes all of it and adds
+  `website/scripts/check-consistency.mjs` (version + requirement-state gate)
+  and `website/scripts/browser-verify.mjs` (headless Chromium over CDP). See
+  `docs/REQUIREMENTS.md` § V0.8.1 for the rows and their state.
+- **Next milestone: V0.9 — Transport, Interrupt Cutover & Trust**
+  (`docs/ROADMAP.md`, including the 2026-09-13 amendment that inserts V0.10
+  Userspace System before the AI layer, moves AI to V0.11, and moves daily-
+  driver hardware research after V1.0).
+- Draft PR #1 (`w0-01-freeze-normative-inputs`) is a separate, unmerged,
+  owner-gated architecture track. It was deliberately left untouched.
 
-## Gates / how to resume
+## Release procedure (what "closed" means here)
 
-- `scripts/test.ps1` = full matrix incl. platform-bios + update-interrupt/
-  update-recovery (two boots, one persistent disk). `scripts/verify.ps1` =
-  full gate.
-- Shell: `run <path> [caps|-] [prefix]`, `svc`, `pkg …`, `audit`.
-- Next in **V0.8**: the e1000 driver + RX/TX data path (the NIC is already
-  enumerated at 00:03.0 and the parsers in `kernel_core::net` are ready and
-  host-tested, so what is missing is polled RX/TX rings plus ARP/ICMP/UDP
-  on top of them), then signed packages, userspace FS writes, and a
-  userspace init.
-
-## V0.8 work checkpoint
-
-The immutable V0.7 baseline is `v0.7.0` at `00b5eea`. V0.8 is complete: every
-requirement in `docs/REQUIREMENTS.md` is in a terminal state, and the two that
-are NOT DONE (TCP; DHCP/IPv6/routing) say so rather than being reworded.
-
-Delivered and verified:
-
-1. **Capability handles are the enforcement path** — forged, expired and
-   revoked handles each refused on the real syscall path with the reason
-   audited (`platform-bios`).
-2. **Long-running Ring 3 services** (ADR-0014) — `services-bg-bios`.
-3. **Networking** (ADR-0015) — e1000 with polled RX/TX rings, ARP, IPv4, ICMP
-   echo client and responder, UDP with port-scoped Ring 3 sockets, DNS.
-   Verified against the runner's own INDEPENDENT host-side Ethernet peer
-   (`tools/qemu-runner/src/wire.rs`) over a `dgram` netdev: `net-bios`.
-4. **Signed packages** (ADR-0016) — Ed25519 in `kernel_core::ed25519`,
-   RFC 8032 vectors pass; ITPKG002; three distinct authenticity refusals.
-5. **Userspace filesystem writes** — `fs-write-bios` + `fs-write-persist`.
-6. **APIC / I/O APIC / MSI-X** (ADR-0017) — `irq-bios`.
-7. **xHCI enumeration + HID** (ADR-0018) — `xhci-hid-bios`.
-8. **Persistent hash-chained audit** — `audit-persist-{write,verify,tamper}`.
-9. **SMEP/SMAP/UMIP + stack guard + W^X** — `harden-bios`, and every leg now
-   runs on a CPU advertising the three protections.
-
-Gate: 24/24 QEMU legs Success, selftest pass=113 fail=0, 278 host tests,
-`scripts/verify.ps1` -> `VERIFY: OK`. Remote: CI run `33987853808` green for commit
-`e6e3496`. Deployed: staging `edaab8e1-37e3-4c3a-a13b-398494ab988c`, then production `a3544b0a-5fe1-44ab-8dfc-b2bd4a3dda0d`;
-https://os.itisyou.app renders `v0.8.0 · Current Build VERIFIED`.
+1. `scripts/verify.ps1` → `VERIFY: OK` (includes the consistency gate).
+2. Commit A (implementation + docs; `status/current.json` verification
+   `in-development`, commit null) → push → CI green.
+3. Commit B: stamp `status/current.json` (commit = A, `verified`,
+   `lastVerifiedAt`), CI row → push.
+4. `cd website; npm run verify; npx wrangler deploy --env staging` →
+   `node scripts/browser-verify.mjs --base <staging> --expect-text vX.Y.Z` →
+   `npx wrangler deploy --env production` → browser-verify production.
+5. Commit C: WEB rows + deploy IDs → push → CI green →
+   `node website/scripts/check-consistency.mjs --release` → tag on C → push tag.
 
 ## Things a resuming session will want to know
 
-- `scripts/test.ps1` is the canonical matrix; `scripts/verify.ps1` wraps it
-  with fmt, both clippy gates, the website build and the secret scan. The full
-  gate takes roughly 12 minutes.
+- `scripts/test.ps1` is the canonical matrix; `scripts/verify.ps1` wraps it with
+  doctor, fmt, both clippy gates, the website build and the secret scan (~12 min).
 - CI (`.github/workflows/ci.yml`) duplicates the QEMU legs INLINE rather than
   calling `test.ps1`, so a new leg must be added in BOTH places.
+- The shell-test legs assert the kernel's version string; bump it with the
+  Cargo workspace version and `status/current.json` (the gate enforces the
+  latter pair).
 - A `--require` string containing a double quote does not survive native
   argument quoting on Windows. Assert the quoted part separately.
-- The runner's `-cpu qemu64,+smep,+smap,+umip` is load-bearing: without it the
-  guest's hardening is enabled into a void.
-- Editing repo files from Python: always `io.open(..., encoding='utf-8',
-  newline='')`. Most files are CRLF in the working copy and LF in git, and the
-  sources are full of em dashes that the default locale encoding mangles.
+- The runner's `-cpu qemu64,+smep,+smap,+umip` is load-bearing.
+- Editing repo files from Python: `io.open(..., encoding='utf-8', newline='')`
+  and preserve the file's own line endings; the sources are full of em dashes.
+- `G:` (external scratch) may be absent; `scripts/env.ps1` falls back to
+  `E:\claude-tmp`. Never use C: for scratch.
+- Browser verification: the Claude-in-Chrome extension was not connected in
+  sessions 3 and 4; `website/scripts/browser-verify.mjs` drives the installed
+  Chrome headless instead (profile under `$ITISYOU_SCRATCH`).
 
 ## Environment keys
 
-nightly-2026-08-01 pin; toolchains on E:; QEMU 11.1.0 at E:\tools\qemu;
-TEMP → G:\claude-tmp\tmp; never mix kernel + host packages in one cargo
-invocation; user programs build static no-pie; kernel build.rs has
-kernel-core as a build-dependency (ITPKG packing); CURRENT_CAPS/sandbox
-published per quantum in run_quantum; PIC-lock and compositor-lock ISR rules
-unchanged.
+nightly-2026-08-01 pin; toolchains on E:; QEMU 11.1.0 at E:\tools\qemu (has
+`user`/slirp networking); Chrome 153 at the default path; never mix kernel +
+host packages in one cargo invocation; user programs build static no-pie.
 
 ## Blockers
 
-None.
-
-## Prior release evidence (V0.7)
-
-Release evidence points to commit `1f08bf5`, CI run `33810268090`,
-staging Worker `8ab2626a-88e2-4721-9956-632339d146c2`, and production Worker
-`1c065f8f-00be-46d7-ada2-7eb2238a8ebb`; the release tag is applied after the
-closing evidence commit and clean-tree check.
+None external. The only constraint is the owner's session deadline above.

@@ -3,10 +3,12 @@ import Base from '../layouts/Base.astro';
 import Breadcrumbs from '../components/Breadcrumbs.astro';
 import StatusTag from '../components/StatusTag.astro';
 import WarningBanner from '../components/WarningBanner.astro';
-import { status, orDash } from '../lib/status';
+import { status } from '../lib/status';
+import { RELEASES } from '../lib/releases';
 
 const description =
-  'ITISYOU OS releases: none published yet. What a release will contain when it exists — bootable QEMU images, SHA-256 manifest, verification evidence — and why nothing is downloadable today.';
+  'ITISYOU OS releases: every version tag with its commit and green CI run, what each delivered, and why no image is downloadable yet — the first public, checksummed boot image is a V1.0 deliverable.';
+const repo = 'https://github.com/leelaravind/itisyou-os';
 ---
 
 <Base title="Releases" description={description}>
@@ -22,40 +24,50 @@ const description =
 
     <WarningBanner />
 
-    <!-- ============ Honest empty state ============ -->
-    <section class="panel" aria-labelledby="norel-title">
-      <div class="flex flex-col md:flex-row">
-        <div class="md:w-72 border-b md:border-b-0 md:border-r border-line p-gutter bg-surface-2 flex flex-col gap-4">
-          <h2 id="norel-title" class="font-sans text-headline-md text-ink">v{status.version}</h2>
-          <div class="flex flex-wrap gap-2">
-            <StatusTag status={status.maturity} />
-            <StatusTag status={status.verification} />
-          </div>
-        </div>
-        <div class="flex-1 p-gutter grid grid-cols-2 md:grid-cols-4 gap-gutter content-start">
-          <div class="flex flex-col gap-1">
-            <span class="font-mono text-mono-label text-muted uppercase">Published</span>
-            <span class="font-mono text-mono-data text-ink">—</span>
-          </div>
-          <div class="flex flex-col gap-1">
-            <span class="font-mono text-mono-label text-muted uppercase">Commit</span>
-            <span class="font-mono text-mono-data text-ink">{orDash(status.commit)}</span>
-          </div>
-          <div class="flex flex-col gap-1">
-            <span class="font-mono text-mono-label text-muted uppercase">Arch</span>
-            <span class="font-mono text-mono-data text-ink">{status.architecture}</span>
-          </div>
-          <div class="flex flex-col gap-1">
-            <span class="font-mono text-mono-label text-muted uppercase">Environment</span>
-            <span class="font-mono text-mono-data text-ink">{status.environment} / VM only</span>
-          </div>
-          <p class="col-span-2 md:col-span-4 font-mono text-mono-data text-meta border-t border-line pt-4">
-            NO_RELEASES_PUBLISHED — the current version is a development tree, not a release. There are no download
-            links because no artifact has passed the release gate yet; this page will state checksums and evidence
-            when one does.
-          </p>
+    <!-- ============ Tagged releases ============ -->
+    <section class="panel" aria-labelledby="tags-title">
+      <div class="p-gutter border-b border-line flex flex-wrap items-center justify-between gap-4">
+        <h2 id="tags-title" class="font-sans text-headline-md text-ink">Version tags</h2>
+        <div class="flex flex-wrap gap-2">
+          <StatusTag status={status.maturity} />
+          <StatusTag status={status.verification} />
         </div>
       </div>
+      <p class="px-gutter pt-4 font-mono text-mono-data text-meta max-w-3xl">
+        NO_PUBLIC_DOWNLOADS — each tag marks a commit whose full gate and CI run passed. The repository is private,
+        so a tag is evidence of a verified state, not an artifact you can fetch. The first public, checksummed boot
+        image is a V1.0 deliverable; this page will carry its file, size and SHA-256 when it exists.
+      </p>
+      <div class="table-scroll mt-4">
+        <table class="w-full border-collapse min-w-[720px]">
+          <caption class="sr-only">Release tags with commit, date, CI run and summary</caption>
+          <thead>
+            <tr>
+              {['Tag', 'Milestone', 'Commit', 'Date', 'CI run', 'Delivered'].map((h) => (
+                <th scope="col" class="text-left font-mono text-[11px] font-medium tracking-widest uppercase text-muted bg-log border-b border-line px-4 py-3">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {
+              RELEASES.map((r) => (
+                <tr class="border-b border-line last:border-b-0 align-top">
+                  <td class="font-mono text-mono-data text-ink px-4 py-3 whitespace-nowrap">{r.tag}</td>
+                  <td class="text-sm text-meta-bright px-4 py-3">{r.milestone}</td>
+                  <td class="font-mono text-mono-data text-meta-bright px-4 py-3">{r.commit}</td>
+                  <td class="font-mono text-mono-data text-meta-bright px-4 py-3 whitespace-nowrap">{r.date}</td>
+                  <td class="font-mono text-mono-data text-meta-bright px-4 py-3">{r.ciRun}</td>
+                  <td class="text-sm text-meta-bright px-4 py-3">{r.summary}</td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </div>
+      <p class="px-gutter py-4 font-mono text-mono-data text-meta border-t border-line">
+        CI runs are GitHub Actions runs in the private repository ({repo}); the evidence is summarized in the
+        requirement matrix.
+      </p>
     </section>
 
     <!-- ============ Release contract ============ -->
@@ -65,8 +77,8 @@ const description =
           What a release will contain
         </h2>
         <p class="text-body-base text-meta-bright mb-4 max-w-prose">
-          The build pipeline already produces the release shape — it just hasn’t earned a release yet. When the V0.1
-          verification gates pass, a release will publish exactly what the gate verified:
+          The build pipeline already produces this shape for every commit; a public release will publish exactly what
+          its gate verified:
         </p>
         <ul class="flex flex-col gap-2 font-mono text-mono-data text-meta-bright list-none">
           <li class="border border-line bg-log p-3">itisyou-kernel-&#123;bios,uefi&#125;.img — interactive kernel</li>
@@ -80,9 +92,10 @@ const description =
         <ol class="flex flex-col gap-px bg-line border border-line list-none">
           {
             [
-              ['EVIDENCE FIRST', 'A release is cut only from a commit whose full verification gate (build, host tests, 4-way QEMU boot/selftest matrix) passed — and the evidence ships with it.'],
+              ['EVIDENCE FIRST', 'A release is cut only from a commit whose full verification gate (build, host tests, the complete QEMU matrix, website, secret scan) passed locally and in CI — and the evidence ships with it.'],
               ['CHECKSUMS ALWAYS', 'Every artifact is listed in a SHA-256 manifest generated by the same build that produced it. Verify before booting.'],
-              ['QEMU ONLY', 'Artifacts are disk images for virtual machines. They are not installers, and no release will target physical hardware in V0.1.'],
+              ['VIRTUAL MACHINES ONLY', 'Artifacts are disk images for virtual machines (QEMU is the tested environment). They are not installers, and no release targets physical hardware.'],
+              ['VERSION MEANS VERSION', 'The kernel, the status metadata, the requirement matrix and the tag must name the same version — the build fails otherwise (added after v0.8.0 shipped a kernel reporting 0.7.0-dev).'],
               ['NO SILENT REPLACEMENT', 'Published artifacts are immutable; a fix means a new version, never an overwritten file.'],
             ].map(([label, text]) => (
               <li class="bg-surface p-5 flex flex-col sm:flex-row sm:items-start gap-3">

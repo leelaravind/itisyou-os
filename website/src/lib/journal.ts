@@ -19,6 +19,19 @@ export interface JournalEntry {
 
 export const JOURNAL: JournalEntry[] = [
   {
+    date: '2026-09-13',
+    time: '09:45',
+    session: 'Session 4 — audit + V0.8.1',
+    title: 'Audit: the V0.8 engineering reproduces; the V0.8 release did not agree with itself',
+    what:
+      'An independent audit re-ran the whole gate on the v0.8.0 commit before trusting any document: 24/24 QEMU legs, selftest 113/0 on BIOS and UEFI, 292 host tests — the engineering held. The release around it did not: the tagged kernel reported itself as 0.7.0-dev, two requirement rows used a state ("NOT DONE") the plan does not allow, and the live site still said "no network stack exists in V0.1".',
+    detail:
+      'The version drift had been tested in: the shell-test legs asserted the same stale "0.7.0-dev" string the kernel printed, so the check that should have caught it pinned it instead. The fix is v0.8.1 plus a gate that compares the Cargo version, the status metadata and the requirement states on every build — run against the v0.8.0 tree it names exactly the three defects that shipped. The site is now verified in a real headless Chromium driven over the DevTools protocol rather than over HTTP alone, and the roadmap after V0.8 was re-derived from dependencies: a userspace-system milestone now precedes the AI layer, which depends on it.',
+    evidence:
+      'check-consistency.mjs on the v0.8.0 tree: version "0.8.0" != "0.7.0-dev"; NET08-003/NET08-004 state "NOT DONE" outside the vocabulary',
+    status: 'implemented',
+  },
+  {
     date: '2026-09-05',
     time: '18:40',
     session: 'Session 3 — V0.8',

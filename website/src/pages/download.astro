@@ -1,0 +1,232 @@
+---
+import Base from '../layouts/Base.astro';
+import Breadcrumbs from '../components/Breadcrumbs.astro';
+import StatusTag from '../components/StatusTag.astro';
+import WarningBanner from '../components/WarningBanner.astro';
+import { status } from '../lib/status';
+import downloads from '../data/downloads.json';
+
+interface DownloadFile {
+  file: string;
+  firmware: string;
+  bytes: number;
+  sha256: string;
+}
+interface BootTest {
+  label: string;
+  firmware: string;
+  qemu: string;
+  host: string;
+  result: string;
+}
+const files = downloads.files as DownloadFile[];
+const bootTests = downloads.bootTests as BootTest[];
+const published = downloads.published && files.length > 0;
+const base = `/downloads/${downloads.tag}`;
+const mib = (n: number) => `${(n / (1024 * 1024)).toFixed(2)} MiB`;
+const uefi = files.find((f) => f.firmware.startsWith('UEFI'));
+const bios = files.find((f) => f.firmware.startsWith('BIOS'));
+
+const description = published
+  ? `Download ITISYOU OS ${downloads.tag}: checksummed x86_64 boot images for QEMU (UEFI and BIOS), with SHA-256, tested environments, instructions and known limitations. Experimental, virtual machines only.`
+  : 'ITISYOU OS downloads: boot images are published only when a release gate has built, checksummed and booted them.';
+---
+
+<Base title="Download" description={description}>
+  <div class="max-w-(--container-max) mx-auto px-4 sm:px-margin pt-12 pb-8 flex flex-col gap-gutter">
+    <header class="border-b border-line-soft pb-gutter mb-4">
+      <Breadcrumbs class="mb-4" crumbs={[{ label: 'SYSTEM', href: '/' }, { label: 'DOWNLOAD' }]} />
+      <h1 class="font-sans font-light text-[36px] sm:text-display-lg text-ink mb-2">Download ITISYOU OS</h1>
+      <p class="font-mono text-mono-data text-meta-bright max-w-2xl">
+        Experimental, pre-alpha boot images for x86_64 virtual machines. They exist so the claims on this site can be
+        checked by booting the same bytes the release gate booted — not for daily use.
+      </p>
+    </header>
+
+    <WarningBanner />
+
+    <section class="panel p-gutter border-red-deep" aria-labelledby="hw-title">
+      <h2 id="hw-title" class="font-mono text-mono-label text-red tracking-widest mb-3">DO NOT BOOT ON PHYSICAL HARDWARE</h2>
+      <p class="text-body-base text-meta-bright max-w-3xl">
+        These images have been tested only inside QEMU. They have never been booted on a physical machine and no
+        physical hardware is supported. Never write them to a real disk or USB stick you care about, never point them at
+        an existing disk, and never install them on a computer you use. If you boot them anywhere other than a virtual
+        machine, you do so entirely at your own risk.
+      </p>
+    </section>
+
+    {
+      !published && (
+        <section class="panel p-gutter" aria-labelledby="none-title">
+          <h2 id="none-title" class="font-sans text-headline-md text-ink mb-2">Not yet published</h2>
+          <p class="font-mono text-mono-data text-meta max-w-3xl">
+            NO_ARTIFACT — {downloads.tag} has no published image yet. An image appears here only after the release
+            pipeline has built it in CI, its SHA-256 has been checked, and those exact bytes have booted.
+          </p>
+        </section>
+      )
+    }
+
+    {
+      published && (
+        <>
+          <section class="panel" aria-labelledby="rel-title">
+            <div class="flex flex-col md:flex-row">
+              <div class="md:w-72 border-b md:border-b-0 md:border-r border-line p-gutter bg-surface-2 flex flex-col gap-4">
+                <h2 id="rel-title" class="font-sans text-headline-md text-ink">{downloads.tag}</h2>
+                <div class="flex flex-wrap gap-2">
+                  <StatusTag status="experimental" />
+                  <StatusTag status={status.maturity} />
+                </div>
+              </div>
+              <dl class="flex-1 p-gutter grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-gutter content-start">
+                {[
+                  ['Version', downloads.version],
+                  ['Architecture', 'x86_64'],
+                  ['Maturity', 'Experimental / pre-alpha'],
+                  ['Commit', downloads.commit ?? '—'],
+                  ['Built by', downloads.builtBy ?? '—'],
+                  ['Built at', downloads.builtAt ?? '—'],
+                ].map(([k, v]) => (
+                  <div class="flex flex-col gap-1 min-w-0">
+                    <dt class="font-mono text-mono-label text-muted uppercase">{k}</dt>
+                    <dd class="font-mono text-mono-data text-ink break-all">{v}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          </section>
+
+          <section aria-labelledby="files-title">
+            <h2 id="files-title" class="font-mono text-mono-label text-ink tracking-widest mb-6">01 // FILES</h2>
+            <ul class="grid grid-cols-1 md:grid-cols-2 gap-px bg-line border border-line list-none">
+              {files.map((f) => (
+                <li class="bg-surface p-6 flex flex-col gap-3 min-w-0">
+                  <span class="font-mono text-mono-label text-muted tracking-widest">{f.firmware}</span>
+                  <a class="btn btn-primary self-start" href={`${base}/${f.file}`} download>
+                    Download {f.file}
+                  </a>
+                  <p class="font-mono text-mono-data text-meta-bright">
+                    {f.bytes.toLocaleString('en-GB')} bytes ({mib(f.bytes)}) · raw disk image
+                  </p>
+                  <p class="font-mono text-mono-data text-ink break-all">SHA-256 {f.sha256}</p>
+                </li>
+              ))}
+            </ul>
+            <p class="mt-4 font-mono text-mono-data text-meta">
+              Checksum list: <a class="underline underline-offset-4" href={`${base}/SHA256SUMS.txt`}>SHA256SUMS.txt</a>.
+              These are raw disk images (<code>.img</code>), not ISO files: the UEFI image carries a GPT with an EFI
+              system partition, the BIOS image an MBR with the bootloader's BIOS stages.
+            </p>
+          </section>
+
+          <section class="grid grid-cols-1 md:grid-cols-2 gap-gutter" aria-labelledby="verify-title">
+            <div class="panel p-gutter">
+              <h2 id="verify-title" class="font-mono text-mono-label text-ink tracking-widest mb-4">02 // VERIFY BEFORE BOOTING</h2>
+              <div class="log-block" aria-label="Checksum commands">
+                <p class="text-muted">// Linux / macOS</p>
+                <p>sha256sum -c SHA256SUMS.txt</p>
+                <p class="text-muted mt-2">// Windows PowerShell</p>
+                <p>Get-FileHash .\{uefi?.file ?? 'image.img'} -Algorithm SHA256</p>
+              </div>
+              <p class="mt-4 text-sm text-meta-bright">
+                The digest must equal the one above, character for character. Anything else is not the released image.
+              </p>
+            </div>
+            <div class="panel p-gutter">
+              <h2 class="font-mono text-mono-label text-ink tracking-widest mb-4">03 // REPRODUCIBILITY</h2>
+              <p class="text-sm text-meta-bright">{downloads.reproducibility}</p>
+            </div>
+          </section>
+
+          <section class="panel p-gutter" aria-labelledby="run-title">
+            <h2 id="run-title" class="font-mono text-mono-label text-ink tracking-widest mb-4">04 // BOOT IN QEMU</h2>
+            <p class="text-body-base text-meta-bright max-w-3xl mb-4">
+              The system console is the first serial port; the graphical window shows the OS-rendered desktop. Type
+              <code>help</code> at the console prompt. Devices are the ones the release gate tests: QEMU's
+              <code>pc</code> machine, 256 MiB, a CPU with SMEP/SMAP/UMIP.
+            </p>
+            <div class="log-block" aria-label="QEMU command lines">
+              <p class="text-muted">// UEFI (needs OVMF firmware; path varies by distribution)</p>
+              <p>qemu-system-x86_64 -m 256M -cpu qemu64,+smep,+smap,+umip \</p>
+              <p>&nbsp;&nbsp;-drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \</p>
+              <p>&nbsp;&nbsp;-drive format=raw,file={uefi?.file ?? 'itisyou-os-uefi.img'} -serial mon:stdio</p>
+              <p class="text-muted mt-3">// BIOS (SeaBIOS, QEMU's default firmware)</p>
+              <p>qemu-system-x86_64 -m 256M -cpu qemu64,+smep,+smap,+umip \</p>
+              <p>&nbsp;&nbsp;-drive format=raw,file={bios?.file ?? 'itisyou-os-bios.img'} -serial mon:stdio</p>
+              <p class="text-muted mt-3">// optional: persistent /data store (a blank 16 MiB disk, formatted on first write)</p>
+              <p>qemu-img create -f raw data.img 16M</p>
+              <p>&nbsp;&nbsp;... -drive file=data.img,if=none,format=raw,id=nvme0 -device nvme,serial=itisyou1,drive=nvme0</p>
+              <p class="text-muted mt-3">// optional: network (static 10.0.2.15; no TCP, no DHCP yet)</p>
+              <p>&nbsp;&nbsp;... -netdev user,id=net0 -device e1000,netdev=net0</p>
+            </div>
+            <p class="mt-4 text-sm text-meta">
+              On Windows hosts QEMU's stdio console can stall on input; use
+              <code>-serial tcp:127.0.0.1:4555,server=on,wait=on</code> and connect a raw TCP client (for example PuTTY in
+              raw mode) instead. The exact command lines the release gate ran are recorded in its evidence. On QEMU's
+              user-mode network the image's ARP and ICMP echo to the gateway were verified (<code>ping 10.0.2.2</code>);
+              DNS through QEMU's forwarder was not (it failed on the test host), so UDP and DNS are verified only against
+              the test harness's own network peer.
+            </p>
+          </section>
+
+          <section aria-labelledby="tested-title">
+            <h2 id="tested-title" class="font-mono text-mono-label text-ink tracking-widest mb-6">05 // TESTED ENVIRONMENTS</h2>
+            <div class="table-scroll panel">
+              <table class="w-full border-collapse min-w-[720px]">
+                <caption class="sr-only">Environments these exact images were booted in</caption>
+                <thead>
+                  <tr>
+                    {['Test', 'Firmware', 'Emulator', 'Host', 'Result'].map((h) => (
+                      <th scope="col" class="text-left font-mono text-[11px] font-medium tracking-widest uppercase text-muted bg-log border-b border-line px-4 py-3">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {bootTests.map((t) => (
+                    <tr class="border-b border-line last:border-b-0 align-top">
+                      <td class="font-mono text-mono-data text-ink px-4 py-3">{t.label}</td>
+                      <td class="text-sm text-meta-bright px-4 py-3">{t.firmware}</td>
+                      <td class="text-sm text-meta-bright px-4 py-3">{t.qemu}</td>
+                      <td class="text-sm text-meta-bright px-4 py-3">{t.host}</td>
+                      <td class="text-sm text-meta-bright px-4 py-3">{t.result}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p class="mt-4 text-sm text-meta">
+              Supported: QEMU x86_64 with the devices above. Untested: other hypervisors (VirtualBox, VMware, Hyper-V) —
+              they may work, but nothing here claims so. Unsupported: every physical machine.
+            </p>
+          </section>
+
+          <section class="grid grid-cols-1 md:grid-cols-2 gap-gutter" aria-labelledby="notes-title">
+            <div class="panel p-gutter">
+              <h2 id="notes-title" class="font-mono text-mono-label text-ink tracking-widest mb-4">06 // WHAT THIS RELEASE IS</h2>
+              <p class="text-sm text-meta-bright mb-3">
+                V0.8 — Networking, Authenticity &amp; Hardening, as the v0.8.1 closeout: Ring 3 processes in per-process
+                address spaces with preemptive scheduling, capability handles enforced at the syscall boundary, a
+                persistent crash-consistent filesystem on NVMe, a compositor with PS/2 and USB input, AC97 audio, an IPv4
+                stack (ARP/ICMP/UDP/DNS) with capability-scoped sockets, Ed25519-signed packages with atomic update and
+                rollback, a hash-chained audit trail, SMEP/SMAP/UMIP.
+              </p>
+              <a class="btn" href="/releases">All releases</a>
+            </div>
+            <div class="panel p-gutter">
+              <h2 class="font-mono text-mono-label text-ink tracking-widest mb-4">07 // KNOWN LIMITATIONS</h2>
+              <ul class="text-sm text-meta-bright flex flex-col gap-2 list-none">
+                <li>− No TCP, DHCP or IPv6; one static IPv4 address (10.0.2.15/24).</li>
+                <li>− No userspace init; the console is part of the kernel.</li>
+                <li>− Filesystem: ≤ 12 files, no directories, no space reuse.</li>
+                <li>− Package trust root is a published development key.</li>
+                <li>− One CPU; software rendering only; no power management.</li>
+              </ul>
+              <a class="btn mt-4" href="/docs/known-limitations">Full list</a>
+            </div>
+          </section>
+        </>
+      )
+    }
+  </div>
+</Base>

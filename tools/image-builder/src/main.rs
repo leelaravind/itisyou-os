@@ -11,6 +11,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+mod gpt_normalize;
+
 const VARIANTS: [&str; 4] = [
     "itisyou-kernel",
     "itisyou-kernel-selftest",
@@ -71,6 +73,14 @@ fn main() -> Result<()> {
             builder
                 .create_uefi_image(&uefi)
                 .with_context(|| format!("building UEFI image for {name}"))?;
+            // The gpt crate stamps random GUIDs into every UEFI image; replace
+            // them with content-derived ones so a rebuild of the same commit
+            // is bit-identical (gpt_normalize.rs).
+            let mut image = fs::read(&uefi)?;
+            gpt_normalize::normalize(&mut image, sha256)
+                .and_then(|()| gpt_normalize::verify(&image))
+                .map_err(|e| anyhow::anyhow!("normalizing GPT of {name}: {e}"))?;
+            fs::write(&uefi, &image)?;
             record(&mut manifest, name, "uefi", &uefi)?;
         }
     }
@@ -98,8 +108,16 @@ fn record(manifest: &mut String, name: &str, kind: &str, path: &Path) -> Result<
     Ok(())
 }
 
-/// Minimal SHA-256 (FIPS 180-4) so the manifest needs no extra dependencies.
 fn sha256_hex(data: &[u8]) -> String {
+    let mut out = String::with_capacity(64);
+    for byte in sha256(data) {
+        let _ = write!(out, "{byte:02x}");
+    }
+    out
+}
+
+/// Minimal SHA-256 (FIPS 180-4) so the manifest needs no extra dependencies.
+fn sha256(data: &[u8]) -> [u8; 32] {
     const K: [u32; 64] = [
         0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
         0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
@@ -169,9 +187,9 @@ fn sha256_hex(data: &[u8]) -> String {
             h[7].wrapping_add(hh),
         ];
     }
-    let mut out = String::with_capacity(64);
-    for word in h {
-        let _ = write!(out, "{word:08x}");
+    let mut out = [0u8; 32];
+    for (chunk, word) in out.as_chunks_mut::<4>().0.iter_mut().zip(h) {
+        *chunk = word.to_be_bytes();
     }
     out
 }

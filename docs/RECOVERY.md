@@ -14,7 +14,7 @@
 - All build output is disposable: delete `target/` and rerun
   `scripts\build.ps1`. Images in `target/images/` are regenerated from
   source; checksums in `manifest.txt` verify integrity.
-- Toolchain corruption: `rustup toolchain uninstall nightly-2026-09-01`
+- Toolchain corruption: `rustup toolchain uninstall nightly-2026-08-01`
   then rerun any cargo command (rust-toolchain.toml re-installs pinned
   toolchain + components into `E:\toolchains\rustup`).
 
