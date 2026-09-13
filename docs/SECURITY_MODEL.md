@@ -39,7 +39,10 @@ only through narrow, deterministic, auditable paths).
 6. **AI/agent boundary** *(future — see principle above)* — the V0.7
    request → capability check → deterministic service → action → audit path
    IS the pipeline an agent will use; agents get no other entry point.
-7. **External network boundary** *(future — no network stack yet)*.
+7. **External network boundary** *(V0.8–V0.9, verified)*: IPv4 (ARP, ICMP,
+   UDP, DNS, TCP), a DHCP client and IPv6 foundations over one e1000 NIC; every
+   received byte is parsed as hostile, and Ring 3 network access is a
+   capability scoped to a port, re-checked on every call (NET08-*, NET09-*).
 
 ## Implemented security controls (V0.7)
 
@@ -48,8 +51,11 @@ only through narrow, deterministic, auditable paths).
 - NX / page-permission separation where the boot path permits; no
   writable+executable mappings by design once paging is owned by the kernel.
 - Panic on violated kernel invariants rather than continuing corrupted.
-- No network services. No host filesystem sharing into the guest. QEMU
-  launches attach only project-generated disposable images (SEC-002).
+- No network service listens unless a program asks: the stack answers only
+  ARP for its own address, ICMP/ICMPv6 echo and neighbour discovery, and TCP
+  connections a program opened or is listening for (v0.9.0). No host
+  filesystem sharing into the guest. QEMU launches attach only
+  project-generated disposable images (SEC-002).
 - Dependency and secret scans before pushes; secrets never in source, logs,
   or history.
 - Capabilities are explicit default-deny bits at the kernel syscall boundary;
