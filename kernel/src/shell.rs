@@ -740,6 +740,13 @@ fn cmd_ipv6() {
 fn cmd_tcp(args: &[&str]) {
     use crate::net::tcp;
     use core::sync::atomic::Ordering;
+    if let (Some(&"serve"), Some(port)) = (
+        args.first(),
+        args.get(1).and_then(|p| p.parse::<u16>().ok()),
+    ) {
+        tcp_serve_once(port);
+        return;
+    }
     if let (Some(&"drop"), Some(n)) = (args.first(), args.get(1).and_then(|n| n.parse().ok())) {
         tcp::drop_next_data_segments(n);
         crate::serial_println!(
@@ -772,6 +779,67 @@ fn cmd_tcp(args: &[&str]) {
         tcp::RESETS_SENT.load(Ordering::Relaxed),
         tcp::MALFORMED.load(Ordering::Relaxed)
     );
+}
+
+/// Passive open, verified at run time (V0.9): listen on `port`, accept one
+/// connection, echo everything it sends, and close after the peer does.
+fn tcp_serve_once(port: u16) {
+    use crate::net::tcp::{self, Read};
+    let Some(sock) = tcp::listen(0, port) else {
+        crate::serial_println!("TCPSERVE-FAILED step=listen port={port}");
+        return;
+    };
+    crate::serial_println!("TCPSERVE-LISTENING port={port}");
+    let mut deadline = crate::interrupts::Deadline::after_ms(90_000);
+    let (mut accepted, mut echoed, mut closing) = (false, 0usize, false);
+    let mut buf = [0u8; 1024];
+    loop {
+        crate::net::poll();
+        let state = tcp::state_code(sock, 0).unwrap_or(tcp::CODE_RESET);
+        if !accepted && state == tcp::CODE_ESTABLISHED {
+            accepted = true;
+            let (ip, p) =
+                tcp::peer(sock, 0).unwrap_or((kernel_core::net::ipv4::Ipv4Addr::UNSPECIFIED, 0));
+            let mut a = [0u8; 15];
+            crate::serial_println!("TCPSERVE-ACCEPTED from={}:{p}", ip.format(&mut a));
+        }
+        match tcp::recv(sock, 0, &mut buf) {
+            Some(Read::Data(n)) => {
+                let mut sent = 0;
+                while sent < n {
+                    crate::net::poll();
+                    sent += tcp::send(sock, 0, &buf[sent..n]).unwrap_or(0);
+                    if !deadline.pending() {
+                        break;
+                    }
+                }
+                echoed += sent;
+            }
+            Some(Read::Eof) if !closing => {
+                closing = true;
+                crate::serial_println!("TCPSERVE-ECHOED bytes={echoed}");
+                tcp::close(sock, 0);
+            }
+            Some(Read::Failed) | None => {
+                crate::serial_println!("TCPSERVE-FAILED step=stream echoed={echoed}");
+                tcp::close(sock, 0);
+                return;
+            }
+            _ => {}
+        }
+        if closing && state == tcp::CODE_CLOSED {
+            crate::serial_println!("TCPSERVE-CLOSED echoed={echoed}");
+            tcp::close(sock, 0);
+            return;
+        }
+        if !deadline.pending() {
+            crate::serial_println!(
+                "TCPSERVE-FAILED step=timeout accepted={accepted} echoed={echoed}"
+            );
+            tcp::close(sock, 0);
+            return;
+        }
+    }
 }
 
 fn cmd_ping6(args: &[&str]) {

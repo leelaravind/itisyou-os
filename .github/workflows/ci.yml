@@ -299,7 +299,8 @@ jobs:
           # by retransmission, then the capability denial.
           cargo run -q -p qemu-runner -- \
             --image target/images/itisyou-kernel-bios.img \
-            --net-user --tcp-echo-port 47123 --expect B200 \
+            --net-user --tcp-echo-port 47123 --tcp-client-forward 7 --expect B200 \
+            --send "tcp serve 7" \
             --send "run /bin/tcp-probe network" --send "tcp drop 2" \
             --send "run /bin/tcp-probe network" --send "run /bin/tcp-probe -" \
             --send "tcp" --send "shutdown" \
@@ -308,6 +309,12 @@ jobs:
             --require 'TCPPROBE-ECHO-OK bytes=3000' \
             --require 'TCPPROBE-CLOSED' \
             --require 'TCPPROBE-OK' \
+            --require 'TCPSERVE-LISTENING port=7' \
+            --require 'TCPSERVE-ACCEPTED from=10.0.2.2:' \
+            --require 'TCPSERVE-ECHOED bytes=2500' \
+            --require 'TCPSERVE-CLOSED echoed=2500' \
+            --require '[HOST:TCPC] echo_ok' \
+            --require 'echo_ok=true bytes=2500' \
             --require '[ITISYOU:TCP] owner_exit pid=3 orphaned=1 aborted=0' \
             --require '[ITISYOU:TCP] injected_loss seq=' \
             --require '[ITISYOU:TCP] retransmit seq=' \
