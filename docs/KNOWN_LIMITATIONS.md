@@ -80,12 +80,14 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
   save`), not automatic on every record.
 - SMEP, SMAP and UMIP are enabled when the CPU advertises them (the harness's
   CPU model does); W^X for user segments, a guard page below the user stack, and
-  user-pointer validation are always on. Since V0.9 the two static kernel
-  stacks — the RSP0 stack every syscall runs on, and the double-fault IST
-  stack — have unmapped guard pages, so an overflow stops the machine with a
-  double fault naming the stack. That was prompted by the first TCP
-  integration, which overflowed the (then unguarded) syscall stack and
-  silently corrupted the capability table beside it. Kernel TASK stacks
+  user-pointer validation are always on. Since V0.9 two static kernel stacks —
+  the RSP0 stack (interrupts and exceptions arriving from Ring 3) and the
+  double-fault IST stack — have unmapped guard pages, so an overflow of either
+  stops the machine with a double fault naming the stack. **The syscall stack is
+  NOT guarded in v0.9.0**: syscalls run on a third static stack (32 KiB), and it
+  is the one the first TCP integration overflowed into the capability table.
+  The V0.9 documentation wrongly said RSP0 was the syscall stack; corrected
+  after the release, fix planned for V0.10. Kernel TASK stacks
   (32 KiB, heap-allocated) still have no guard page: an overflow there would
   still be silent corruption. Today only the selftest's two worker tasks use
   them; they matter once V0.10's always-on scheduler runs kernel tasks for

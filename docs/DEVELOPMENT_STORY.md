@@ -859,3 +859,17 @@ third six-minute public window before the repository went private again.
 V0.10's next items — a userspace init with an always-on scheduler, a Ring 3
 shell, desktop applications — are larger than an hour and are left for the
 next session rather than started and abandoned half-built.
+
+**A correction to the stack-guard story.** Reading the code for V0.10's
+scheduler design, a reviewer found that the V0.9 guard-page work guarded the
+wrong stack for the bug that motivated it. Syscalls do not run on the RSP0
+stack; they run on a third static stack of their own, which is where the TCP
+connection copies overflowed — and that stack still has no guard page. The
+V0.9 entry above says "the console switches onto the syscall stack"; it
+switches onto RSP0, which is guarded and verified, but it is not where
+syscalls run. Every public statement of the wider claim was corrected on
+the website and in the requirements the same afternoon, and the missing guard
+is the first item of V0.10. The same review found a second latent flaw: the
+naked timer interrupt path does not clear the direction and alignment-check
+flags a Ring 3 program may have set before kernel code runs after a
+preemption; that is also scheduled for V0.10, with a negative control.

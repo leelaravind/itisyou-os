@@ -109,6 +109,6 @@ the harness and QEMU's user-mode network, never a real LAN.
 - **Kernel stack exhaustion**: V0.9 demonstrated that an overflow of a kernel
   stack corrupts adjacent kernel data silently (it hit the capability table).
   The trigger was removed, and the RSP0 and double-fault stacks now have
-  unmapped guard pages, verified by a deliberate overflow that ends in a
+  unmapped guard pages (the syscall stack — the one that actually overflowed — does NOT, in v0.9.0; corrected after release), verified by a deliberate overflow that ends in a
   reported double fault (HARD09-001). Residual risk: heap-allocated kernel
   task stacks have no guard page.
