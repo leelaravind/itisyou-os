@@ -7,6 +7,17 @@
 `/downloads/v0.8.1/`. (V0.8.0: commit `e6e3496`, run `33987853808`, production
 `a3544b0a-5fe1-44ab-8dfc-b2bd4a3dda0d`.)
 
+**Last deploy (content only, no release):** 2026-09-13 13:36 BST, commit
+`b0c4d05` — the site shows V0.9 as in development with its locally verified
+work and the release it is waiting on (CI blocked by GitHub billing); the
+download is unchanged. Staging `5499277a-9455-41e4-8613-c6e7b0af93bb`,
+production `7d52f221-5abe-46d6-a25c-296f8f087a6c`. Both verified after
+deploy: `downloads.mjs verify` (v0.8.1 images byte-exact, SHA-256 and headers)
+and `browser-verify.mjs` (26 page loads desktop+phone, 0 console errors, 0
+failed requests, headers ok, home shows `v0.8.1` and `V0.9`). The v0.8.1
+images were staged from the bytes verified at the v0.8.1 release — every
+static-assets deploy must stage them, or it would delete the download.
+
 ## Release downloads
 
 Boot images are static assets of the same Worker (each well under the 25 MiB
