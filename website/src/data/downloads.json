@@ -1,11 +1,39 @@
 {
   "tag": "v0.8.1",
   "version": "0.8.1",
-  "published": false,
-  "commit": null,
-  "builtBy": null,
-  "builtAt": null,
-  "reproducibility": null,
-  "bootTests": [],
-  "files": []
+  "published": true,
+  "commit": "397ab80a573e475a5bb17780ea852649b851becd",
+  "builtBy": "GitHub Actions run 34749240177 (ubuntu-24.04, pinned nightly-2026-08-01)",
+  "builtAt": "2026-09-13T09:20:53Z",
+  "reproducibility": "image-builder replaces the random GPT GUIDs the partitioning crate would stamp into the UEFI image with values derived from the image's own content, so rebuilding the same commit on the same platform produces identical bytes — shown locally by two builds with identical digests for all eight images. The published files are the CI-built bytes; a Windows build differs because Rust embeds the build host's source paths in panic locations. A second, independent CI run of this release is compared in docs/REQUIREMENTS.md (REL081-004).",
+  "bootTests": [
+    {
+      "label": "Full QEMU matrix (24 legs)",
+      "firmware": "BIOS (SeaBIOS) and UEFI (OVMF 2024.02)",
+      "qemu": "QEMU 8.2.2 (Ubuntu package)",
+      "host": "GitHub Actions ubuntu-24.04",
+      "result": "Passed — run 34749240177, on these exact images before upload"
+    },
+    {
+      "label": "Release boot test (downloaded CI bytes)",
+      "firmware": "UEFI (OVMF, QEMU-bundled edk2) and BIOS (SeaBIOS)",
+      "qemu": "QEMU 11.1.0",
+      "host": "Windows 11 (x86_64)",
+      "result": "Passed — UEFI + BIOS console boot reporting itisyou-os 0.8.1, two-boot persistence on an NVMe data disk, ping over QEMU user-mode networking; images unchanged afterwards"
+    }
+  ],
+  "files": [
+    {
+      "file": "itisyou-os-0.8.1-x86_64-uefi.img",
+      "firmware": "UEFI (OVMF)",
+      "bytes": 4259840,
+      "sha256": "eb7d566c7fcafd9a4ee672b0ede9b3c3456b9577b799698fd982d2ff72c45571"
+    },
+    {
+      "file": "itisyou-os-0.8.1-x86_64-bios.img",
+      "firmware": "BIOS (SeaBIOS)",
+      "bytes": 4686848,
+      "sha256": "4a84705bec3c8a2ee0d80cceeb0b5b1562cf237936dc686035ff6f6494f410ea"
+    }
+  ]
 }

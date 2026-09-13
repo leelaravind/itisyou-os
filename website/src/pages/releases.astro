@@ -34,16 +34,16 @@ const repo = 'https://github.com/leelaravind/itisyou-os';
         </div>
       </div>
       <p class="px-gutter pt-4 font-mono text-mono-data text-meta max-w-3xl">
-        NO_PUBLIC_DOWNLOADS — each tag marks a commit whose full gate and CI run passed. The repository is private,
-        so a tag is evidence of a verified state, not an artifact you can fetch. The first public, checksummed boot
-        image is a V1.0 deliverable; this page will carry its file, size and SHA-256 when it exists.
+        Each tag marks a commit whose full gate and CI run passed. The repository is private, so a tag is evidence of
+        a verified state, not something you can fetch. Since v0.8.1 a release can also carry a public download: boot
+        images built by CI, checksummed, and booted byte for byte before publication. Earlier tags have none.
       </p>
       <div class="table-scroll mt-4">
         <table class="w-full border-collapse min-w-[720px]">
           <caption class="sr-only">Release tags with commit, date, CI run and summary</caption>
           <thead>
             <tr>
-              {['Tag', 'Milestone', 'Commit', 'Date', 'CI run', 'Delivered'].map((h) => (
+              {['Tag', 'Milestone', 'Commit', 'Date', 'CI run', 'Delivered', 'Download'].map((h) => (
                 <th scope="col" class="text-left font-mono text-[11px] font-medium tracking-widest uppercase text-muted bg-log border-b border-line px-4 py-3">{h}</th>
               ))}
             </tr>
@@ -58,6 +58,9 @@ const repo = 'https://github.com/leelaravind/itisyou-os';
                   <td class="font-mono text-mono-data text-meta-bright px-4 py-3 whitespace-nowrap">{r.date}</td>
                   <td class="font-mono text-mono-data text-meta-bright px-4 py-3">{r.ciRun}</td>
                   <td class="text-sm text-meta-bright px-4 py-3">{r.summary}</td>
+                  <td class="font-mono text-mono-data px-4 py-3 whitespace-nowrap">
+                    {r.download ? <a class="underline underline-offset-4 text-ink" href={r.download}>Images + SHA-256</a> : <span class="text-meta">—</span>}
+                  </td>
                 </tr>
               ))
             }
