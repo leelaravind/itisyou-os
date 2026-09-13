@@ -5,7 +5,7 @@ import StatusTag from '../components/StatusTag.astro';
 import { status } from '../lib/status';
 
 const description =
-  'The ITISYOU OS system platform (V0.7-V0.8): capability-based permissions with default deny, supervised system services, a managed application model with Ed25519-signed packages, atomic updates with rollback and recovery, capability-scoped userspace filesystem writes, port-scoped network access, and a hash-chained audit trail that survives reboots — every claim backed by QEMU test evidence.';
+  'The ITISYOU OS system platform (V0.7-V0.9): capability-based permissions with default deny, supervised system services, a managed application model with Ed25519-signed packages trusted through an offline-root key hierarchy, atomic updates with rollback and recovery, capability-scoped userspace filesystem writes, port-scoped network access, and a hash-chained audit trail that survives reboots — every claim backed by QEMU test evidence.';
 
 /** Capability table — mirrors kernel_core::caps (the enforced source). */
 const caps = [
@@ -15,7 +15,7 @@ const caps = [
   ['dev', 'device-table queries'],
   ['fs_read', 'filesystem reads (within the sandbox prefixes)'],
   ['fs_write', 'filesystem writes to the persistent store (V0.8)'],
-  ['network', 'UDP sockets and DNS — scoped to a port (V0.8); TCP connect and listen — scoped to the port the connection is opened for (V0.9, in development)'],
+  ['network', 'UDP sockets and DNS — scoped to a port (V0.8); TCP connect and listen — scoped to the port the connection is opened for (V0.9)'],
   ['audio', 'reserved — no userspace audio syscall yet'],
   ['sys_admin', 'reserved — userspace service/package control'],
 ];
@@ -170,11 +170,10 @@ const evidence = [
         </p>
         <p class="text-body-base text-meta-bright">
           Honesty note: SHA-256 is <em>integrity</em>, not authenticity, so since V0.8 a package also carries an
-          Ed25519 signature, checked after the digest. In the released v0.8.1 image it is checked against one
-          compiled-in development key whose seed is published: the mechanism is real, the key anchors no trust. V0.9
-          (verified in QEMU, not yet released) trusts only an offline root, and signing keys only through root-signed
-          certificates limited by package-name scope and release-epoch validity, subject to a signed revocation list
-          (ADR-0021).
+          Ed25519 signature, checked after the digest. Since v0.9.0 the kernel trusts only an offline root, and signing
+          keys only through root-signed certificates limited by package-name scope and release-epoch validity, subject
+          to a signed revocation list (ADR-0021). v0.8.1 checks against one compiled-in development key whose seed is
+          published: the mechanism is real, that key anchors no trust.
         </p>
       </div>
       <div class="md:col-span-8">

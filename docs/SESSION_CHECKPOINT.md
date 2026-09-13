@@ -3,11 +3,26 @@
 **Timestamp:** 2026-09-13 14:37 Europe/London (session 4, wind-up)
 **Repository:** `E:\Project\itisyou-os` · branch `main` · remote
 https://github.com/leelaravind/itisyou-os (private)
-**Tags:** `v0.1.0` … `v0.8.1` (all on green-CI commits). No `v0.9.0` yet.
+**Tags:** `v0.1.0` … `v0.9.0` (all on green-CI commits).
 **Owner deadline for this session:** hard stop **15:44 BST 2026-09-13**
 (6 hours from 09:44); wind-up started 14:44 at the latest.
 
 ## Where things stand
+
+**UPDATE 15:10 — v0.9.0 RELEASED.** The owner authorised making the repository
+public so GitHub-hosted CI could run (history scanned for secrets first), then
+private again. Release commit `f06673e`, CI run `34760629701` green (all four
+jobs; reproducibility job matched the published digests); CI-built images
+boot-tested byte for byte; production `1ba155b6` serves them at
+https://os.itisyou.app/download — UEFI
+`3d252547926ba497559d7419e2d77803c2af69148cec45ba5a83d6cdddfc443e`, BIOS
+`eb3ceb46782b9d04cd40dc61aecce12a8cdbc4ed089b556675f1623c01dd8232`; v0.8.1 kept.
+Tag `v0.9.0` sits on the status-stamp commit after its own green CI. Steps 1–6
+of the runbook below are therefore DONE; the next action is step 7 (merge
+`v0.10/integration`, continue V0.10). The repository is PRIVATE again, so CI
+needs the billing fix (or the same public window) before the next release.
+
+The rest of this section is the state as of the 14:20 wind-up.
 
 - **Latest release: `v0.8.1`** (content commit `bf32b53`, CI `34750316003`).
   Its CI-built, bit-reproducible images are the public download at

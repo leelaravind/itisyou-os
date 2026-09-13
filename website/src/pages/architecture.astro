@@ -192,8 +192,10 @@ const cellStatus = (id: string) => status.modules.find((m) => m.id === id)?.stat
     <section class="mb-8 panel p-gutter" aria-labelledby="next-title">
       <h2 id="next-title" class="font-sans text-headline-md text-ink mb-4">Planned next boundaries</h2>
       <p class="text-body-base text-meta-bright mb-4 max-w-3xl">
-        After V0.9 is released, V0.10 — Userspace System — is planned, not started. Each item lands with host tests
-        and QEMU evidence before it is claimed:
+        V0.9 is released as v0.9.0. Next is V0.10 — Userspace System. Work on it has started on a separate branch,
+        where program arguments, filesystem space reclamation and guard pages for kernel task stacks are verified; none
+        of it is on the main branch or in any release yet, and the rest is planned. Each item lands with host tests and
+        QEMU evidence before it is claimed:
       </p>
       <ul class="flex flex-wrap items-center gap-x-3 gap-y-2 font-mono text-mono-data list-none">
         {
