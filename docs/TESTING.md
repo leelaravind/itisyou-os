@@ -165,7 +165,7 @@ duration, full command line).
 ## Commands
 
 ```powershell
-scripts\test.ps1     # host unit tests + the full 24-leg QEMU matrix
+scripts\test.ps1     # host unit tests + the full QEMU matrix (36 legs at v0.9.0)
 scripts\verify.ps1   # canonical full gate (adds doctor, fmt, both clippy gates, website, secret scan)
 ```
 

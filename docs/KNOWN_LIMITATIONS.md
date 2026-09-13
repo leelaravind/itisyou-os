@@ -89,14 +89,16 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
   save`), not automatic on every record.
 - SMEP, SMAP and UMIP are enabled when the CPU advertises them (the harness's
   CPU model does); W^X for user segments, a guard page below the user stack, and
-  user-pointer validation are always on. Since V0.9 the two static kernel
-  stacks — the RSP0 stack every syscall runs on, and the double-fault IST
-  stack — have unmapped guard pages, so an overflow stops the machine with a
-  double fault naming the stack. That was prompted by the first TCP
-  integration, which overflowed the (then unguarded) syscall stack and
-  silently corrupted the capability table beside it. Since V0.10 kernel TASK
-  stacks (32 KiB) are guarded too: each lives in a fixed slot of a dedicated
-  window whose first page is never mapped. Whether the bootloader-provided boot/console stack has a guard page
+  user-pointer validation are always on. Four kinds of kernel stack are on
+  unmapped guard pages, so an overflow stops the machine with a double fault
+  naming the stack instead of silently corrupting kernel data: since V0.9 the
+  RSP0 stack (interrupts and exceptions arriving from Ring 3) and the
+  double-fault IST stack; since V0.10 the syscall stack — a third static stack,
+  32 KiB, the one the first TCP integration overflowed into the capability
+  table, which v0.9.0 left unguarded although its documentation said otherwise
+  (corrected after the release) — and the kernel TASK stacks (32 KiB each, in
+  fixed slots of a dedicated window whose first page is never mapped). Whether
+  the bootloader-provided boot/console stack has a guard page
   has not been verified.
 - No hardware root of trust, no Secure Boot chain, no measured boot.
 

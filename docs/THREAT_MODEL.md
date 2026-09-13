@@ -66,12 +66,12 @@ only network this OS has ever been attached to is a test harness on localhost.
 | Kernel dereferencing a user pointer by accident | a logic bug | SMAP: forbidden by default, permitted only inside three declared windows |
 | Ring 3 leaking kernel addresses | `sgdt`/`sidt`/`sldt`/`str`/`smsw` | UMIP; verified by a probe whose success marker is forbidden from the log |
 
-### Explicit non-threats, still
+### Explicit non-threats — V0.8 (superseded by the V0.9 additions below)
 
-The guest has never been attached to a real network. Its only peer is the test
-harness on localhost, and there is no DHCP, no IPv6, and no TCP — so there is
-no listening service, no connection state to exhaust, and nothing that
-initiates traffic on its own.
+In V0.8 the guest had never been attached to a real network: its only peer
+was the test harness on localhost, and there was no DHCP, no IPv6 and no TCP.
+V0.9 added all three (see below); the guest is still exercised only against
+the harness and QEMU's user-mode network, never a real LAN.
 
 ## V0.9 additions
 
@@ -109,6 +109,6 @@ initiates traffic on its own.
 - **Kernel stack exhaustion**: V0.9 demonstrated that an overflow of a kernel
   stack corrupts adjacent kernel data silently (it hit the capability table).
   The trigger was removed, and the RSP0 and double-fault stacks now have
-  unmapped guard pages, verified by a deliberate overflow that ends in a
+  unmapped guard pages (the syscall stack — the one that actually overflowed — does NOT, in v0.9.0; corrected after release), verified by a deliberate overflow that ends in a
   reported double fault (HARD09-001). Residual risk: heap-allocated kernel
   task stacks have no guard page.
