@@ -515,6 +515,44 @@ jobs:
           cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --nvme-persist artifacts/fswrite-test.img             --expect B190             --send "run /bin/fs-user-persist fs_read,fs_write"             --send "store ls" --send "shutdown"             --require "FSUSER-VERIFIED bytes=38"             --timeout-secs 300 --label fs-write-persist
           rm -f artifacts/fswrite-test.img
 
+      - name: QEMU ITFS space reclamation (two boots)
+        run: |
+          # V0.10: freed extents are reused. An 8 KiB disk (16 blocks, 14 of
+          # them data) takes 21 one-block writes - a kept file, then one file
+          # overwritten 20 times. The V0.9 bump allocator would have refused
+          # the 15th; every write must succeed and the report must show two
+          # live blocks. Boot 2 (fresh guest, same disk) reads back the last
+          # revision and the identical report. The numbers are predicted by
+          # the host test qemu_reclaim_leg_space_report_is_predicted.
+          rm -f artifacts/reclaim-test.img
+          mkdir -p artifacts
+          head -c 8192 /dev/zero > artifacts/reclaim-test.img
+          report="[ITISYOU:FS] reclaim data_blocks=14 used=2 free=12 pinned=1 largest_run=11 files=2 generation=22"
+          sends=(--send "store put keep.txt kept-across-reclaim")
+          for rev in $(seq -w 1 20); do
+            sends+=(--send "store put churn.txt rev${rev}-of-20-reclaim-cycle")
+          done
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
+            --nvme-persist artifacts/reclaim-test.img --expect B210 "${sends[@]}" \
+            --send "store df" --send "store cat churn.txt" --send "store ls" --send "shutdown" \
+            --require "store: put name=churn.txt bytes=25" \
+            --require "$report" \
+            --require "store: churn.txt = rev20-of-20-reclaim-cycle" \
+            --require "store: files=2 generation=22" \
+            --forbid "failed: Fs(" --forbid "failed: Block(" \
+            --timeout-secs 300 --label fs-reclaim-churn
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
+            --nvme-persist artifacts/reclaim-test.img --expect B210 \
+            --send "store df" --send "store cat churn.txt" --send "store cat keep.txt" \
+            --send "store ls" --send "shutdown" \
+            --require "$report" \
+            --require "store: churn.txt = rev20-of-20-reclaim-cycle" \
+            --require "store: keep.txt = kept-across-reclaim" \
+            --require "store: files=2 generation=22" \
+            --forbid "failed: Fs(" --forbid "failed: Block(" \
+            --timeout-secs 300 --label fs-reclaim-persist
+          rm -f artifacts/reclaim-test.img
+
       - name: QEMU persistent audit trail (three boots)
         run: |
           # Records are hash-chained, so an edited trail cannot verify.

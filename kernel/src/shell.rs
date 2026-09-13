@@ -156,7 +156,7 @@ fn execute(line: &str) {
 
 fn cmd_help() {
     crate::serial_println!(
-        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path> [caps|-] [prefix|-] [-- args...]  run a Ring 3 ELF (optionally sandboxed, with arguments)\n  bg <path> [caps|-] [-- args...]  run a Ring 3 ELF co-scheduled with the background services\n  svc               supervise the on-demand services; show all service state\n  pkg <op> ...      app packages: install/stage/launch/rollback/recover/list\n  xhciwait          wait for USB HID input through the xHCI controller\n  harden            CPU-enforced kernel/user separation (SMEP/SMAP/UMIP)\n  irq               interrupt routing (I/O APIC), delivery proofs and counters\n  acpi              ACPI tables found: MADT routes, FADT, S5\n  store <op> ...    persistent store: ls | put <name> <text> | cat <name> | rm <name>\n  net               interface address, counters and bound sockets\n  ping <ip> [n]     ICMP echo the given IPv4 address\n  resolve <name>    DNS A lookup through the configured server\n  dhcp              obtain and apply an address from a DHCP server\n  ipv6              bring up IPv6: link-local, router solicitation, SLAAC\n  ping6 <addr> [n]  ICMPv6 echo\n  tcp [drop <n>]    TCP connections and counters; drop <n> discards the next n data segments (test)\n  audit [save|verify|anchor <ip> <port>|check-anchor <ip> <port>]  privileged-action trail\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  usbwait           wait for USB HID input (keyboard/mouse)\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU (test-exit device)\n  poweroff          ACPI S5 soft power-off\n  reboot            8042 CPU reset"
+        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path> [caps|-] [prefix|-] [-- args...]  run a Ring 3 ELF (optionally sandboxed, with arguments)\n  bg <path> [caps|-] [-- args...]  run a Ring 3 ELF co-scheduled with the background services\n  svc               supervise the on-demand services; show all service state\n  pkg <op> ...      app packages: install/stage/launch/rollback/recover/list\n  xhciwait          wait for USB HID input through the xHCI controller\n  harden            CPU-enforced kernel/user separation (SMEP/SMAP/UMIP)\n  irq               interrupt routing (I/O APIC), delivery proofs and counters\n  acpi              ACPI tables found: MADT routes, FADT, S5\n  store <op> ...    persistent store: ls | put <name> <text> | cat <name> | rm <name> | df\n  net               interface address, counters and bound sockets\n  ping <ip> [n]     ICMP echo the given IPv4 address\n  resolve <name>    DNS A lookup through the configured server\n  dhcp              obtain and apply an address from a DHCP server\n  ipv6              bring up IPv6: link-local, router solicitation, SLAAC\n  ping6 <addr> [n]  ICMPv6 echo\n  tcp [drop <n>]    TCP connections and counters; drop <n> discards the next n data segments (test)\n  audit [save|verify|anchor <ip> <port>|check-anchor <ip> <port>]  privileged-action trail\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  usbwait           wait for USB HID input (keyboard/mouse)\n  desktop           enter the graphical desktop (PS/2 input)\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU (test-exit device)\n  poweroff          ACPI S5 soft power-off\n  reboot            8042 CPU reset"
     );
 }
 
@@ -549,11 +549,27 @@ fn cmd_irq() {
 fn cmd_store(args: &[&str]) {
     let Some(&sub) = args.first() else {
         crate::serial_println!(
-            "store: subcommands: ls | put <name> <text> | cat <name> | rm <name>"
+            "store: subcommands: ls | put <name> <text> | cat <name> | rm <name> | df"
         );
         return;
     };
     match (sub, args.get(1)) {
+        // V0.10 space report. `free` is what the committed directory does not
+        // reference; `pinned` is the part of it the fallback superblock still
+        // references (allocatable after the next commit); `largest_run` is
+        // the biggest contiguous file the next write can place.
+        ("df", _) => match crate::with_persistent_store(|fs| (fs.space(), fs.generation())) {
+            Some((s, generation)) => crate::serial_println!(
+                "[ITISYOU:FS] reclaim data_blocks={} used={} free={} pinned={} largest_run={} files={} generation={generation}",
+                s.data_blocks,
+                s.used,
+                s.free,
+                s.pinned,
+                s.largest_run,
+                s.files,
+            ),
+            None => crate::serial_println!("store: no persistent storage attached"),
+        },
         ("ls", _) => match crate::with_persistent_store(|fs| {
             let names: alloc::vec::Vec<alloc::string::String> = fs
                 .list()
@@ -604,7 +620,7 @@ fn cmd_store(args: &[&str]) {
             None => crate::serial_println!("store: no persistent storage attached"),
         },
         _ => crate::serial_println!(
-            "store: subcommands: ls | put <name> <text> | cat <name> | rm <name>"
+            "store: subcommands: ls | put <name> <text> | cat <name> | rm <name> | df"
         ),
     }
 }
