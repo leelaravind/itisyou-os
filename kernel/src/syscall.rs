@@ -1064,6 +1064,19 @@ fn sandbox_allows(path: &str, action: &'static str, cap: u64) -> bool {
     allowed
 }
 
+/// Refuse, and audit, a program's access to a store file the kernel owns —
+/// the audit trail and the package store (V0.11, SEC11-001). Holding
+/// `fs_read`/`fs_write` is authority over the program's files in the store,
+/// not over the evidence of what programs did or over which version of an
+/// application runs.
+fn refuse_kernel_owned(name: &str, action: &'static str, cap: u64) -> bool {
+    let owned = kernel_core::update::kernel_owned(name);
+    if owned {
+        crate::audit::denied_reason(action, cap, "kernel_owned");
+    }
+    owned
+}
+
 /// Copy a path argument out of user memory.
 fn user_path(ptr: u64, len: u64) -> Result<alloc::string::String, u64> {
     let bytes = copy_from_user(ptr, len, 256)?;
@@ -1090,6 +1103,9 @@ fn sys_fs_write(path_ptr: u64, path_len: u64, req_ptr: u64) -> u64 {
     let Some(name) = crate::store_name(&path) else {
         return ERR_INVAL;
     };
+    if refuse_kernel_owned(name, "fs_write", kernel_core::caps::CAP_FS_WRITE) {
+        return ERR_PERM;
+    }
     let req = match copy_from_user(req_ptr, 16, 16) {
         Ok(b) => b,
         Err(e) => return e,
@@ -1132,6 +1148,9 @@ fn sys_fs_delete(path_ptr: u64, path_len: u64) -> u64 {
     let Some(name) = crate::store_name(&path) else {
         return ERR_INVAL;
     };
+    if refuse_kernel_owned(name, "fs_delete", kernel_core::caps::CAP_FS_WRITE) {
+        return ERR_PERM;
+    }
     let result = crate::with_persistent_store(|fs| fs.remove(name));
     match result {
         Some(Ok(())) => {
@@ -1159,7 +1178,13 @@ fn sys_fs_list(buf_ptr: u64, buf_len: u64) -> u64 {
     }
     let Some(listing) = crate::with_persistent_store(|fs| {
         let mut out = alloc::string::String::new();
-        for name in fs.list() {
+        // Kernel-owned files are not part of the namespace programs see
+        // (SEC11-001), so they are not listed either.
+        for name in fs
+            .list()
+            .into_iter()
+            .filter(|n| !kernel_core::update::kernel_owned(n))
+        {
             out.push_str(name);
             out.push('\n');
         }
@@ -1204,6 +1229,9 @@ fn sys_fs_read(path_ptr: u64, path_len: u64, req_ptr: u64) -> u64 {
     // anything else is the read-only initramfs. One syscall, two backing
     // stores, so a program does not need to know which it is talking to.
     let data = match crate::store_name(path) {
+        Some(name) if refuse_kernel_owned(name, "fs_read", kernel_core::caps::CAP_FS_READ) => {
+            return ERR_PERM;
+        }
         Some(name) => match crate::with_persistent_store(|fs| fs.read(name)) {
             Some(Ok(d)) => d,
             _ => return ERR_NOENT,

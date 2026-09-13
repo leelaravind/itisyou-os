@@ -631,7 +631,9 @@ fn cmd_store(args: &[&str]) {
         }) {
             Some((names, count, generation)) => {
                 for name in &names {
-                    crate::serial_println!("  {name}");
+                    // Names come from the disk: V0.10 let a program create
+                    // one with a line break in it, and a disk can be edited.
+                    crate::serial_println!("  {}", crate::untrusted(name));
                 }
                 crate::serial_println!("store: files={count} generation={generation}");
             }
@@ -657,7 +659,9 @@ fn cmd_store(args: &[&str]) {
         }
         ("cat", Some(name)) => match crate::with_persistent_store(|fs| fs.read(name)) {
             Some(Ok(data)) => match core::str::from_utf8(&data) {
-                Ok(text) => crate::serial_println!("store: {name} = {text}"),
+                // A program may have written the contents: one line, no
+                // marker prefix (a line break shows as `\x0a`).
+                Ok(text) => crate::serial_println!("store: {name} = {}", crate::untrusted(text)),
                 Err(_) => {
                     crate::serial_println!("store: {name} is not UTF-8 ({} bytes)", data.len())
                 }
@@ -1094,7 +1098,9 @@ fn cmd_audit(args: &[&str]) {
             return;
         }
         Some("verify") => {
-            crate::audit::recover();
+            // Read-only since V0.11: re-running boot recovery here dropped
+            // this boot's unsaved records from the chain (AUDIT11-001).
+            crate::audit::check();
             return;
         }
         Some(sub @ ("anchor" | "check-anchor")) => {
@@ -1139,14 +1145,16 @@ fn cmd_audit(args: &[&str]) {
             );
         }
     });
-    let (head, boot, saved) = crate::audit::chain_state();
+    let (head, boot, saved, window) = crate::audit::chain_state();
     let mut buf = [0u8; 64];
     let head_text = kernel_core::audit_chain::format_head(&head, &mut buf);
     crate::serial_println!("audit: total={total} denials={denials} (ring keeps the newest 64)");
     // The chain head covers every record ever pushed, including ones the
     // bounded ring has already dropped — which is the point of keeping it
-    // separately from the ring.
-    crate::serial_println!("audit: chain boot={boot} saved_records={saved} head={head_text}");
+    // separately from the ring. `window` is what the next save stores.
+    crate::serial_println!(
+        "audit: chain boot={boot} saved_records={saved} window={window} head={head_text}"
+    );
 }
 
 fn cmd_pkg(args: &[&str]) {
@@ -1226,7 +1234,8 @@ fn cmd_pkg(args: &[&str]) {
             for app in crate::platform::apps(&fs) {
                 let st = crate::platform::state(&fs, &app);
                 crate::serial_println!(
-                    "  {app}: active={:?} previous={:?} staged={:?}",
+                    "  {}: active={:?} previous={:?} staged={:?}",
+                    crate::untrusted(&app),
                     st.active,
                     st.previous,
                     st.orphan_staged

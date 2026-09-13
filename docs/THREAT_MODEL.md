@@ -117,3 +117,23 @@ the harness and QEMU's user-mode network, never a real LAN.
   unmapped guard pages (the syscall stack — the one that actually overflowed — does NOT, in v0.9.0; corrected after release), verified by a deliberate overflow that ends in a
   reported double fault (HARD09-001). Residual risk: heap-allocated kernel
   task stacks have no guard page.
+
+## V0.11 additions — the evidence itself
+
+V0.11 puts a proposing agent on top of the audit trail, so the trail has to
+hold up against the programs it records. Reviewing it for that found three
+defects in every release since V0.8, fixed first:
+
+| Risk | Vector | Mitigation |
+|---|---|---|
+| A program erasing or rewriting the evidence of what it did, or rolling back an application | `fs_write`/`fs_delete` on `/data/audit.log` or on a package's `.pkg`/`.ok` — v0.10.0 and earlier allowed it to any holder of `fs_write` without a sandbox | the audit trail and every name the package resolver reads are kernel-owned: refused to the `fs_*` syscalls (`ERR_PERM`, audited `reason=kernel_owned`) and not listed (SEC11-001) |
+| A program forging kernel evidence lines through the kernel's own output | a file name with a line break in it, echoed in an audit detail, by `store ls`, `pkg list` or recovery; file contents echoed by `store cat` | ITFS refuses names with control characters; every kernel echo of program- or disk-chosen text escapes control characters and rewrites `[ITISYOU:` to `[RING3-U:` (AUDIT11-002) |
+| A verifier that cries wolf | before V0.11 an untouched trail failed verification after a second boot's save, after the ring dropped a record, or after a mid-boot `audit verify` — so TAMPERED stopped meaning anything | the stored trail carries the head its first record extends and keeps the recovered records; `audit verify` no longer re-runs recovery (AUDIT11-001) |
+| A trail replaced while the system runs | a valid (for example empty) trail written under a running kernel | `audit verify` compares the file with the exact bytes this boot saved or recovered (`reason=replaced`); across a reboot, only the witness anchor catches it |
+
+Residual risks, stated: a trail from v0.8.0–v0.10.0 hit by AUDIT11-001 cannot
+be told apart from a tampered one; the disk remains writable by anyone with
+access to it offline, so everything the kernel reads back from it is treated
+as untrusted text; and the serial console is the evidence channel — a program
+can still print text that resembles a kernel marker without its prefix, which
+is why kernel verdicts are printed by the kernel itself.

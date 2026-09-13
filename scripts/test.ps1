@@ -708,16 +708,25 @@ Write-Output '=== QEMU userspace filesystem writes (BIOS, two boots) ==='
 # the sandbox check, the store-name parsing and the atomic commit all sit
 # between the program and the disk.
 #
-# The error paths matter as much as the successes: four refusals, each for a
+# The error paths matter as much as the successes: five refusals, each for a
 # different reason, so one over-broad check cannot pass by accident. And
 # `fs-write-denied` holds `fs_read` and nothing else, so its refusals prove
 # the WRITE right specifically - it can still read and list the same store.
+#
+# V0.11: the writer also tries a name with a line break in it (AUDIT11-002:
+# echoed into the audit detail, it forged a kernel marker line) and the
+# kernel-owned files (SEC11-001): the audit trail and the package store. An
+# application is installed first, so the commit marker the writer tries to
+# delete is real, and `pkg list` shows it is still active afterwards.
 $fsDisk = Join-Path $env:ITISYOU_SCRATCH 'itisyou-fswrite-test.img'
 Remove-Item $fsDisk -ErrorAction SilentlyContinue
 & $runner @('--image', 'target/images/itisyou-kernel-bios.img',
     '--nvme-persist', $fsDisk,
     '--expect', 'B190',
+    '--send', 'pkg install /pkgs/hello-app-1.itpkg',
     '--send', 'run /bin/fs-writer fs_read,fs_write',
+    '--send', 'pkg list',
+    '--send', 'store cat echo.txt',
     '--send', 'store put planted.txt planted',
     '--send', 'run /bin/fs-write-denied fs_read',
     '--send', 'run /bin/fs-writer fs_read,fs_write /pkgs',
@@ -732,6 +741,18 @@ Remove-Item $fsDisk -ErrorAction SilentlyContinue
     '--require', 'FSWRITE-ERRORS-OK',
     '--require', 'FSWRITE-DELETED',
     '--require', 'FSWRITE-OK',
+    # Kernel-owned files: refused and audited for each call, and the commit
+    # marker the program tried to delete still makes v1 the active version.
+    '--require', 'FSWRITE-KERNEL-OWNED-REFUSED',
+    '--require', 'action=fs_write cap=0x80 result=denied',
+    '--require', 'action=fs_delete cap=0x80 result=denied',
+    '--require', 'action=fs_read cap=0x10 result=denied',
+    '--require', 'reason=kernel_owned',
+    '--require', 'hello-app: active=Some(1) previous=None staged=None',
+    # The line-break name is refused before anything echoes it, and contents
+    # a program wrote are echoed as one line with the marker neutralized.
+    '--require', 'store: echo.txt = line1\x0a[RING3-U:AUDIT] forged-content',
+    '--forbid', '[ITISYOU:AUDIT] forged',
     # The write right, specifically: refused for a process holding fs_read.
     '--require', 'FSDENY-OK call=fs_write',
     '--require', 'FSDENY-OK call=fs_delete',
@@ -850,9 +871,75 @@ Remove-Item $auditDisk -ErrorAction SilentlyContinue
     '--send', 'audit verify',
     '--send', 'shutdown',
     '--require', 'trail_recovered status=verified',
-    '--require', 'trail_recovered status=TAMPERED',
+    # V0.11: `audit verify` checks the file without adopting it.
+    '--require', 'trail_checked status=TAMPERED reason=chain',
     '--timeout-secs', '240', '--label', 'audit-persist-tamper')
 Remove-Item $auditDisk -ErrorAction SilentlyContinue
+
+Write-Output '=== QEMU audit trail across boots and past the window (BIOS, three boots) ==='
+# AUDIT11-001. Until V0.11 the trail stored only the in-memory ring's records
+# (64, this boot's only) under a head covering every record ever made, so the
+# next boot reported a trail nobody touched as TAMPERED whenever the ring had
+# dropped a record or an earlier boot's trail had been recovered. Boot 1 makes
+# more records than the stored window holds (13 per fs-writer run - three
+# writes and a delete, nine refusals - x 11 = 143, plus the boot's own), so
+# the save must move `base` off genesis. Boot 2 recovers it, adds
+# records, checks the file mid-boot (read-only: before V0.11 this re-ran
+# recovery and dropped the unsaved records from the chain) and saves again.
+# Boot 3 must find the second boot's trail verified.
+$windowDisk = Join-Path $env:ITISYOU_SCRATCH 'itisyou-audit-window.img'
+Remove-Item $windowDisk -ErrorAction SilentlyContinue
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $windowDisk,
+    '--expect', 'B210',
+    '--send', 'run /bin/fs-writer fs_read,fs_write',
+    '--send', 'run /bin/fs-writer fs_read,fs_write',
+    '--send', 'run /bin/fs-writer fs_read,fs_write',
+    '--send', 'run /bin/fs-writer fs_read,fs_write',
+    '--send', 'run /bin/fs-writer fs_read,fs_write',
+    '--send', 'run /bin/fs-writer fs_read,fs_write',
+    '--send', 'run /bin/fs-writer fs_read,fs_write',
+    '--send', 'run /bin/fs-writer fs_read,fs_write',
+    '--send', 'run /bin/fs-writer fs_read,fs_write',
+    '--send', 'run /bin/fs-writer fs_read,fs_write',
+    '--send', 'run /bin/fs-writer fs_read,fs_write',
+    '--send', 'audit save',
+    '--send', 'audit verify',
+    '--send', 'audit',
+    '--send', 'shutdown',
+    '--require', 'trail_recovered status=absent',
+    '--require', 'trail_saved records=128 ',
+    '--require', 'trail_checked status=verified reason=none records=128 ',
+    '--require', 'audit: chain boot=0 saved_records=128 window=128 ',
+    # More records than fit: the base must have moved past genesis.
+    '--forbid', 'base=0000000000000000000000000000000000000000000000000000000000000000',
+    '--forbid', 'FSWRITE-FAILED',
+    '--timeout-secs', '300', '--label', 'audit-window-write')
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $windowDisk,
+    '--expect', 'B210',
+    '--send', 'run /bin/fs-writer fs_read,fs_write',
+    '--send', 'audit verify',
+    '--send', 'audit save',
+    '--send', 'audit verify',
+    '--send', 'audit',
+    '--send', 'shutdown',
+    '--require', 'trail_recovered status=verified records=128 ',
+    '--require', 'trail_checked status=verified reason=none records=128 ',
+    '--require', 'trail_saved records=128 ',
+    '--require', 'audit: chain boot=1 saved_records=128 window=128 ',
+    '--forbid', 'status=TAMPERED',
+    '--timeout-secs', '300', '--label', 'audit-window-continue')
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $windowDisk,
+    '--expect', 'B210',
+    '--send', 'audit',
+    '--send', 'shutdown',
+    '--require', 'trail_recovered status=verified records=128 ',
+    '--require', 'audit: chain boot=2 ',
+    '--forbid', 'status=TAMPERED',
+    '--timeout-secs', '300', '--label', 'audit-window-verify')
+Remove-Item $windowDisk -ErrorAction SilentlyContinue
 
 Write-Output '=== QEMU audit anchoring against a witness off the disk (BIOS, four boots) ==='
 # The chain is unkeyed, so an attacker who rewrites the WHOLE trail can write
@@ -888,7 +975,11 @@ foreach ($f in @($anchorDisk, $anchorWitness)) { if (Test-Path $f) { Remove-Item
     '--nvme-persist', $anchorDisk,
     '--expect', 'B210',
     '--send', 'store put audit.log itisyou-audit v1 boot=0 count=0 head=0000000000000000000000000000000000000000000000000000000000000000',
+    # V0.11: while the system runs, the running kernel is the reference - a
+    # replaced trail is caught even though its chain is valid.
+    '--send', 'audit verify',
     '--send', 'shutdown',
+    '--require', 'trail_checked status=TAMPERED reason=replaced records=0 ',
     '--timeout-secs', '180', '--label', 'audit-anchor-forge')
 & $runner @('--image', 'target/images/itisyou-kernel-bios.img',
     '--net-user', '--nvme-persist', $anchorDisk, '--audit-witness', $anchorWitness,
@@ -1156,7 +1247,9 @@ Write-Output '=== QEMU Ring 3 shell with the console input (BIOS) ==='
     '--require', '[ITISYOU:CONSOLE] owner=kernel reason=owner_exit',
     '--require', 'rsh: /bin/sh: exit=0',
     '--require', 'back-in-kernel',
-    '--require', 'itisyou-os 0.10',
+    # The kernel console's `version` line, without pinning a version (the
+    # V0.11 dev bump missed this pin and failed the leg).
+    '--require', '(x86_64, QEMU, pre-alpha)',
     '--require', 'shutting down (QEMU exit)',
     '--forbid', 'unknown command: rsh-only-builtin',
     '--forbid', 'unknown command: pid',

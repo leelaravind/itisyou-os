@@ -35,35 +35,66 @@ static RING: Mutex<VecDeque<Record>> = Mutex::new(VecDeque::new());
 static SEQ: AtomicU64 = AtomicU64::new(0);
 static DENIALS: AtomicU64 = AtomicU64::new(0);
 
-/// File in the persistent store holding the durable trail.
-pub const TRAIL_PATH: &str = "/data/audit.log";
-/// Format marker, so a future change of layout is a recognised version rather
-/// than a parse failure that looks like tampering.
-const TRAIL_MAGIC: &str = "itisyou-audit v1";
+/// The durable trail's name in the persistent store (`/data/audit.log`). It
+/// is kernel-owned: the `fs_*` syscalls refuse it (SEC11-001).
+const TRAIL_NAME: &str = kernel_core::update::AUDIT_TRAIL;
+
+/// Most records a stored trail holds (V0.11). The trail is the newest part of
+/// the continuous history; its header's `base` stands for everything before.
+const TRAIL_MAX: usize = 128;
 
 /// Live hash-chain state.
 ///
-/// `head` covers every record ever *persisted*, across boots: a boot that
-/// recovers a trail continues from the head it found, so the chain is one
-/// continuous history rather than a fresh log per restart.
+/// `head` covers every record ever made, across boots: a boot that recovers
+/// a trail continues from the head it found, so the chain is one continuous
+/// history rather than a fresh log per restart. `window` is the part of that
+/// history the next save stores, and `base` the head its first record
+/// extends — kept together under one lock, so a save can never pair a head
+/// with records it does not cover (AUDIT11-001).
 struct Chain {
     head: kernel_core::audit_chain::Head,
+    /// The head the oldest record in `window` extends.
+    base: kernel_core::audit_chain::Head,
+    /// The newest records in their canonical encoding, oldest first. Unlike
+    /// the display ring, it carries the records recovered from disk too.
+    window: VecDeque<String>,
     /// Head as of the last successful save — the value a verifier compares
     /// against, kept separate so an unsaved record cannot make the stored
     /// trail look wrong.
     saved_head: kernel_core::audit_chain::Head,
     /// Records covered by `saved_head`.
     saved_count: usize,
+    /// SHA-256 of the exact trail bytes this boot last wrote or recovered:
+    /// what `audit verify` compares the file against, so a trail replaced
+    /// underneath a running system is caught even when its chain is valid.
+    saved_digest: Option<[u8; 32]>,
     /// Boot number, incremented each time a trail is recovered.
     boot: u64,
 }
 
 static CHAIN: Mutex<Chain> = Mutex::new(Chain {
     head: kernel_core::audit_chain::GENESIS,
+    base: kernel_core::audit_chain::GENESIS,
+    window: VecDeque::new(),
     saved_head: kernel_core::audit_chain::GENESIS,
     saved_count: 0,
+    saved_digest: None,
     boot: 0,
 });
+
+impl Chain {
+    /// Append one encoded record, dropping the oldest past [`TRAIL_MAX`] and
+    /// moving `base` over each one dropped.
+    fn append(&mut self, line: String) {
+        self.head = kernel_core::audit_chain::extend(&self.head, line.as_bytes());
+        self.window.push_back(line);
+        while self.window.len() > TRAIL_MAX {
+            if let Some(old) = self.window.pop_front() {
+                self.base = kernel_core::audit_chain::extend(&self.base, old.as_bytes());
+            }
+        }
+    }
+}
 
 /// The canonical one-line form of a record. This exact byte sequence is what
 /// the hash chain covers and what is written to the trail, so a record's hash
@@ -82,6 +113,10 @@ fn encode(record: &Record) -> String {
 }
 
 fn push(action: &'static str, cap: u64, ok: bool, detail: Option<String>) {
+    // A detail can carry text a program chose (a file name): escaped here,
+    // once, so the serial line, the ring and the stored trail all hold the
+    // same single line, with no kernel marker in it (AUDIT11-002).
+    let detail = detail.map(|d| crate::untrusted(&d));
     let seq = SEQ.fetch_add(1, Ordering::SeqCst);
     let pid = crate::syscall::CURRENT_PID.load(Ordering::SeqCst);
     let tick = crate::interrupts::ticks();
@@ -109,10 +144,7 @@ fn push(action: &'static str, cap: u64, ok: bool, detail: Option<String>) {
     // Extend the chain BEFORE the ring drops anything: the in-memory ring is
     // bounded, but the chain must cover every record that ever existed, or a
     // system under load could lose evidence simply by being busy.
-    {
-        let mut chain = CHAIN.lock();
-        chain.head = kernel_core::audit_chain::extend(&chain.head, encode(&record).as_bytes());
-    }
+    CHAIN.lock().append(encode(&record));
     let mut ring = RING.lock();
     if ring.len() >= RING_MAX {
         ring.pop_front();
@@ -152,44 +184,45 @@ impl RecoverStatus {
 ///
 /// One atomic filesystem write (see `fs_disk::FileSystem::write`), so an
 /// interrupted save leaves the previous trail intact rather than a truncated
-/// one that would be indistinguishable from tampering.
+/// one that would be indistinguishable from tampering. The header, the
+/// records and the head are taken under one lock, so the file is exactly the
+/// window `head` covers — never a head over records the file does not hold.
 pub fn save() -> bool {
-    let (boot, head) = {
+    let (header, lines) = {
         let chain = CHAIN.lock();
-        (chain.boot, chain.head)
+        let header = kernel_core::audit_chain::TrailHeader {
+            boot: chain.boot,
+            count: chain.window.len(),
+            base: chain.base,
+            head: chain.head,
+        };
+        let lines: alloc::vec::Vec<String> = chain.window.iter().cloned().collect();
+        (header, lines)
     };
     let mut out = String::new();
-    let records = with_records(|rs| {
-        let mut v = alloc::vec::Vec::new();
-        for r in rs {
-            v.push(encode(r));
-        }
-        v
-    });
-    let mut head_hex = [0u8; 64];
-    let head_text = kernel_core::audit_chain::format_head(&head, &mut head_hex);
-    out.push_str(&alloc::format!(
-        "{TRAIL_MAGIC} boot={boot} count={} head={head_text}\n",
-        records.len()
-    ));
-    for r in &records {
-        out.push_str(r);
+    let _ = kernel_core::audit_chain::write_header(&header, &mut out);
+    out.push('\n');
+    for line in &lines {
+        out.push_str(line);
         out.push('\n');
     }
-    let written = crate::with_persistent_store(|fs| {
-        fs.write(
-            crate::store_name(TRAIL_PATH).unwrap_or("audit.log"),
-            out.as_bytes(),
-        )
-    });
+    let written = crate::with_persistent_store(|fs| fs.write(TRAIL_NAME, out.as_bytes()));
+    let mut head_hex = [0u8; 64];
+    let head_text = kernel_core::audit_chain::format_head(&header.head, &mut head_hex);
     match written {
         Some(Ok(())) => {
-            let mut chain = CHAIN.lock();
-            chain.saved_head = head;
-            chain.saved_count = records.len();
+            {
+                let mut chain = CHAIN.lock();
+                chain.saved_head = header.head;
+                chain.saved_count = header.count;
+                chain.saved_digest = Some(kernel_core::sha256::digest(out.as_bytes()));
+            }
+            let mut base_hex = [0u8; 64];
             crate::serial_println!(
-                "[ITISYOU:AUDIT] trail_saved records={} head={head_text} boot={boot}",
-                records.len()
+                "[ITISYOU:AUDIT] trail_saved records={} head={head_text} boot={} base={}",
+                header.count,
+                header.boot,
+                kernel_core::audit_chain::format_head(&header.base, &mut base_hex)
             );
             true
         }
@@ -200,65 +233,130 @@ pub fn save() -> bool {
     }
 }
 
-/// Read and verify the persisted trail, and continue its chain.
-///
-/// The recovered head becomes this boot's starting head whether or not the
-/// chain verified: refusing to continue from a tampered trail would only hide
-/// the tampering from every later verification.
-pub fn recover() -> RecoverStatus {
-    // Read-only mount: recovery must never be the reason a disk gets
-    // formatted (see `with_mounted_store`).
-    let Some(data) = crate::with_mounted_store(|fs| {
-        fs.read(crate::store_name(TRAIL_PATH).unwrap_or("audit.log"))
-    }) else {
-        return report(RecoverStatus::Absent, 0, None);
-    };
-    let Ok(bytes) = data else {
-        return report(RecoverStatus::Absent, 0, None);
-    };
-    let Ok(text) = core::str::from_utf8(&bytes) else {
-        return report(RecoverStatus::Unreadable, 0, None);
-    };
+/// A stored trail, parsed: its header and its record lines.
+struct StoredTrail<'a> {
+    header: kernel_core::audit_chain::TrailHeader,
+    records: alloc::vec::Vec<&'a [u8]>,
+}
+
+impl StoredTrail<'_> {
+    fn verifies(&self) -> bool {
+        self.header.verify(&self.records).is_ok()
+    }
+}
+
+/// Parse a stored trail's bytes; `None` when they are not a trail at all.
+fn parse_trail(bytes: &[u8]) -> Option<StoredTrail<'_>> {
+    let text = core::str::from_utf8(bytes).ok()?;
     let mut lines = text.lines();
-    let Some(header) = lines.next() else {
+    let header = kernel_core::audit_chain::parse_header(lines.next()?)?;
+    Some(StoredTrail {
+        header,
+        records: lines.map(str::as_bytes).collect(),
+    })
+}
+
+/// Read the stored trail, without ever formatting the disk: `None` when
+/// there is no store or no trail file.
+fn read_trail() -> Option<alloc::vec::Vec<u8>> {
+    // Read-only mount: reading must never be the reason a disk gets
+    // formatted (see `with_mounted_store`).
+    crate::with_mounted_store(|fs| fs.read(TRAIL_NAME))?.ok()
+}
+
+/// Read and verify the persisted trail at boot, and continue its chain.
+///
+/// Boot only: this ADOPTS the stored trail as the start of this boot's
+/// history (`audit verify` is the read-only [`check`]). The recovered head
+/// becomes this boot's starting head whether or not the chain verified:
+/// refusing to continue from a tampered trail would only hide the tampering
+/// from every later verification. The recovered records stay in the window,
+/// so the next save stores them again rather than only this boot's.
+pub fn recover() -> RecoverStatus {
+    let Some(bytes) = read_trail() else {
+        return report(RecoverStatus::Absent, 0, None);
+    };
+    let Some(trail) = parse_trail(&bytes) else {
         return report(RecoverStatus::Unreadable, 0, None);
     };
-    if !header.starts_with(TRAIL_MAGIC) {
-        return report(RecoverStatus::Unreadable, 0, None);
-    }
-    let mut boot = 0u64;
-    let mut count = None;
-    let mut head = None;
-    for field in header.split_whitespace() {
-        if let Some(v) = field.strip_prefix("boot=") {
-            boot = v.parse().unwrap_or(0);
-        } else if let Some(v) = field.strip_prefix("count=") {
-            count = v.parse::<usize>().ok();
-        } else if let Some(v) = field.strip_prefix("head=") {
-            head = kernel_core::audit_chain::parse_head(v);
-        }
-    }
-    let (Some(count), Some(head)) = (count, head) else {
-        return report(RecoverStatus::Unreadable, 0, None);
+    let status = if trail.verifies() {
+        RecoverStatus::Verified
+    } else {
+        RecoverStatus::Tampered
     };
-    let records: alloc::vec::Vec<&[u8]> = lines.map(|l| l.as_bytes()).collect();
-    let status = match kernel_core::audit_chain::verify(
-        &kernel_core::audit_chain::GENESIS,
-        &records,
-        count,
-        &head,
-    ) {
-        Ok(()) => RecoverStatus::Verified,
-        Err(_) => RecoverStatus::Tampered,
-    };
+    let header = trail.header;
     {
         let mut chain = CHAIN.lock();
-        chain.head = head;
-        chain.saved_head = head;
-        chain.saved_count = records.len();
-        chain.boot = boot + 1;
+        // Records this boot made before the trail was read continue from the
+        // recovered head, after the recovered records.
+        let early: alloc::vec::Vec<String> = chain.window.drain(..).collect();
+        chain.head = header.head;
+        chain.base = header.base;
+        for record in &trail.records {
+            chain
+                .window
+                .push_back(String::from_utf8_lossy(record).into_owned());
+        }
+        while chain.window.len() > TRAIL_MAX {
+            if let Some(old) = chain.window.pop_front() {
+                chain.base = kernel_core::audit_chain::extend(&chain.base, old.as_bytes());
+            }
+        }
+        for line in early {
+            chain.append(line);
+        }
+        chain.saved_head = header.head;
+        chain.saved_count = trail.records.len();
+        chain.saved_digest = Some(kernel_core::sha256::digest(&bytes));
+        chain.boot = header.boot.saturating_add(1);
     }
-    report(status, records.len(), Some(head))
+    report(status, trail.records.len(), Some(header.head))
+}
+
+/// Verify the stored trail now, WITHOUT adopting it (`audit verify`).
+///
+/// The running kernel's chain is the reference: the file must verify on its
+/// own AND be byte-for-byte the trail this boot last saved or recovered. A
+/// trail replaced while the system runs — even by one whose chain is valid —
+/// is `TAMPERED`, and the live chain is untouched, so the next save writes
+/// the true history back rather than continuing the forgery. (Before V0.11
+/// this re-ran boot recovery: it dropped this boot's unsaved records from the
+/// chain and bumped the boot counter, so the next save was reported as
+/// tampered on the following boot.)
+pub fn check() -> RecoverStatus {
+    let (expected, saved_count) = {
+        let chain = CHAIN.lock();
+        (chain.saved_digest, chain.saved_count)
+    };
+    let bytes = read_trail();
+    let (status, reason, records, head) = match &bytes {
+        None if expected.is_some() => (RecoverStatus::Tampered, "missing", 0, None),
+        None => (RecoverStatus::Absent, "none", 0, None),
+        Some(bytes) => match parse_trail(bytes) {
+            None if expected.is_some() => (RecoverStatus::Tampered, "unreadable", 0, None),
+            None => (RecoverStatus::Unreadable, "format", 0, None),
+            Some(trail) => {
+                let (status, reason) = if !trail.verifies() {
+                    (RecoverStatus::Tampered, "chain")
+                } else if expected != Some(kernel_core::sha256::digest(bytes)) {
+                    (RecoverStatus::Tampered, "replaced")
+                } else {
+                    (RecoverStatus::Verified, "none")
+                };
+                (status, reason, trail.records.len(), Some(trail.header.head))
+            }
+        },
+    };
+    let mut buf = [0u8; 64];
+    let head_text = match &head {
+        Some(h) => kernel_core::audit_chain::format_head(h, &mut buf),
+        None => "-",
+    };
+    crate::serial_println!(
+        "[ITISYOU:AUDIT] trail_checked status={} reason={reason} records={records} head={head_text} saved_records={saved_count}",
+        status.name()
+    );
+    status
 }
 
 fn report(
@@ -278,10 +376,16 @@ fn report(
     status
 }
 
-/// The live chain head and the boot counter, for the `audit` command.
-pub fn chain_state() -> (kernel_core::audit_chain::Head, u64, usize) {
+/// The live chain head, the boot counter, the records the last save stored
+/// and the records the next save would store, for the `audit` command.
+pub fn chain_state() -> (kernel_core::audit_chain::Head, u64, usize, usize) {
     let chain = CHAIN.lock();
-    (chain.head, chain.boot, chain.saved_count)
+    (
+        chain.head,
+        chain.boot,
+        chain.saved_count,
+        chain.window.len(),
+    )
 }
 
 /// Record a denied capability check.

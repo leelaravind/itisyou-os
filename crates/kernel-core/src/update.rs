@@ -41,6 +41,21 @@ pub fn parse_store_name(name: &str) -> Option<(&str, u32, Kind)> {
     Some((app, v, kind))
 }
 
+/// The audit trail's name in the store (V0.8).
+pub const AUDIT_TRAIL: &str = "audit.log";
+
+/// Is `name` a store file the kernel owns (V0.11, SEC11-001)?
+///
+/// The audit trail, and every name [`parse_store_name`] reads as part of an
+/// application's state. Programs reach the store through the `fs_*`
+/// syscalls, and these names are not part of that namespace. Before V0.11 a
+/// program holding `fs_write` could delete an application's highest `.ok` — a
+/// rollback nobody approved — or plant one, or replace the audit trail with an
+/// empty one that verifies.
+pub fn kernel_owned(name: &str) -> bool {
+    name == AUDIT_TRAIL || parse_store_name(name).is_some()
+}
+
 const MAX_VERSIONS: usize = 16;
 
 /// Resolved store state for one application.
@@ -125,6 +140,38 @@ mod tests {
         assert_eq!(parse_store_name("hello.pkg"), None); // no version
         assert_eq!(parse_store_name("hello.x.pkg"), None); // non-numeric
         assert_eq!(parse_store_name(".1.pkg"), None); // empty app
+    }
+
+    #[test]
+    fn kernel_owned_names_are_the_trail_and_everything_the_resolver_reads() {
+        for name in [
+            "audit.log",
+            "hello-app.1.pkg",
+            "hello-app.1.ok",
+            "hello-app.12.ok",
+            // `u32::from_str` takes a sign, so the resolver reads this as
+            // version 2 — which is exactly why it must be reserved too.
+            "hello-app.+2.ok",
+        ] {
+            assert!(kernel_owned(name), "{name}");
+        }
+        for name in [
+            "notes.txt",
+            "audit.log.bak",
+            "hello.pkg",
+            "x.y.pkg",
+            "user-note",
+            "a.ok.txt",
+        ] {
+            assert!(!kernel_owned(name), "{name}");
+        }
+        // Every name `resolve` would count is reserved.
+        for name in ["other.1.pkg", "other.1.ok", "a.0.ok", "a.4294967295.pkg"] {
+            assert!(
+                parse_store_name(name).is_some() && kernel_owned(name),
+                "{name}"
+            );
+        }
         assert_eq!(parse_store_name("audit.log"), None); // unrelated file
     }
 

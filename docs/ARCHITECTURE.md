@@ -143,7 +143,15 @@ re-verified at launch) into a persistent version-numbered store where every
 install/update/rollback/recovery transition is one crash-atomic ITFS
 superblock commit — an interrupted update can never activate. Every
 privileged action and every denial lands in the **audit trail**
-(`[ITISYOU:AUDIT]`, bounded ring, no payload contents). Pure logic —
+(`[ITISYOU:AUDIT]`, bounded ring, no payload contents), hash-chained across
+boots; `audit save` stores the newest 128 records with the head the first
+of them extends (`itisyou-audit v2 … base= head=`, V0.11), boot recovery
+adopts that trail and keeps its records for the next save, and `audit
+verify` checks the file read-only against what the running kernel saved or
+recovered. The trail and the package store are kernel-owned — the `fs_*`
+syscalls refuse them — and every kernel echo of program- or disk-chosen
+text is one escaped line with no marker prefix (V0.11: AUDIT11-001/002,
+SEC11-001). Pure logic —
 capabilities, manifests, package format, SHA-256, service ordering/restart,
 update-state resolution, sandbox path math — lives host-tested in
 `kernel-core`. A future AI agent is just another requester on this same

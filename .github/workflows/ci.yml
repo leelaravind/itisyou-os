@@ -557,7 +557,7 @@ jobs:
             --require "[ITISYOU:CONSOLE] owner=kernel reason=owner_exit" \
             --require "rsh: /bin/sh: exit=0" \
             --require "back-in-kernel" \
-            --require "itisyou-os 0.10" \
+            --require "(x86_64, QEMU, pre-alpha)" \
             --require "shutting down (QEMU exit)" \
             --forbid "unknown command: rsh-only-builtin" \
             --forbid "unknown command: pid" \
@@ -831,14 +831,20 @@ jobs:
         run: |
           # Capability-scoped Ring 3 writes to the persistent store. Boot 1
           # walks the contract - create, atomic overwrite to a different
-          # length, list, delete, and four refusals each for a different
+          # length, list, delete, and five refusals each for a different
           # reason. `fs-write-denied` holds fs_read and nothing else, so its
           # refusals prove the WRITE right specifically: it can still read
           # and list the same store. The sandbox is tested separately from
           # the capability by confining a writer to /pkgs.
+          # V0.11: the writer also tries a name with a line break in it
+          # (AUDIT11-002: echoed into the audit detail, it forged a kernel
+          # marker line) and the kernel-owned files (SEC11-001): the audit
+          # trail and the package store. An application is installed first,
+          # so the commit marker the writer tries to delete is real, and
+          # `pkg list` shows it is still active afterwards.
           # Boot 2 (fresh guest, same disk) reads back what Ring 3 wrote.
           rm -f artifacts/fswrite-test.img
-          cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --nvme-persist artifacts/fswrite-test.img             --expect B190             --send "run /bin/fs-writer fs_read,fs_write"             --send "store put planted.txt planted"             --send "run /bin/fs-write-denied fs_read"             --send "run /bin/fs-writer fs_read,fs_write /pkgs"             --send "run /bin/fs-user-persist fs_read,fs_write"             --send "store ls" --send "audit" --send "shutdown"             --require "FSWRITE-CREATED bytes=17"             --require "FSWRITE-OVERWROTE bytes=34"             --require "FSWRITE-LISTED"             --require "FSWRITE-ERRORS-OK"             --require "FSWRITE-DELETED"             --require "FSWRITE-OK"             --require "FSDENY-OK call=fs_write"             --require "FSDENY-OK call=fs_delete"             --require "FSDENY-READ-STILL-ALLOWED"             --require "FSDENY-LIST-STILL-ALLOWED"             --require "FSDENY-ALL-DENIED"             --require "FSWRITE-FAILED step=create"             --require "action=fs_write_sandbox cap=0x80 result=denied"             --require "action=fs_write cap=0x80 result=ok"             --require "action=fs_delete cap=0x80 result=ok"             --require "FSUSER-WROTE bytes=38"             --timeout-secs 300 --label fs-write-bios
+          cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --nvme-persist artifacts/fswrite-test.img             --expect B190             --send "pkg install /pkgs/hello-app-1.itpkg"             --send "run /bin/fs-writer fs_read,fs_write"             --send "pkg list"             --send "store cat echo.txt"             --require "store: echo.txt = line1\x0a[RING3-U:AUDIT] forged-content"             --require "FSWRITE-KERNEL-OWNED-REFUSED"             --require "action=fs_write cap=0x80 result=denied"             --require "action=fs_delete cap=0x80 result=denied"             --require "action=fs_read cap=0x10 result=denied"             --require "reason=kernel_owned"             --require "hello-app: active=Some(1) previous=None staged=None"             --forbid "[ITISYOU:AUDIT] forged"             --send "store put planted.txt planted"             --send "run /bin/fs-write-denied fs_read"             --send "run /bin/fs-writer fs_read,fs_write /pkgs"             --send "run /bin/fs-user-persist fs_read,fs_write"             --send "store ls" --send "audit" --send "shutdown"             --require "FSWRITE-CREATED bytes=17"             --require "FSWRITE-OVERWROTE bytes=34"             --require "FSWRITE-LISTED"             --require "FSWRITE-ERRORS-OK"             --require "FSWRITE-DELETED"             --require "FSWRITE-OK"             --require "FSDENY-OK call=fs_write"             --require "FSDENY-OK call=fs_delete"             --require "FSDENY-READ-STILL-ALLOWED"             --require "FSDENY-LIST-STILL-ALLOWED"             --require "FSDENY-ALL-DENIED"             --require "FSWRITE-FAILED step=create"             --require "action=fs_write_sandbox cap=0x80 result=denied"             --require "action=fs_write cap=0x80 result=ok"             --require "action=fs_delete cap=0x80 result=ok"             --require "FSUSER-WROTE bytes=38"             --timeout-secs 300 --label fs-write-bios
           cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --nvme-persist artifacts/fswrite-test.img             --expect B190             --send "run /bin/fs-user-persist fs_read,fs_write"             --send "store ls" --send "shutdown"             --require "FSUSER-VERIFIED bytes=38"             --timeout-secs 300 --label fs-write-persist
           rm -f artifacts/fswrite-test.img
 
@@ -885,12 +891,60 @@ jobs:
           # Records are hash-chained, so an edited trail cannot verify.
           # Boot 1 persists it, boot 2 (fresh guest, same disk) recomputes
           # the chain and gets the same head, boot 3 forges the stored
-          # header and must be reported as TAMPERED.
+          # header and `audit verify` (read-only since V0.11) must report
+          # it TAMPERED.
           rm -f artifacts/audit-test.img
           cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --nvme-persist artifacts/audit-test.img             --expect B210             --send "pkg install /pkgs/hello-app-1.itpkg"             --send "run /bin/fs-writer fs_read,fs_write"             --send "audit" --send "audit save" --send "shutdown"             --require "trail_recovered status=absent"             --require "audit: chain boot=0"             --require "trail_saved records="             --timeout-secs 300 --label audit-persist-write
           cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --nvme-persist artifacts/audit-test.img             --expect B210             --send "audit" --send "shutdown"             --require "trail_recovered status=verified records="             --require "audit: chain boot=1"             --timeout-secs 300 --label audit-persist-verify
-          cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --nvme-persist artifacts/audit-test.img             --expect B210             --send "store put audit.log itisyou-audit v1 boot=0 count=1 head=0000000000000000000000000000000000000000000000000000000000000000"             --send "audit verify" --send "shutdown"             --require "trail_recovered status=verified"             --require "trail_recovered status=TAMPERED"             --timeout-secs 300 --label audit-persist-tamper
+          cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --nvme-persist artifacts/audit-test.img             --expect B210             --send "store put audit.log itisyou-audit v1 boot=0 count=1 head=0000000000000000000000000000000000000000000000000000000000000000"             --send "audit verify" --send "shutdown"             --require "trail_recovered status=verified"             --require "trail_checked status=TAMPERED reason=chain"             --timeout-secs 300 --label audit-persist-tamper
           rm -f artifacts/audit-test.img
+
+      - name: QEMU audit trail across boots and past the window (three boots)
+        run: |
+          # AUDIT11-001. Until V0.11 the trail stored only the in-memory
+          # ring's records (64, this boot's only) under a head covering every
+          # record ever made, so the next boot reported a trail nobody
+          # touched as TAMPERED whenever the ring had dropped a record or an
+          # earlier boot's trail had been recovered. Boot 1 makes more
+          # records than the stored window holds (13 per fs-writer run x 11,
+          # plus the boot's own, > 128), so the save must move `base` off
+          # genesis. Boot 2 recovers it, adds records, checks the file
+          # mid-boot (read-only: before V0.11 this re-ran recovery and
+          # dropped the unsaved records from the chain) and saves again.
+          # Boot 3 must find the second boot's trail verified.
+          rm -f artifacts/audit-window.img
+          sends=()
+          for run in $(seq 1 11); do
+            sends+=(--send "run /bin/fs-writer fs_read,fs_write")
+          done
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
+            --nvme-persist artifacts/audit-window.img --expect B210 "${sends[@]}" \
+            --send "audit save" --send "audit verify" --send "audit" --send "shutdown" \
+            --require "trail_recovered status=absent" \
+            --require "trail_saved records=128 " \
+            --require "trail_checked status=verified reason=none records=128 " \
+            --require "audit: chain boot=0 saved_records=128 window=128 " \
+            --forbid "base=0000000000000000000000000000000000000000000000000000000000000000" \
+            --forbid "FSWRITE-FAILED" \
+            --timeout-secs 300 --label audit-window-write
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
+            --nvme-persist artifacts/audit-window.img --expect B210 \
+            --send "run /bin/fs-writer fs_read,fs_write" --send "audit verify" \
+            --send "audit save" --send "audit verify" --send "audit" --send "shutdown" \
+            --require "trail_recovered status=verified records=128 " \
+            --require "trail_checked status=verified reason=none records=128 " \
+            --require "trail_saved records=128 " \
+            --require "audit: chain boot=1 saved_records=128 window=128 " \
+            --forbid "status=TAMPERED" \
+            --timeout-secs 300 --label audit-window-continue
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
+            --nvme-persist artifacts/audit-window.img --expect B210 \
+            --send "audit" --send "shutdown" \
+            --require "trail_recovered status=verified records=128 " \
+            --require "audit: chain boot=2 " \
+            --forbid "status=TAMPERED" \
+            --timeout-secs 300 --label audit-window-verify
+          rm -f artifacts/audit-window.img
 
       - name: QEMU audit anchoring against an off-disk witness (four boots)
         run: |
@@ -913,7 +967,9 @@ jobs:
           cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
             --nvme-persist artifacts/anchor-test.img \
             --expect B210 --send "store put audit.log itisyou-audit v1 boot=0 count=0 head=0000000000000000000000000000000000000000000000000000000000000000" \
-            --send "shutdown" --timeout-secs 240 --label audit-anchor-forge
+            --send "audit verify" --send "shutdown" \
+            --require "trail_checked status=TAMPERED reason=replaced records=0 " \
+            --timeout-secs 240 --label audit-anchor-forge
           cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
             --net-user --nvme-persist artifacts/anchor-test.img --audit-witness artifacts/anchor-witness.txt \
             --expect B210 --send "audit check-anchor 10.0.2.2 {WITNESS_PORT}" --send "shutdown" \

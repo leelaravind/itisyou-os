@@ -307,9 +307,12 @@ pub fn recover(fs: &mut FileSystem) -> Result<u32, PlatformError> {
         // Loop: multiple orphans possible (resolve reports the newest first).
         loop {
             let st = state(fs, &app);
+            // `app` was read back from the store's names, which a disk (or,
+            // before V0.11, a program) can choose: echoed escaped.
             if let Some(v) = st.orphan_staged {
                 crate::serial_println!(
-                    "[ITISYOU:RECOVERY] app={app} orphan_staged=v{v} action=remove"
+                    "[ITISYOU:RECOVERY] app={} orphan_staged=v{v} action=remove",
+                    crate::untrusted(&app)
                 );
                 crate::audit::allowed("recovery_orphan", 0, Some(format!("{app} v{v}")));
                 fs.remove(&format!("{app}.{v}.pkg")).map_err(fs_err)?;
@@ -318,7 +321,8 @@ pub fn recover(fs: &mut FileSystem) -> Result<u32, PlatformError> {
             }
             if let Some(v) = st.dangling_ok {
                 crate::serial_println!(
-                    "[ITISYOU:RECOVERY] app={app} dangling_ok=v{v} action=remove"
+                    "[ITISYOU:RECOVERY] app={} dangling_ok=v{v} action=remove",
+                    crate::untrusted(&app)
                 );
                 crate::audit::allowed("recovery_dangling", 0, Some(format!("{app} v{v}")));
                 fs.remove(&format!("{app}.{v}.ok")).map_err(fs_err)?;

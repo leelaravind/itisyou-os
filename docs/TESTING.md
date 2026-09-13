@@ -102,10 +102,16 @@
     with none is refused every syscall), and refusal: five hostile frames
     counted as refused and answered by nothing.
 17. **Userspace filesystem writes** (V0.8, `fs-write-bios` + `fs-write-persist`):
-    create, atomic overwrite to a different length, list, delete, and four
+    create, atomic overwrite to a different length, list, delete, and five
     refusals each for a different reason; the WRITE right proved distinct from
     READ; the sandbox proved distinct from the capability; and a second boot on
-    the same disk reading back what Ring 3 wrote.
+    the same disk reading back what Ring 3 wrote. V0.11: a name with a line
+    break in it is refused and no forged `[ITISYOU:AUDIT]` line appears
+    (AUDIT11-002); reading, writing and deleting the audit trail and a real
+    installed package's files are refused and audited, and `pkg list` shows
+    the package still active (SEC11-001); contents a program wrote with a line
+    break and a marker prefix in them come back from `store cat` as one line
+    with the prefix rewritten.
 18. **Interrupt modernization** (V0.8, `irq-bios`): a delivered APIC timer
     interrupt, a delivered MSI-X raised by a real NVMe block read, an I/O APIC
     register round-trip left masked, and the PIC's own counters proving it is
@@ -116,7 +122,14 @@
     an interrupt transfer tagged `src=xhci`.
 20. **Persistent audit** (V0.8, three boots): saved, recovered and verified by a
     fresh guest with the same chain head, then reported TAMPERED once the
-    stored trail is overwritten.
+    stored trail is overwritten (since V0.11 by the read-only `audit verify`:
+    `trail_checked status=TAMPERED reason=chain`). V0.11 adds three more boots
+    (`audit-window-write`/`-continue`/`-verify`, AUDIT11-001): more records
+    than the stored window holds, so the save must move `base` off genesis;
+    a second boot that recovers, adds records, checks mid-boot and saves; and
+    a third that must find that trail verified. In the anchor test,
+    `audit verify` after the forged empty trail is written reports
+    `reason=replaced` while the system is still up.
 21. **Hardening** (V0.8, `harden-bios`): SMEP/SMAP/UMIP on, a W^X segment
     refused at load, `sgdt` from Ring 3 a contained #GP, the stack guard exactly
     16 pages down, and a Ring 3 read of a kernel address refused. Two

@@ -103,7 +103,21 @@ only through narrow, deterministic, auditable paths).
   covers the previous one, the chain is extended before the bounded ring drops
   anything, and it continues across boots from the head recovered at startup.
   It detects editing; it does not defend against an attacker who can rewrite
-  the whole file including its head. Signing the head is the missing step.
+  the whole file including its head — the V0.9 witness anchor is what catches
+  that. Since V0.11 the stored trail is the newest 128 records with the head
+  its first record extends (`base`), and the recovered records stay in the
+  next save — v0.8.0–v0.10.0 stored only the current boot's ring under a head
+  covering everything, so an untouched trail read as tampered after a second
+  boot or a busy one (AUDIT11-001). `audit verify` is read-only: the running
+  kernel's copy of what it saved or recovered is the reference.
+- **The evidence is kernel-owned** (V0.11, SEC11-001): the audit trail and the
+  package store are refused to the `fs_*` syscalls, whatever capability the
+  program holds — holding `fs_write` is authority over a program's files, not
+  over the record of what programs did or over which version of an
+  application runs. Text a program or a disk chose (file names, contents,
+  application names) is echoed as one line with control characters escaped
+  and the marker prefix neutralized, and names with control characters are
+  refused (AUDIT11-002), so it cannot pose as kernel evidence.
 - The network stack refuses more than it accepts: fragments, VLAN tags, ICMP
   types other than echo, and packets addressed elsewhere are counted and
   dropped. It generates no ICMP errors, so it cannot be used as a reflector.

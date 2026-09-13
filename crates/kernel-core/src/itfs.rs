@@ -66,6 +66,10 @@ pub enum FsError {
     InconsistentMetadata,
     NameTooLong,
     NameEmpty,
+    /// The name contains a control character (V0.11). A name is echoed into
+    /// listings, audit records and the serial console; a line break in one
+    /// would let the text after it pose as a line of its own.
+    NameInvalid,
     NotFound,
     Exists,
     /// No free space / too many files.
@@ -318,6 +322,9 @@ impl SuperBlock {
         }
         if name.len() > NAME_LEN {
             return Err(FsError::NameTooLong);
+        }
+        if name.chars().any(char::is_control) {
+            return Err(FsError::NameInvalid);
         }
         Ok(())
     }
@@ -615,6 +622,29 @@ mod tests {
         assert_eq!(sb.allocate("", 10), Err(FsError::NameEmpty));
         let long = "x".repeat(NAME_LEN + 1);
         assert_eq!(sb.allocate(&long, 10), Err(FsError::NameTooLong));
+    }
+
+    #[test]
+    fn rejects_control_characters_in_names() {
+        let mut sb = SuperBlock::empty(2048);
+        // C0 (a line break, which would split an audit record), DEL and C1.
+        for name in [
+            "a\nb",
+            "a\rb",
+            "\u{1b}[2J",
+            "a\u{7f}",
+            "a\u{85}b",
+            "\u{9b}x",
+        ] {
+            assert_eq!(sb.allocate(name, 10), Err(FsError::NameInvalid), "{name:?}");
+        }
+        // The exact name a Ring 3 program would use to forge a marker line.
+        let forged = "a\n[ITISYOU:AUDIT] forged";
+        assert_eq!(forged.len(), NAME_LEN);
+        assert_eq!(sb.allocate(forged, 10), Err(FsError::NameInvalid));
+        // Printable non-ASCII is still a name.
+        sb.allocate("caf\u{e9}.txt", 10).unwrap();
+        assert!(sb.find("caf\u{e9}.txt").is_some());
     }
 
     #[test]

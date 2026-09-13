@@ -117,7 +117,26 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
   anchoring and checking are explicit commands (`audit anchor`, `audit
   check-anchor`), the witness must be reachable, and in the harness the witness
   is a test peer, not a hardened service. Persisting is explicit (`audit
-  save`), not automatic on every record.
+  save`), not automatic on every record. Since V0.11 the stored trail is a
+  **window of the newest 128 records** whose header names the head its first
+  record extends (`base`): records before the window are gone from the disk
+  and the chain vouches only for those still present (dropping them changes
+  the stored count, which the anchor compares). `audit verify` is read-only
+  and compares the file with the trail this boot last saved or recovered, so
+  a replacement is caught while the system runs even when its chain is valid;
+  across a reboot only the anchor catches a valid replacement. Trails written
+  by v0.8.0–v0.10.0 after the ring had dropped a record, or by a boot other
+  than the first, are reported `TAMPERED` by every version, V0.11 included:
+  that is AUDIT11-001, and such a trail cannot be told apart from a tampered
+  one — the next save replaces it with a verifying one. An unreadable trail is
+  still overwritten by the next save.
+- The persistent store is shared: programs holding `fs_read`/`fs_write` reach
+  every name in it except the files the kernel owns — the audit trail and
+  the package store (`<app>.<v>.pkg`/`.ok`), refused since V0.11 (SEC11-001;
+  v0.10.0 and earlier let such a program replace the audit trail, or delete
+  a package's commit marker to roll it back). There is no per-program
+  directory beyond the path-prefix sandbox, and names with control
+  characters are refused (AUDIT11-002).
 - SMEP, SMAP and UMIP are enabled when the CPU advertises them (the harness's
   CPU model does); W^X for user segments, a guard page below the user stack, and
   user-pointer validation are always on — since V0.10 the validation also

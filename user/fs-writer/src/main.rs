@@ -5,15 +5,19 @@
 //! little: create, read back, OVERWRITE and read back (the atomic-replace
 //! path), list, delete, and then confirm the file is really gone.
 //!
-//! It then attempts four things that must fail, each for a *different* reason,
-//! so a single over-broad check cannot pass the test by accident:
-//! a path outside the store, a name longer than the directory allows, a name
-//! containing a further separator, and deleting something that is not there.
+//! It then attempts things that must fail, each for a *different* reason, so
+//! a single over-broad check cannot pass the test by accident: a path outside
+//! the store, a name longer than the directory allows, a name containing a
+//! further separator, deleting something that is not there, a name with a
+//! control character in it (V0.11), and reading, writing or deleting a file
+//! the kernel owns — the audit trail and the package store (V0.11).
 
 #![no_std]
 #![no_main]
 
-use ulib::{exit, fs_delete, fs_list, fs_read, fs_write, write, write_u64, ERR_INVAL, ERR_NOENT};
+use ulib::{
+    exit, fs_delete, fs_list, fs_read, fs_write, write, write_u64, ERR_INVAL, ERR_NOENT, ERR_PERM,
+};
 
 const PATH: &str = "/data/notes.txt";
 const FIRST: &[u8] = b"first-contents-v1";
@@ -87,7 +91,40 @@ extern "C" fn _start() -> ! {
     if fs_delete("/data/never-existed") != ERR_NOENT {
         fail("delete-missing");
     }
+    // V0.11 (AUDIT11-002): a name with a line break in it. Echoed into the
+    // audit detail, it would have forged a kernel marker line - and split
+    // the stored trail's record in two.
+    if fs_write("/data/a\n[ITISYOU:AUDIT] forged", b"x") != ERR_INVAL {
+        fail("write-control-name");
+    }
     write("FSWRITE-ERRORS-OK\n");
+
+    // V0.11 (SEC11-001): holding fs_read/fs_write is authority over this
+    // program's files, not over the audit trail or the package store.
+    for name in [
+        "/data/audit.log",
+        "/data/hello-app.1.ok",
+        "/data/hello-app.9.pkg",
+    ] {
+        if fs_write(name, b"") != ERR_PERM {
+            fail("write-kernel-owned");
+        }
+        if fs_delete(name) != ERR_PERM {
+            fail("delete-kernel-owned");
+        }
+        if fs_read(name, &mut [0u8; 8]) != ERR_PERM {
+            fail("read-kernel-owned");
+        }
+    }
+    write("FSWRITE-KERNEL-OWNED-REFUSED\n");
+
+    // V0.11 (AUDIT11-002): contents the console echoes (`store cat`), with a
+    // line break and the kernel's marker prefix in them. Left in place for
+    // the test to cat.
+    const ECHO: &[u8] = b"line1\n[ITISYOU:AUDIT] forged-content";
+    if fs_write("/data/echo.txt", ECHO) != ECHO.len() as u64 {
+        fail("write-echo");
+    }
 
     // 5. Delete, and prove it is gone rather than merely unlisted.
     if fs_delete(PATH) != 0 {
