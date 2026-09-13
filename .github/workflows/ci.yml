@@ -385,6 +385,17 @@ jobs:
             --forbid "armed=false" \
             --timeout-secs 120 --label stack-guard-bios
 
+      - name: QEMU kernel task stack guard (BIOS)
+        run: |
+          cargo run -q -p qemu-runner -- \
+            --image target/images/itisyou-kernel-bios.img \
+            --expect B080 --expect B200 --send "panic-test task-stack-overflow" --expect-panic \
+            --require "guard_unmapped=true; yielding to it" \
+            --require "kernel_stack_overflow stack=task id=" --require "guard_hit=true" \
+            --require "kernel stack overflow: stack=task id=" \
+            --forbid "the overflowing task returned" \
+            --timeout-secs 120 --label stack-guard-task-bios
+
       - name: QEMU long-running background services (BIOS)
         run: |
           # V0.8 persistent services: tickd (IPC-only) and flapd (no caps)

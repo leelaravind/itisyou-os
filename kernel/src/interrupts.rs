@@ -465,6 +465,15 @@ extern "x86-interrupt" fn double_fault_handler(frame: InterruptStackFrame, error
             frame.instruction_pointer.as_u64()
         );
     }
+    if let Some(id) = crate::task::stack::guard_hit(cr2) {
+        crate::serial_println!(
+            "[ITISYOU:FAULT] kernel_stack_overflow stack=task id={id} cr2={cr2:#x} guard_hit=true"
+        );
+        panic!(
+            "kernel stack overflow: stack=task id={id} hit its guard page (cr2={cr2:#x} rip={:#x})",
+            frame.instruction_pointer.as_u64()
+        );
+    }
     panic!(
         "double fault error_code={:#x} rip={:#x}",
         error_code,

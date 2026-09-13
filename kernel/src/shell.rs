@@ -1279,8 +1279,9 @@ fn cmd_panic_test(args: &[&str]) {
     match args.first() {
         Some(&"confirm") => panic!("panic-test invoked from shell"),
         Some(&"stack-overflow") => overflow_priv_stack(),
+        Some(&"task-stack-overflow") => overflow_task_stack(),
         _ => crate::serial_println!(
-            "panic-test: pass 'confirm' to trigger a real kernel panic, or 'stack-overflow' to overflow the syscall stack into its guard page"
+            "panic-test: pass 'confirm' to trigger a real kernel panic, or 'stack-overflow' / 'task-stack-overflow' to overflow the syscall / a task stack into its guard page"
         ),
     }
 }
@@ -1304,6 +1305,26 @@ fn overflow_priv_stack() -> ! {
             f = sym recurse_until_guard,
             options(noreturn)
         );
+    }
+}
+
+/// Deliberately overflow a KERNEL TASK's stack (V0.10): spawn a task that
+/// recurses, then yield to it. Its guarded slot must turn the overflow into a
+/// reported double fault naming the task.
+fn overflow_task_stack() {
+    fn overflow_entry() {
+        recurse_until_guard(0);
+    }
+    match crate::task::spawn("stack-overflow", overflow_entry) {
+        Ok(id) => {
+            crate::serial_println!(
+                "panic-test: task {id} guard_unmapped={}; yielding to it",
+                crate::task::stack::guard_unmapped(id)
+            );
+            crate::task::yield_now();
+            crate::serial_println!("panic-test: the overflowing task returned (unexpected)");
+        }
+        Err(e) => crate::serial_println!("panic-test: spawn failed: {e:?}"),
     }
 }
 
