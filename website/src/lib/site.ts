@@ -20,6 +20,7 @@ export const NAV_PRIMARY: NavItem[] = [
 
 /** Extra routes grouped under the "Engineering" disclosure. */
 export const NAV_ENGINEERING: NavItem[] = [
+  { href: '/download', label: 'Download' },
   { href: '/engineering', label: 'Engineering' },
   { href: '/releases', label: 'Releases' },
   { href: '/changelog', label: 'Changelog' },
@@ -69,7 +70,7 @@ export const DOCS_META: DocMeta[] = [
     title: 'Security Model',
     crumb: 'SECURITY_MODEL',
     description:
-      'The central principle — AI has intelligence, not authority — trust boundaries, V0.1 concrete requirements, and the future capability model.',
+      'The central principle — AI has intelligence, not authority — trust boundaries, the capability-handle model, package authenticity and hardening.',
     sourcePath: 'docs/SECURITY_MODEL.md',
   },
   {
@@ -77,14 +78,14 @@ export const DOCS_META: DocMeta[] = [
     title: 'Threat Model',
     crumb: 'THREAT_MODEL',
     description:
-      'Assets, adversary/failure assumptions scoped to V0.1 development reality, mitigations, and explicit non-threats.',
+      'Assets, adversary and failure assumptions scoped to the current VM-only reality, mitigations, and explicit non-threats.',
     sourcePath: 'docs/THREAT_MODEL.md',
   },
   {
     slug: 'known-limitations',
     title: 'Known Limitations',
     crumb: 'KNOWN_LIMITATIONS',
-    description: 'The honest current state: what the kernel does not do yet, updated continuously.',
+    description: 'The honest current state: what the system does not do yet, updated continuously.',
     sourcePath: 'docs/KNOWN_LIMITATIONS.md',
   },
   {

@@ -70,7 +70,9 @@ Write-Output '=== QEMU shell interaction (BIOS) ==='
     '--send', 'echo shell-echo-check', '--send', 'definitely-not-a-command',
     '--send', 'run /bin/init', '--send', 'run /bin/broken',
     '--send', 'panic-test', '--send', 'shutdown',
-    '--require', 'itisyou-os 0.7.0-dev',
+    # The running kernel must name the version the release claims
+    # (Cargo workspace version == status/current.json; check-consistency.mjs).
+    '--require', 'itisyou-os 0.8.1',
     '--require', 'task 0: kmain',
     '--require', 'RING3-DONE',
     '--require', 'run: /bin/init: Exit(0)',

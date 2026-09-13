@@ -128,8 +128,10 @@
 The harness gained `--audio`/`--audio-out` (AC97 → WAV capture, with a non-
 silence assertion), `--usb` (UHCI + USB HID), `--xhci` (an xHCI controller with
 its own HID keyboard), `--net` (an e1000 wired to the runner's own Ethernet
-peer), and `--forbid` (a substring that must NOT appear) alongside the serial +
-monitor channels. Every leg now runs on a CPU advertising `+smep,+smap,+umip`,
+peer), `--net-user` (an e1000 on QEMU's user-mode network, an independent IPv4
+implementation with its own gateway, DHCP server and DNS forwarder; added in
+V0.8.1), and `--forbid` (a substring that must NOT appear) alongside the
+serial + monitor channels. Every leg now runs on a CPU advertising `+smep,+smap,+umip`,
 so the whole matrix passing is itself evidence that supervisor-mode protection
 did not break the kernel's own access to user memory.
 
@@ -157,9 +159,29 @@ duration, full command line).
 ## Commands
 
 ```powershell
-scripts\test.ps1     # unit tests + full QEMU matrix (BIOS + UEFI smoke/selftest, shell, desktop input, audio, usb, platform, interrupted update + recovery, panic, persistence)
-scripts\verify.ps1   # canonical full gate (adds fmt, clippy, doctor, secret scan, website)
+scripts\test.ps1     # host unit tests + the full 24-leg QEMU matrix
+scripts\verify.ps1   # canonical full gate (adds doctor, fmt, both clippy gates, website, secret scan)
 ```
+
+## Release-consistency and website verification
+
+- `website/scripts/check-consistency.mjs` runs inside `npm run verify` (so in
+  `scripts/verify.ps1` and in every CI run). It fails the build when
+  `status/current.json` names a different version from the Cargo workspace
+  (the kernel's own `CARGO_PKG_VERSION`), when a requirement row uses a state
+  outside the vocabulary, or when a `verified` status carries unstarted rows.
+  `node website/scripts/check-consistency.mjs --release` is the stricter form
+  run before a version tag: no non-terminal row at all. It was written against
+  the `v0.8.0` tree, where it reports exactly the three defects that release
+  shipped with.
+- `website/scripts/browser-verify.mjs --base <url> --expect-text <text>`
+  drives a headless Chromium over the DevTools protocol (no dependencies): every
+  route at 1440 px and 390 px, console errors, uncaught exceptions, browser log
+  errors (CSP violations, blocked resources), failed or ≥ 400 sub-requests,
+  horizontal overflow, `<main>`/`lang`/`alt` checks, broken images, every
+  internal link, the 404 page, and the security headers. Screenshots and a JSON
+  report go to `$ITISYOU_SCRATCH\browser-verify`. It is run against staging and
+  then production for every release; HTTP status alone is not verification.
 
 ## Rules
 

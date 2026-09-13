@@ -10,7 +10,7 @@ produces `dist/`.
 Run from `website/`. Per project storage rules, set the npm cache off `C:` first:
 
 ```powershell
-$env:npm_config_cache = 'G:\claude-tmp\npm-cache'
+$env:npm_config_cache = 'E:\claude-tmp\npm-cache'   # or G:\claude-tmp when attached
 npm install          # once
 npm run dev          # sync status/docs, then dev server
 npm run build        # sync status/docs, then static build -> dist/

@@ -1,9 +1,12 @@
-# Requirement traceability matrix — ITISYOU OS V0.1
+# Requirement traceability matrix — ITISYOU OS
 
 States: `IMPLEMENTED+VERIFIED` (with evidence) · `IN PROGRESS` (work ongoing
 this session) · `PLANNED` (not started) · `BLOCKED` (reason + required input)
-· `NOT APPLICABLE` (reason). Final reporting collapses everything to the three
-terminal states required by the implementation plan §2.
+· `NOT APPLICABLE` (reason). Only the first, `BLOCKED` and `NOT APPLICABLE`
+are terminal (implementation plan §2); there is no `DONE` or `NOT DONE`
+state. `website/scripts/check-consistency.mjs` enforces the vocabulary on
+every build, and its `--release` form refuses any non-terminal row before a
+version tag is created.
 
 Evidence conventions: `verify.ps1` stage names, `artifacts/qemu/*.result.json`
 labels, commit SHAs, CI run links, or file paths.
@@ -183,9 +186,12 @@ labels, commit SHAs, CI run links, or file paths.
 
 V0.8 evidence is recorded incrementally. IMPLEMENTED+VERIFIED requires a
 passing host/QEMU test and a machine-readable artifact; design work alone is
-not verification. Every row below is now in a terminal state, and each
-IMPLEMENTED+VERIFIED row names the artifact that proves it. Two rows are
-deliberately NOT DONE and say so rather than being quietly reworded.
+not verification. Each IMPLEMENTED+VERIFIED row names the artifact that proves
+it. `v0.8.0` was tagged with NET08-003 and NET08-004 in a state ("NOT DONE")
+outside the plan's vocabulary; the 2026-09-13 audit restated them as
+`NOT APPLICABLE` with the explicit roadmap amendment that moved them to V0.9,
+where they are requirements NET09-001..003 — deferred and tracked, not
+dropped (see the V0.8.1 section below).
 
 | ID | Requirement | Status | Evidence |
 |---|---|---|---|
@@ -204,11 +210,45 @@ deliberately NOT DONE and say so rather than being quietly reworded.
 | HARD08-001 | SMEP/SMAP, guard pages, pointer/W^X hardening | IMPLEMENTED+VERIFIED | SMEP, SMAP and UMIP enabled from CPUID and reported from CR4. SMAP inverts the default: the kernel is forbidden to touch user pages except in the three declared windows, each bracketed by a `UserAccess` guard so an early return cannot leave the window open. The runner requests `+smep,+smap,+umip`, so ALL 24 legs run with supervisor-mode protection on. `harden-bios`: `sgdt` from Ring 3 is a contained #GP with `HARDEN-LEAK-SGDT` forbidden; the stack probe writes exactly 16 pages then faults at `0x7ffffdf000` with `STACKGUARD-LEAK` forbidden; a W^X segment is refused at load; a Ring 3 read of a kernel address still faults |
 | NET08-000 | Host-tested Ethernet/IPv4 protocol layer (parse, build, checksum) | IMPLEMENTED+VERIFIED | `kernel_core::net::{checksum,eth,ipv4}` — allocation-free, borrows from the caller's DMA buffer, refuses what it does not fully understand (VLAN tags, fragments, bad IHL/TTL/checksum, every truncation boundary) rather than guessing; 43 of the 174 `cargo test -p kernel-core` cases. This is protocol logic only — it moves no packets |
 | NET08-001 | QEMU NIC, Ethernet/ARP/IPv4/ICMP/UDP data path | IMPLEMENTED+VERIFIED | e1000 driver with polled RX/TX descriptor rings, an ARP cache, ICMP echo client AND responder, a bounded UDP socket table, and a DNS resolver. Verified against the runner's OWN host-side Ethernet peer (`tools/qemu-runner/src/wire.rs`) over a `dgram` netdev — an independent byte-level implementation, so a bug in the guest's codec cannot cancel itself out against the same code. `net-bios` proves both directions (the guest answering the peer's ARP request and ping, not only initiating), zero bad checksums as computed by the independent peer, and that five hostile frames are refused (`rx_malformed=3 rx_unwanted=2`) and answered by NOTHING (`replies_to_hostile=0`) |
-| NET08-003 | TCP | NOT DONE | Deliberately out of scope for V0.8 and stated rather than reworded: the stack is datagram-only. A correct TCP needs a retransmission timer, window management and a connection state machine whose failure modes are exactly the ones a half-implementation hides. Deferred to V0.9 |
-| NET08-004 | DHCP, IPv6, routing beyond one gateway | NOT DONE | The address plan is static and there is one gateway. No IPv6, no fragmentation in either direction, and no ICMP error generation — an unreachable port is dropped silently, which is also what makes "answers nothing hostile" a checkable property |
+| NET08-003 | TCP | NOT APPLICABLE (deferred by explicit roadmap amendment → NET09-001) | Not delivered in V0.8: the stack is datagram-only. A correct TCP needs a retransmission timer, window management and a connection state machine whose failure modes are exactly the ones a half-implementation hides, so it was moved to V0.9 in `docs/ROADMAP.md` ("V0.9 — Transport, …") rather than shipped half-built. Carried forward as NET09-001; originally recorded as "NOT DONE", a state outside the vocabulary |
+| NET08-004 | DHCP, IPv6, routing beyond one gateway | NOT APPLICABLE (deferred by explicit roadmap amendment → NET09-002/003) | Not delivered in V0.8: the address plan is static with one gateway, no IPv6, no fragmentation, no ICMP error generation (an unreachable port is dropped silently, which is also what makes "answers nothing hostile" checkable). DHCP and IPv6 foundations moved to V0.9 in `docs/ROADMAP.md`; carried forward as NET09-002 (DHCP) and NET09-003 (IPv6). Originally recorded as "NOT DONE" |
 | REG-V08 | V0.1-V0.7 regression matrix remains green | IMPLEMENTED+VERIFIED | every V0.1-V0.7 leg passes alongside the V0.8 subsystems, and now with SMEP/SMAP/UMIP enabled on every leg: 24/24 QEMU legs Success, selftest pass=113 fail=0 |
-| CI-V08 | Full V0.8 CI/QEMU matrix green | IMPLEMENTED+VERIFIED | CI run `33987853808` (commit `e6e3496`) success on ubuntu-24.04: format, split clippy, host tests, image build, and all 24 QEMU legs — including the V0.8 networking, xHCI, interrupt-modernization, filesystem-write, persistent-audit and hardening legs. Superseded evidence: CI run `33955559882` (commit `6be344e`) success on ubuntu-24.04: format, split clippy, host tests, image build, all 15 QEMU legs including the new `QEMU long-running background services (BIOS)` step, website check+build, secret scan. Not a release gate until the remaining V0.8 requirements land |
+| CI-V08 | Full V0.8 CI/QEMU matrix green | IMPLEMENTED+VERIFIED | CI run `33987853808` (commit `e6e3496`) success on ubuntu-24.04: format, split clippy, host tests, image build, and all 24 QEMU legs — including the V0.8 networking, xHCI, interrupt-modernization, filesystem-write, persistent-audit and hardening legs. Earlier intermediate evidence: CI run `33955559882` (commit `6be344e`) success on ubuntu-24.04 with the then-15 QEMU legs. The release stamp commit `84d6b24` (tag `v0.8.0`) is green in CI run `33988391309` |
 | WEB-V08 | Production website reflects only verified V0.8 behavior | IMPLEMENTED+VERIFIED | `status/current.json` stamped to the CI-verified commit `e6e3496`; staging (`edaab8e1-37e3-4c3a-a13b-398494ab988c`) verified first, then production (`a3544b0a-5fe1-44ab-8dfc-b2bd4a3dda0d`). Live checks on https://os.itisyou.app: 16/16 routes 200, `/nope` → 404, strict CSP + `nosniff` + `DENY`, TLS 200, zero `<script>` tags, and the page rendering `v0.8.0 · Current Build VERIFIED · COMMIT e6e3496d129f5f9d753ddd90b875bccafbe5cefe` alongside every V0.8 module. The gaps are on the site too: TCP, DHCP and IPv6 appear as planned, not delivered |
+
+## V0.8.1 — Release-integrity closeout (Phase 1 audit, 2026-09-13)
+
+An independent audit of the repository, tags, CI, runtime evidence and the live
+site (evidence priority: runtime → code → Git/CI → documentation) found that
+the V0.8 *engineering* was real and still reproduces, but the V0.8 *release*
+disagreed with itself: the `v0.8.0` kernel reported `itisyou-os 0.7.0-dev`,
+two requirement rows carried a state outside the plan's vocabulary, and the
+public site plus several documents still made V0.1-era claims ("no network
+stack exists", "current milestone is V0.1"). A version whose artifact misnames
+itself is a release defect, and the `v0.8.0` tag is immutable, so the
+correction is a patch release rather than a rewritten tag. No kernel behaviour
+changes in V0.8.1 beyond the version it reports.
+
+Also recorded, not acted on: draft PR #1 (`W0-01: Freeze normative inputs`,
+branch `w0-01-freeze-normative-inputs`, opened 2026-09-06) proposes a separate
+architecture chain whose source documents are not in the repository; it is
+unmerged, owner-gated, and outside `main`'s governance, so it was left
+untouched.
+
+| ID | Requirement | Status | Evidence |
+|---|---|---|---|
+| AUD081-001 | The v0.8.0 engineering claims are re-verified from runtime evidence, not trusted from documents | IMPLEMENTED+VERIFIED | 2026-09-13: `scripts/verify.ps1` on `84d6b24` (plus the scratch-drive fallback below) → `VERIFY: OK` — doctor, fmt, both clippy gates, 292 host tests (kernel-core 278), **24/24 QEMU legs Success**, selftest pass=113 fail=0 on BIOS and UEFI, website 0 errors, secret scan clean over 275 files. Git: `v0.8.0` → `84d6b24` = `origin/main`, clean tree; CI `33988391309` green on that commit; https://os.itisyou.app serving `v0.8.0` |
+| REL081-001 | Kernel, Cargo metadata, status metadata and tag name the same version | IN PROGRESS | Root cause: the workspace version was never bumped after V0.7 (`0.7.0-dev`), and the shell-test legs asserted that same stale string, so the drift was *tested in*. Fix: workspace `0.8.1`, both shell-test legs (local + CI) assert `itisyou-os 0.8.1`, status `0.8.1` |
+| REL081-002 | Release drift fails the build instead of shipping | IN PROGRESS | `website/scripts/check-consistency.mjs` (in `npm run verify`, so every CI run): status version must equal the Cargo version; every requirement state must be in the vocabulary; a verified status may not carry unstarted rows; `--release` refuses any non-terminal row before tagging. Regression evidence: run against the `v0.8.0` tree it exits 1 naming exactly the three defects (version `0.8.0` vs `0.7.0-dev`, NET08-003, NET08-004) |
+| REL081-003 | Requirement matrix uses only the plan §2 states | IN PROGRESS | NET08-003/004 restated as `NOT APPLICABLE` with the roadmap amendment that moved them to V0.9 (NET09-001..003); title no longer says "V0.1" |
+| DOC081-001 | No document states a stale current-state claim | IN PROGRESS | Corrected: README ("current milestone is V0.1"), KNOWN_LIMITATIONS (V0.7-era bullets contradicting V0.8, stale "V0.8 work in progress" section), SESSION_CHECKPOINT ("V0.8 unreleased"), ROADMAP ("V0.7 current"), ADR-0013 status ("integration pending"), UNSAFE_INVENTORY (no rows for the V0.8 APIC/e1000/xHCI/SMAP code), BUILD_AND_RUN + website README (hard-coded `G:`), initramfs `welcome.txt` ("nothing here persists") |
+| ENV081-001 | Build scratch and TEMP never fall back to C: | IN PROGRESS | `G:` (external scratch) was not attached, and `scripts/env.ps1` hard-coded `G:\claude-tmp`, so every gate script failed before doing anything. `env.ps1` now uses `G:\claude-tmp` when present and `E:\claude-tmp` otherwise; `doctor.ps1` checks `TEMP` is off C: and treats G: as optional (`[OK] scratch G: not attached; using E:\claude-tmp`) |
+| WEB081-001 | The public site makes no stale or false claim | IN PROGRESS | Live `v0.8.0` site said "no network stack exists in V0.1" (security), "V0.8+ is documented research direction" (roadmap) and V0.1-era release rules (releases) |
+| WEB081-002 | Staging and production verified in a real browser, not only over HTTP | IN PROGRESS | V0.8 was verified over HTTP only (the browser extension was unavailable and it was recorded as such). New `website/scripts/browser-verify.mjs` drives headless Chromium over the DevTools protocol: every route at 1440 px and 390 px, console errors, exceptions, CSP/blocked-resource log errors, failed requests, horizontal overflow, landmarks, broken images, every internal link, the 404 page and the security headers |
+| REL081-004 | Release boot images are bit-reproducible | IN PROGRESS | Found: BIOS images were identical across rebuilds but UEFI images were not — the `gpt` crate stamps random disk/partition GUIDs into every image. Fix: `tools/image-builder/src/gpt_normalize.rs` derives the GUIDs from the image's own content (GUID/CRC fields zeroed, SHA-256) and recomputes every GPT CRC, then re-verifies both headers before the image is kept; 5 host tests (CRC-32 vector, two random-GUID images normalize identically, different content ⇒ different identity, non-GPT/truncated refused, corrupted CRC detected). Evidence: two local builds → identical manifests for all 8 images; normalized UEFI images pass boot-smoke-uefi, selftest-uefi (113/0) and the two-boot fs-persist UEFI legs. Cross-OS caveat, stated not hidden: a Windows build embeds Windows-style panic-location paths, so the *release* images are the CI-built (Linux) ones, and reproducibility is shown by independent CI runs producing identical digests |
+| REL081-005 | A public, checksummed, boot-tested download | IN PROGRESS | CI uploads the exact boot images (`boot-images` artifact) and prints their digests; the release downloads those bytes, checks SHA-256, boots them in QEMU (BIOS + UEFI), and publishes them at `/downloads/v0.8.1/` with `SHA256SUMS.txt` via `website/scripts/downloads.mjs stage` (refuses any byte not matching `website/src/data/downloads.json`); `downloads.mjs verify` re-downloads from the deployed site and checks size, SHA-256 and attachment headers. New `/download` page: version, maturity, commit, builder run, sizes, SHA-256, verify commands, QEMU instructions, tested environments, physical-hardware warning, known limitations |
+| CI-V081 | CI green for the V0.8.1 release commit | IN PROGRESS | — |
+| REG-V081 | Every V0.1–V0.8 leg still green at 0.8.1 | IN PROGRESS | — |
 
 ## Testing & verification
 

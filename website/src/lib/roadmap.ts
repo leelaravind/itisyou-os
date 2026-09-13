@@ -3,7 +3,7 @@
  * Milestones are sequenced by dependency, not calendar; a milestone is
  * reached when its verification gates pass, never before.
  *
- * Statuses use the allowed vocabulary honestly: V0.1–V0.5 are Verified
+ * Statuses use the allowed vocabulary honestly: delivered milestones are Verified
  * (machine-checked in QEMU); near-term milestones are Planned; the far
  * research milestones are Concept — documented direction, not active work.
  */
@@ -97,7 +97,7 @@ export const MILESTONES: Milestone[] = [
     status: 'verified',
     current: true,
     summary:
-      'The first milestone whose inputs come from somewhere other than this machine. An e1000 driver with polled descriptor rings; ARP, IPv4, ICMP echo (answered as well as sent), UDP and DNS; Ring 3 sockets behind a capability scoped to a port. Packages are now authenticated as well as integrity-checked: Ed25519 signatures over a context, the declared lengths and the content digest, against a compiled-in trust root - an unsigned package, one signed by a stranger and one with a forged signature are three DIFFERENT refusals. Userspace can write to the persistent store under the write right and its sandbox, with an overwrite that is one crash-atomic commit. The local APIC, I/O APIC and MSI-X are up with real delivery evidence, xHCI enumerates and reads HID input, the audit trail is hash-chained and survives reboots, and SMEP/SMAP/UMIP now enforce kernel/user separation in the CPU rather than only in the page tables. NOT delivered, and said so: TCP, IPv6 and DHCP.',
+      'The first milestone whose inputs come from somewhere other than this machine. An e1000 driver with polled descriptor rings; ARP, IPv4, ICMP echo (answered as well as sent), UDP and DNS; Ring 3 sockets behind a capability scoped to a port. Packages are now authenticated as well as integrity-checked: Ed25519 signatures over a context, the declared lengths and the content digest, against a compiled-in trust root - an unsigned package, one signed by a stranger and one with a forged signature are three DIFFERENT refusals. Userspace can write to the persistent store under the write right and its sandbox, with an overwrite that is one crash-atomic commit. The local APIC, I/O APIC and MSI-X are up with real delivery evidence, xHCI enumerates and reads HID input, the audit trail is hash-chained and survives reboots, and SMEP/SMAP/UMIP now enforce kernel/user separation in the CPU rather than only in the page tables. NOT delivered, and said so: TCP, IPv6 and DHCP. v0.8.1 closed the release out: its kernel now names the version the tag does, and the build fails if the two ever drift again.',
     components: [
       'e1000 + ARP/IPv4/ICMP/UDP/DNS; port-scoped socket capability',
       'Ed25519 package signatures; userspace filesystem writes',
@@ -106,18 +106,26 @@ export const MILESTONES: Milestone[] = [
   },
   {
     id: 'V0.9',
-    name: 'Transport, Interrupt Cutover & Key Management',
+    name: 'Transport, Interrupt Cutover & Trust',
     status: 'planned',
     summary:
-      'TCP with a real retransmission timer and connection state machine; DHCP and IPv6 foundations; moving line IRQs onto the I/O APIC (with ACPI MADT parsing) so the PIC can be retired; a signing key that never enters the source tree, with rotation and revocation; signing the audit chain head; ACPI/power foundations and additional device classes.',
-    components: ['TCP, DHCP, IPv6', 'I/O APIC cutover + ACPI', 'Key provisioning, rotation, revocation'],
+      'TCP with a connection state machine, a retransmission timer and a receive window, verified against a real host TCP stack with loss injected; a DHCP client and IPv6 foundations (NDP, SLAAC, ICMPv6); ACPI table discovery and the I/O APIC cutover that retires the 8259 PIC, plus ACPI power-off; a package-signing key hierarchy with rotation and revocation whose private keys never enter the source tree; and anchoring the audit head outside the audited disk.',
+    components: ['TCP, DHCP, IPv6 foundations', 'ACPI + I/O APIC cutover, PIC retired', 'Signing-key hierarchy; audit anchoring'],
   },
   {
     id: 'V0.10',
+    name: 'Userspace System',
+    status: 'planned',
+    summary:
+      'Inserted by the 2026-09-13 roadmap amendment because the AI layer depends on it: a userspace init as the first process starting services from configuration, an always-on scheduler so services never starve behind the console, program arguments, a Ring 3 shell, filesystem space reclamation, and persistent Ring 3 applications on the live desktop with focus and input routing.',
+    components: ['Userspace init + always-on scheduler', 'Ring 3 shell, program arguments', 'Desktop applications; filesystem reclamation'],
+  },
+  {
+    id: 'V0.11',
     name: 'AI-Native System Layer',
     status: 'concept',
     summary:
-      'Local inference service outside the kernel, system knowledge over approved local state, diagnostic agent, policy-controlled system actions with preview/approval, provenance/audit, post-action verification.',
+      'A local inference service outside the kernel (a small model running in Ring 3, trained reproducibly from the repository), system knowledge over an approved read-only view of local state, a diagnostic agent, policy-controlled actions with preview and explicit approval, provenance and audit, post-action verification with rollback. The agent has intelligence, not authority.',
     components: [
       'Local inference service (outside the kernel)',
       'Policy-controlled actions with preview/approval',
@@ -125,19 +133,19 @@ export const MILESTONES: Milestone[] = [
     ],
   },
   {
-    id: 'V0.11',
-    name: 'Daily-Driver Research',
-    status: 'concept',
-    summary:
-      'Wi-Fi, Bluetooth, accelerated graphics strategy, power management, suspend/resume, application ecosystem — real hardware only on explicitly approved sacrificial devices.',
-    components: ['Wi-Fi & Bluetooth', 'Power management, suspend/resume', 'Sacrificial-device hardware research only'],
-  },
-  {
     id: 'V1.0',
     name: 'Experimental Personal OS',
     status: 'concept',
     summary:
-      'Declared only when reliability, security, recovery, hardware support, installation and update safety criteria are defined and passed.',
-    components: ['Declared by criteria, never by calendar'],
+      'Declared only when acceptance criteria written in advance — reliability, security, recovery, update safety, boot safety and supported environment — are passed. Ships as a reproducible, checksummed, downloadable boot image for virtual machines; physical hardware is explicitly unsupported.',
+    components: ['Declared by criteria, never by calendar', 'Reproducible, checksummed VM boot image'],
+  },
+  {
+    id: 'Post-1.0',
+    name: 'Daily-Driver Research',
+    status: 'concept',
+    summary:
+      'Moved after V1.0 by the 2026-09-13 amendment: Wi-Fi, Bluetooth, GPU acceleration, power management and suspend/resume need physical hardware that QEMU cannot stand in for, and physical hardware needs an explicit per-device authorization gate. A requirement that cannot be verified cannot gate V1.0.',
+    components: ['Wi-Fi & Bluetooth', 'Power management, suspend/resume, SMP', 'Sacrificial-device hardware research only'],
   },
 ];

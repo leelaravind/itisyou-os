@@ -147,6 +147,10 @@ struct Options {
     /// against a real, independent implementation of ARP/ICMP/UDP/DNS with no
     /// external network and nothing non-deterministic in the loop.
     net: bool,
+    /// Attach an e1000 NIC on QEMU's user-mode network (slirp): an
+    /// independent IPv4 implementation with its own gateway (10.0.2.2), DHCP
+    /// server and DNS forwarder. Mutually exclusive with `--net`.
+    net_user: bool,
     /// Attach an emulated NVMe controller backed by a generated raw disk
     /// whose first sector carries a known magic (for storage read tests).
     nvme: bool,
@@ -206,6 +210,7 @@ fn parse_args() -> Result<Options, String> {
     let mut usb = false;
     let mut xhci = false;
     let mut net = false;
+    let mut net_user = false;
     let mut nvme = false;
     let mut nvme_persist = None;
     let mut timeout = Duration::from_secs(60);
@@ -259,6 +264,7 @@ fn parse_args() -> Result<Options, String> {
             "--usb" => usb = true,
             "--xhci" => xhci = true,
             "--net" => net = true,
+            "--net-user" => net_user = true,
             "--nvme" => nvme = true,
             "--nvme-persist" => nvme_persist = Some(PathBuf::from(value("--nvme-persist")?)),
             "--timeout-secs" => {
@@ -295,6 +301,10 @@ fn parse_args() -> Result<Options, String> {
             other => return Err(format!("unknown argument {other}")),
         }
     }
+    if net && net_user {
+        // Both would claim the guest's single NIC slot and MAC.
+        return Err("--net and --net-user are mutually exclusive".to_string());
+    }
     Ok(Options {
         image: image.ok_or("--image is required")?,
         uefi,
@@ -315,6 +325,7 @@ fn parse_args() -> Result<Options, String> {
         usb,
         xhci,
         net,
+        net_user,
         nvme,
         nvme_persist,
         timeout,
@@ -468,6 +479,14 @@ fn build_command(
                 "-device",
                 "e1000,netdev=net0,mac=52:54:00:12:34:56",
             ]);
+    }
+    if opts.net_user {
+        cmd.args([
+            "-netdev",
+            "user,id=net0",
+            "-device",
+            "e1000,netdev=net0,mac=52:54:00:12:34:56",
+        ]);
     }
     if opts.xhci {
         cmd.args([

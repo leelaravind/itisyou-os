@@ -1,8 +1,30 @@
-# Current status — V0.8 Networking, Authenticity & Hardening
+# Current status — V0.8 Networking, Authenticity & Hardening (v0.8.1)
 
-**Timestamp:** 2026-09-05 (Europe/London)
+**Timestamp:** 2026-09-13 (Europe/London)
 **Branch:** `main` · **Repository:** `E:\Project\itisyou-os`
-**Milestone:** `V0.8 — Networking, Authenticity & Hardening`
+**Milestone:** `V0.8 — Networking, Authenticity & Hardening`, release
+`v0.8.1` (release-integrity closeout of `v0.8.0`)
+
+## 2026-09-13 audit and V0.8.1
+
+- The full gate was re-run on the `v0.8.0` commit before any document was
+  trusted: `VERIFY: OK`, 24/24 QEMU legs, selftest 113/0 on BIOS and UEFI,
+  292 host tests (278 in `kernel-core`), website 0 errors, secret scan clean.
+- The release around it disagreed with itself: the tagged kernel reported
+  `0.7.0-dev` (the shell-test legs asserted the same stale string, so the drift
+  was tested in), NET08-003/004 were "NOT DONE" (not a plan state), and the live
+  site and several docs still made V0.1-era claims. V0.8.1 corrects these, adds a
+  build gate (`website/scripts/check-consistency.mjs`) that fails on version or
+  requirement-state drift, adds real-browser verification
+  (`website/scripts/browser-verify.mjs`), inventories the V0.8 `unsafe` code
+  (rows 33–39) and forbids `unsafe` in `kernel-core`. No kernel behaviour
+  changes beyond the version it reports.
+- The roadmap after V0.8 was amended (recorded in `docs/ROADMAP.md`): V0.9
+  Transport, Interrupt Cutover & Trust → V0.10 Userspace System (new) → V0.11
+  AI-Native System Layer → V1.0; daily-driver hardware research moves after
+  V1.0.
+
+## V0.8 (v0.8.0) summary
 
 - Everything from V0.1–V0.7 remains green, now with SMEP/SMAP/UMIP enabled on
   every leg: **24/24 QEMU legs Success**, selftest **113** / fail **0**, 278

@@ -1,7 +1,11 @@
 Welcome to ITISYOU OS.
 
-This system is a research kernel booted from an embedded initramfs.
-Nothing here persists across reboots; the filesystem is read-only and
-lives entirely in memory.
+This system is an experimental research operating system, verified only
+inside QEMU. The files under / come from an embedded initramfs: read-only
+and held in memory. When an NVMe disk is attached, /data/ is the persistent
+ITFS store - package installs, application writes and the audit trail live
+there and survive reboots.
+
+Type 'help' for the console commands.
 
 Project: https://os.itisyou.app

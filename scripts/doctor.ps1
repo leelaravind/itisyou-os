@@ -34,10 +34,18 @@ Check 'node' ([bool]$node) $(if ($node) { (node --version) } else { 'not found' 
 Check 'RUSTUP_HOME off C:' ($env:RUSTUP_HOME -notlike 'C:*') $env:RUSTUP_HOME
 Check 'CARGO_HOME off C:' ($env:CARGO_HOME -notlike 'C:*') $env:CARGO_HOME
 
+Check 'TEMP off C:' ($env:TEMP -notlike 'C:*') $env:TEMP
+
 $freeE = [math]::Round((Get-PSDrive E).Free / 1GB, 1)
-$freeG = [math]::Round((Get-PSDrive G).Free / 1GB, 1)
 Check 'free space E: >= 5GB' ($freeE -ge 5) "$freeE GB free"
-Check 'free space G: >= 5GB' ($freeG -ge 5) "$freeG GB free"
+# G: is an optional external scratch drive; env.ps1 falls back to E: without it.
+$gDrive = Get-PSDrive G -ErrorAction SilentlyContinue
+if ($gDrive) {
+    $freeG = [math]::Round($gDrive.Free / 1GB, 1)
+    Check 'free space G: >= 5GB' ($freeG -ge 5) "$freeG GB free"
+} else {
+    Write-Output "[OK  ] scratch G: not attached; using $env:ITISYOU_SCRATCH"
+}
 
 if ($failed) { Write-Output 'DOCTOR: FAILED'; exit 1 }
 Write-Output 'DOCTOR: OK'

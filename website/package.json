@@ -11,7 +11,9 @@
     "prebuild": "npm run sync",
     "build": "astro build",
     "preview": "astro preview",
-    "verify": "npm run sync && astro check && astro build"
+    "check": "node scripts/check-consistency.mjs",
+    "verify": "npm run sync && npm run check && astro check && astro build",
+    "browser-verify": "node scripts/browser-verify.mjs"
   },
   "dependencies": {
     "@astrojs/check": "^0.9.4",

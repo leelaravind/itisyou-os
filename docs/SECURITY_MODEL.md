@@ -12,7 +12,7 @@ agent intent → policy engine → risk/permission evaluation
   → kernel operation → verification → audit → rollback/recovery
 ```
 
-Nothing in the V0.1 runtime contains an AI component; the principle exists
+Nothing in the current runtime contains an AI component; the principle exists
 now because it constrains interface design (kernel APIs must remain callable
 only through narrow, deterministic, auditable paths).
 
@@ -23,7 +23,7 @@ only through narrow, deterministic, auditable paths).
    framebuffer, RSDP) is validated before broad use. Boot-time-only code is
    not part of the OS runtime.
 2. **Kernel trusted boundary** — all Rust `no_std` code in `kernel/`;
-   the trusted computing base for V0.1.
+   the trusted computing base.
 3. **Userspace boundary** *(V0.2–V0.6, verified)* — ring 3 with validated
    syscalls; user pointers checked before any kernel dereference; no user
    mapping of kernel pages; per-process page tables; GUI window ownership;

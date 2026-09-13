@@ -4,6 +4,9 @@
 //! it can be unit-tested on the host and reused inside the kernel unchanged.
 
 #![cfg_attr(not(test), no_std)]
+// Host-testable logic has no business with raw pointers or hardware; keeping
+// every `unsafe` in the kernel crate keeps docs/UNSAFE_INVENTORY.md complete.
+#![forbid(unsafe_code)]
 
 pub mod audit_chain;
 pub mod bitmap;

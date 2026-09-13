@@ -1,145 +1,156 @@
 # Known limitations — honest current state
 
-Updated continuously; last update: 2026-09-03 (V0.7 release evidence closeout).
+Updated continuously; last full revision: 2026-09-13 (V0.8.1 release-integrity
+closeout). Each item says what is true of the current build, not what was true
+when the subsystem first landed. Items that later milestones address name the
+milestone; the sequence lives in `docs/ROADMAP.md`.
 
-- Platform (V0.7): capabilities are **bits, not handles** — no revocation of
-  a running process's authority, no per-resource capabilities yet (the IPC
-  layer is shaped for handles; ADR-0007/0012). The FS sandbox governs
-  `fs_read` only — userspace has **no filesystem write syscall** at all, so
-  write confinement is moot until one exists. Packages are
-  **integrity-verified (SHA-256), not signed** — authenticity needs key
-  provisioning and a root of trust (deferred, ADR-0012). The audit ring is
-  in-memory (64 records; serial markers are the durable evidence). Kernel-image updates are out of scope (the OS does not own
-  its boot media in QEMU); the app store's staged/commit/rollback is the
-  designed mechanism. ITFS `remove` does not reclaim data blocks (no
-  free-block reuse — space leaks by design for crash-atomicity simplicity).
+## Execution environment
 
-- Services (V0.8): persistent background daemons exist and are supervised
-  (ADR-0014), but they run only while the shell is idle at the prompt or a
-  `bg` job is pumping — a long-running foreground command (`desktop`, a long
-  `run`) starves them for its duration. There is still no userspace `init`,
-  no service priorities or fairness beyond round-robin, and the background
-  registry is a static array (no runtime start/stop of a named service).
-- Networking (V0.8): IPv4 over one e1000 NIC — ARP, ICMP echo (client and
-  responder), UDP with capability-scoped Ring 3 sockets, and a DNS resolver.
-  **No TCP**: the stack is datagram-only, and a correct TCP needs a
-  retransmission timer, window management and a connection state machine whose
-  failure modes are exactly what a half-implementation hides. No IPv6, no
-  DHCP (the address plan is static: 10.0.2.15/24 via 10.0.2.2), no routing
-  beyond a single gateway, no fragmentation in either direction, and no ICMP
-  error generation — an unreachable port is dropped silently. One NIC, polled;
-  the RX path is drained from a scheduling slice, so a program that never
-  yields also never receives.
-- Package signing (V0.8): the trust root is a single **development** key whose
-  seed is a literal in `kernel/build.rs`. It is published deliberately — a
-  build-time key that looked secret would invite someone to trust it — but it
-  means the current build authenticates packages against a key anyone can use.
-  No key rotation, no revocation list, no expiry. Shipping to real users
-  requires provisioning a signing key that never enters the source tree.
-- Audit (V0.8): the trail is hash-chained and survives reboots, and it detects
-  a record being altered, deleted, reordered or inserted. It does **not**
-  defend against an attacker who can rewrite the whole file including its
-  stored head; signing the head, or writing it somewhere the running system
-  cannot reach, is what would close that gap. Persisting is explicit
-  (`audit save`), not automatic on every record — one full filesystem write per
-  privileged action would be its own denial of service.
-- Interrupts (V0.8): line-based IRQs are **not** routed through the I/O APIC.
-  Its registers are programmed and read back, but the entry stays masked and
-  the PIC keeps serving the timer and PS/2 input, so this is not yet a system
-  that could run without the PIC. No ACPI MADT parsing (the I/O APIC address is
-  the architectural one), single CPU only — no IPIs, no AP startup — and the
-  APIC timer is not the scheduler tick.
-- USB (V0.8): xHCI handles one device, one interrupt endpoint, one slot. No
-  hubs, no bulk or isochronous transfers, no USB3 streams, and no runtime
-  attach/detach — a device plugged in after boot is not noticed.
-- QEMU is the only supported execution environment. Physical hardware boot
-  is intentionally out of scope and untested.
-- Scheduling (V0.4): **preemptive**, round-robin, no priorities; the quantum
-  is fixed (2 ticks = 20 ms); there is no CPU accounting/fairness beyond
-  round-robin. Registers and address-space isolation are preserved across
-  preemption (machine-verified).
-- Process model: spawn/wait/exit and a single blocking waiter per child;
-  no fork/exec-with-args, no process groups, no signals yet.
-- IPC: bounded kernel message channels (4 channels, ≤256 B, ≤8 queued),
-  non-blocking, addressed by integer id (a future capability handle). No
-  shared-memory or synchronous-rendezvous IPC yet.
-- Storage (V0.4): NVMe **read + write + flush** (still polled, single I/O
-  queue, single namespace, no MSI-X). ITFS is a minimal persistent
-  filesystem: fixed directory (≤12 files), **contiguous append-only** files —
-  no per-file update/delete/rename, no directories/subpaths, no free-block
-  reuse. Crash consistency covers the metadata superblock (double-buffered
-  CRC commit); a torn *data* write of an in-progress file is not journaled
-  (the file is only referenced after its body is flushed). AHCI/virtio-blk
-  not yet implemented (block trait is ready for it). QEMU attaches only
-  generated disposable disks; no host disk is ever touched.
-- The `itisyou-fs-persist` binary's **BIOS** disk image does not boot (a
-  bootloader BIOS-stage quirk specific to that binary; its ELF is valid and
-  its UEFI image boots). The reboot-persistence test therefore runs on UEFI,
-  a fully verified firmware path. Root cause not yet isolated.
-- Graphics (V0.5): a single **bootloader-chosen framebuffer mode** (QEMU:
-  1280×720 BGR); no mode-setting, no double-buffered vsync/flip, software
-  rendering only, **no GPU acceleration** (Intel Iris Xe / virtio-gpu are out
-  of scope). One 8×8 bitmap font, no scaling beyond integer, no Unicode.
-- Compositor (V0.5): fixed wallpaper + top bar; **no window focus, drag,
-  resize, z-order UI, or minimise/close controls**; windows are drawn
-  back-to-front in creation order. Ownership + bounds are enforced (a process
-  cannot draw into another window or out of bounds). The **live** desktop
-  renders kernel-owned windows; compositing a *persistent Ring 3* window onto
-  the live desktop needs asynchronous process spawning and is deferred —
-  Ring 3 window rendering + isolation is proven in the selftest (a userspace
-  process's window colour is read back off the composited screen).
-- Input (V0.5): PS/2 **keyboard (IRQ1)** and **mouse (IRQ12)** via the i8042
-  controller. Keyboard is scancode set 1, US layout, printable keys + a few
-  controls; no key-repeat policy, no IME, extended keys carry no ASCII. Mouse
-  is relative 3-byte packets (no scroll wheel). The **first** mouse packet
-  after enabling reporting can carry a benign sync artifact (decoded as a
-  zero-motion event); the decoder resynchronises and every subsequent packet
-  decodes exactly. The IRQ handlers assume QEMU's IRQ routing rather than
-  reading the i8042 aux-data status bit (adequate for the emulated device).
-- The interactive serial shell still reads **polled serial** (the verified
-  automation path); PS/2 keyboard drives the graphical desktop, not the serial
-  shell.
-- Syscalls run with interrupts masked; SMEP/SMAP are not enabled (absent on
-  the QEMU CPU model); the user stack has an unmapped hole below it rather
-  than a hardened guard region; CR3 switches do a full TLB flush (no
-  PCID/ASID tagging).
-- Devices (V0.6): a generic device/driver model over PCI with two real class
-  drivers (AC97 audio, UHCI USB), plus NVMe. **All drivers are polled** — no
-  device IRQ is wired (the PIC path stays timer/PS-2 only). MSI/MSI-X
-  capabilities are detected + reported but not used; APIC/IOAPIC/MSI routing is
-  deferred. PCI enumeration scans bus 0 only (complete on the QEMU `pc`
-  machine; no bridge recursion).
-- USB (V0.6): **UHCI** (USB 1.1) only — no xHCI/EHCI/OHCI. Enumerates a single
-  device (the first connected root port); no hubs, no multi-device addressing.
-  Control + interrupt-IN transfers only (no bulk/isochronous). HID **boot
-  protocol** keyboard input is verified; mouse decode is host-tested but full
-  mouse-input verification needs multi-device enumeration.
-- Audio (V0.6): **AC97 output only** — no capture/input, one PCM-out stream,
-  fixed 48 kHz, no mixing/resampling in the OS (QEMU resamples to the backend).
-- No networking, no Wi-Fi/Bluetooth.
+- **QEMU is the only supported and tested execution environment.** Physical
+  hardware boot is intentionally out of scope and untested; nothing here should
+  be written to a real disk.
+- QEMU machine model: `pc` (i440FX), 256 MiB RAM, CPU `qemu64,+smep,+smap,+umip`.
+  Other machine models are untested.
 - Single CPU only; no SMP. Synchronization assumes one core; spinlocks are
   interrupt-safe by masking, not SMP-safe.
-- Physical memory above 4 GiB is ignored by the frame allocator (counted
-  and reported as `ignored_high_frames`); QEMU test configuration is 256 MiB.
-- The PIC/PIT (legacy) interrupt path is the baseline; APIC/HPET/MSI are future
-  work. Unmasked IRQs: 0 (timer), 1 (keyboard), 2 (cascade), 12 (mouse). Device
-  drivers (NVMe/AC97/UHCI) are polled, so they need no IRQ line.
-- The kernel heap is a fixed **32 MiB** range (grown from 1 MiB in V0.5 for
-  the compositor back buffer + window stores); no growth, no guard pages on
-  task stacks or the double-fault IST stack yet.
-- The toolchain is pinned to nightly-2026-08-01 because newer nightlies
-  break the bootloader crate's UEFI stage (rust-osdev/bootloader#579);
-  the pin can move forward once upstream fixes land.
-- Host tooling scripts are Windows-specific (`scripts/*.ps1`); CI provides
-  the Linux path.
-- Website deployment state is tracked in `docs/REQUIREMENTS.md` (CF-001).
+- Host tooling scripts are Windows PowerShell (`scripts/*.ps1`); CI provides the
+  Linux path.
+- The toolchain is pinned to nightly-2026-08-01 because newer nightlies break
+  the bootloader crate's UEFI stage (rust-osdev/bootloader#579).
 
-## V0.8 work in progress
+## Boot
 
-The V0.8 capability-handle contract is host-tested and wired into a
-kernel-owned process registry plus provisional list/check ABI, but has not yet
-passed the pinned kernel build or QEMU adversarial leg; V0.7 static capability
-bits remain the active policy for existing operations. Networking, userspace filesystem writes,
-signed package authentication, long-running userspace services, APIC/MSI,
-xHCI, and persistent audit storage remain unverified until corresponding
-QEMU/CI evidence is produced.
+- The `itisyou-fs-persist` binary's **BIOS** disk image does not boot (a
+  bootloader BIOS-stage quirk specific to that binary; its ELF is valid and its
+  UEFI image boots). Its two-boot persistence test runs on UEFI. Root cause not
+  isolated. Every other image boots on both BIOS and UEFI.
+
+## Kernel, processes, scheduling
+
+- Scheduling is **preemptive round-robin** with a fixed 20 ms quantum and no
+  priorities or CPU accounting. Registers and address-space isolation are
+  preserved across preemption (machine-verified).
+- Processes run when the kernel console drives the scheduler: at the idle
+  prompt, during `run`/`bg`, and inside the supervisor. There is **no userspace
+  `init`** yet — the console is a kernel component, and a long-running
+  foreground command (`desktop`, a long `run`) starves the background services
+  for its duration. (V0.10: userspace init and an always-on scheduler.)
+- Process model: spawn/wait/exit with a single blocking waiter per child; no
+  program arguments, no fork/exec, no process groups, no signals.
+- IPC: bounded kernel message channels (4 channels, ≤256 B, ≤8 queued),
+  non-blocking, addressed by integer id. No shared-memory or synchronous
+  rendezvous IPC.
+- The kernel heap is a fixed **32 MiB** range; no growth. Physical memory above
+  4 GiB is ignored by the frame allocator (`ignored_high_frames`).
+- Syscalls run with interrupts masked (`SFMASK` clears IF); blocking waits inside
+  a syscall are therefore forbidden and the network/storage paths are
+  non-blocking there. CR3 switches do a full TLB flush (no PCID).
+
+## Security model
+
+- Capabilities are **resource-scoped handles** with owner binding, bounded
+  delegation, revocation and expiry, enforced on the syscall path (V0.8): every
+  gated call revalidates the caller's handle in the kernel table. The V0.7
+  bitmask survives only as the *request* vocabulary (manifests, `spawn_caps`).
+  The capability kinds are fixed at build time and there is no user-facing
+  policy editor.
+- The filesystem sandbox is a per-process set of path prefixes, checked on the
+  normalized path for reads and, separately from the write right, for writes.
+- **Package trust root is a development key.** Its seed is a literal in
+  `kernel/build.rs`, published deliberately so nobody mistakes it for a secret —
+  which means the current build authenticates packages against a key anyone can
+  use. No key rotation, no revocation list, no expiry. (V0.9: a key hierarchy
+  whose private keys never enter the source tree.)
+- The audit trail is hash-chained and persistent: it detects a record being
+  altered, deleted, reordered or inserted. It does **not** defend against an
+  attacker who rewrites the whole file including its stored head. Persisting is
+  explicit (`audit save`), not automatic on every record. (V0.9: anchoring the
+  head outside the attacker's reach.)
+- SMEP, SMAP and UMIP are enabled when the CPU advertises them (the harness's
+  CPU model does); W^X for user segments, a guard page below the user stack, and
+  user-pointer validation are always on. Kernel task stacks and the double-fault
+  IST stack have no guard pages.
+- No hardware root of trust, no Secure Boot chain, no measured boot.
+
+## Storage
+
+- NVMe **read + write + flush**, one I/O queue, one namespace; MSI-X delivery is
+  proved on it, but the data path is still polled.
+- ITFS is a minimal persistent filesystem: a fixed directory of **≤12 files**,
+  no subdirectories, **contiguous** files, and **no free-block reuse** —
+  `remove` and overwrite leak the old extent by design, trading space for
+  crash-atomic simplicity, so a long-lived disk eventually fills. Crash
+  consistency covers the superblock (double-buffered CRC commit); an overwrite
+  is one crash-atomic commit; a torn *data* write of an unreferenced extent is
+  harmless because nothing points at it yet. (V0.10: space reclamation.)
+- No second block driver (AHCI/virtio-blk); the block trait is ready for one.
+- QEMU attaches only generated disposable disks; no host disk is ever touched.
+
+## Networking
+
+- IPv4 over one e1000 NIC: ARP, ICMP echo (client and responder), UDP with
+  capability-scoped Ring 3 sockets, and a DNS A-record resolver.
+- **No TCP**, **no DHCP** (static 10.0.2.15/24 via 10.0.2.2), **no IPv6**, no
+  routing beyond one gateway, no fragmentation, and no ICMP error generation —
+  an unreachable port is dropped silently. (V0.9: TCP, DHCP, IPv6 foundations.)
+- One NIC, polled; the receive path is drained from a scheduling slice, so a
+  program that never yields also never receives.
+- QEMU's 82540EM exposes no MSI capability, so the NIC has no interrupt path at
+  all; MSI-X is proved on the NVMe controller instead.
+
+## Interrupts and platform
+
+- Line-based IRQs (timer, PS/2 keyboard and mouse) run on the **legacy 8259
+  PIC**. The local APIC is enabled and proved to deliver (one-shot timer), MSI-X
+  is proved on NVMe, and the I/O APIC is programmed and read back but its entries
+  stay **masked** — this is not yet a system that could run without the PIC. No
+  ACPI table parsing: the I/O APIC address is the architectural one. (V0.9:
+  ACPI MADT parsing and the I/O APIC cutover.)
+- No ACPI power management: `shutdown` exits QEMU through the `isa-debug-exit`
+  test device rather than an ACPI S5 transition. No suspend/resume.
+- PCI enumeration scans bus 0 only (complete on the `pc` machine; no bridge
+  recursion).
+
+## Graphics, desktop and input
+
+- One **bootloader-chosen framebuffer mode** (QEMU: 1280×720 BGR); no
+  mode-setting, no vsync, software rendering only, **no GPU acceleration**.
+- One 8×8 bitmap font, integer scaling only, no Unicode.
+- Compositor: fixed wallpaper and top bar; **no window focus, drag, resize,
+  z-order controls, or close buttons**; windows draw back-to-front in creation
+  order. Ownership and bounds are enforced. The **live** desktop shows
+  kernel-owned windows; a Ring 3 window is proved on screen in the selftest but
+  a persistent Ring 3 application on the live desktop is not supported yet.
+  (V0.10.)
+- PS/2 keyboard is scancode set 1, US layout, printable keys plus a few
+  controls; no key repeat policy, no IME. Mouse is relative 3-byte packets, no
+  wheel. The first mouse packet after enabling reporting can decode as a benign
+  zero-motion event.
+- The console reads **polled serial**; the PS/2 keyboard drives the graphical
+  desktop, not the console.
+
+## USB and audio
+
+- USB: UHCI (USB 1.1) and xHCI host controllers. Each enumerates **one device**
+  on one root port: no hubs, no multi-device addressing, control and interrupt
+  IN transfers only (no bulk or isochronous), no runtime attach/detach. HID boot
+  protocol keyboard input is verified on both; USB mouse decode is host-tested
+  only.
+- Audio: AC97 **output only** — one PCM-out stream at 48 kHz, no capture, no
+  mixing or resampling in the OS.
+
+## Not present at all
+
+- Wi-Fi, Bluetooth, webcam, GPU drivers, power management, suspend/resume, a
+  browser, Linux binary compatibility, a production package ecosystem. These are
+  research items that need physical hardware under an explicit, per-device
+  authorization gate (`docs/IMPLEMENTATION_PLAN.md` §27).
+
+## Project process
+
+- Website deployment state is tracked in `docs/REQUIREMENTS.md` (CF-001 and the
+  per-release WEB rows).
+- The `v0.8.0` release reported `0.7.0-dev` from its own kernel; `v0.8.1` exists
+  to correct that, and `website/scripts/check-consistency.mjs` now fails any
+  build where the versions disagree.
