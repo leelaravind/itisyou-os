@@ -44,3 +44,4 @@ pub mod tar;
 pub mod trust;
 pub mod update;
 pub mod usb;
+pub mod wm;

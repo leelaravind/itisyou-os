@@ -306,6 +306,40 @@ extern "C" fn _start() -> ! {
         Some(b"nohang") => nohang(),
         Some(b"sleep") => sleep_check(),
         Some(b"orphan") => orphan(),
+        Some(b"gui-foreign") => match it.next().and_then(parse_u64) {
+            // A window this process does not own: no present, no events.
+            Some(win) => {
+                if ulib::gui_present(win) != ERR_PERM {
+                    fail("gui-present-foreign");
+                }
+                let mut rec = [0u8; 8];
+                expect(
+                    ulib::gui_event(win, &mut rec),
+                    ERR_PERM,
+                    "gui-event-foreign",
+                    "PROCPROBE-GUI-FOREIGN-REFUSED\n",
+                )
+            }
+            None => fail("gui-foreign-usage"),
+        },
+        Some(b"gui-quota") => {
+            // The per-process window quota: 4, then ERR_AGAIN.
+            let mut made = 0u64;
+            for _ in 0..6 {
+                let w = ulib::gui_create(16, 16, 20, 40, "q");
+                if is_err(w) {
+                    if w != ERR_AGAIN {
+                        fail("gui-quota-err");
+                    }
+                    break;
+                }
+                made += 1;
+            }
+            if made != 4 {
+                fail("gui-quota-count");
+            }
+            write("PROCPROBE-GUI-QUOTA-OK windows=4\n");
+        }
         Some(b"console-read") => {
             let mut line = [0u8; 16];
             expect(

@@ -8,7 +8,6 @@
 //! input through the QEMU monitor and assert the OS received it.
 
 use crate::sync::Mutex;
-use alloc::collections::VecDeque;
 use core::sync::atomic::{AtomicI32, AtomicU64, Ordering};
 use kernel_core::mouse::{Mouse, MouseEvent};
 use kernel_core::scancode::{KeyEvent, Keyboard};
@@ -20,8 +19,26 @@ const STATUS_CMD: u16 = 0x64;
 
 static KEYBOARD: Mutex<Keyboard> = Mutex::new(Keyboard::new());
 static MOUSE: Mutex<Mouse> = Mutex::new(Mouse::new());
-static QUEUE: Mutex<VecDeque<InputEvent>> = Mutex::new(VecDeque::new());
+/// Pending events: a FIXED ring (V0.10). It is pushed from interrupt
+/// handlers, so it must never allocate — the V0.5 heap-backed queue could grow
+/// (take the heap lock) inside an IRQ — and every push and pop runs with
+/// interrupts masked, so an IRQ can never spin on a lock the interrupted code
+/// holds.
+static QUEUE: Mutex<Ring> = Mutex::new(Ring {
+    buf: [None; QUEUE_MAX],
+    head: 0,
+    len: 0,
+});
 const QUEUE_MAX: usize = 256;
+/// Events dropped because the ring was full (the newest is dropped: input
+/// already waiting keeps its order).
+pub static DROPPED: AtomicU64 = AtomicU64::new(0);
+
+struct Ring {
+    buf: [Option<InputEvent>; QUEUE_MAX],
+    head: usize,
+    len: usize,
+}
 
 pub static KEY_COUNT: AtomicU64 = AtomicU64::new(0);
 pub static MOUSE_COUNT: AtomicU64 = AtomicU64::new(0);
@@ -111,6 +128,11 @@ pub fn init() {
         }
     }
 
+    // The interrupt handler may already have fed the decoder a command ACK
+    // (the controller interrupts are on before the mouse commands run): start
+    // the first packet on a clean boundary (V0.10).
+    without_interrupts(|| MOUSE.lock().resync());
+
     // Unmask IRQ1 (keyboard), IRQ2 (cascade) and IRQ12 (mouse) at the PICs,
     // keeping IRQ0 (timer) unmasked.
     crate::interrupts::set_input_irqs_enabled();
@@ -139,12 +161,27 @@ pub fn on_keyboard_irq() {
     }
 }
 
+/// Tick of the last mouse byte: a packet's three bytes arrive back to back,
+/// so a gap means a new packet starts (V0.10).
+static LAST_MOUSE_TICK: AtomicU64 = AtomicU64::new(0);
+
 /// Mouse IRQ (vector 44) body.
 pub fn on_mouse_irq() {
     let byte = unsafe { Port::<u8>::new(DATA).read() };
-    let event = MOUSE.lock().feed(byte);
+    let now = crate::interrupts::ticks();
+    let gap = now.saturating_sub(LAST_MOUSE_TICK.swap(now, Ordering::Relaxed));
+    let mut mouse = MOUSE.lock();
+    if gap > 2 {
+        mouse.resync();
+    }
+    let event = mouse.feed(byte);
+    drop(mouse);
     if let Some(ev) = event {
         MOUSE_COUNT.fetch_add(1, Ordering::Relaxed);
+        // PS/2 reports Y up-positive; everything downstream (the cursor, the
+        // desktop, USB mice) is screen-down-positive. Flip it here, once
+        // (V0.10; the host-tested decoder keeps the wire's raw sign).
+        let ev = MouseEvent { dy: -ev.dy, ..ev };
         // Accumulate only — never lock the compositor/framebuffer here.
         ACCUM_DX.fetch_add(ev.dx, Ordering::Relaxed);
         ACCUM_DY.fetch_add(ev.dy, Ordering::Relaxed);
@@ -228,13 +265,29 @@ pub fn take_mouse_motion() -> (i32, i32) {
 }
 
 fn push(ev: InputEvent) {
-    let mut q = QUEUE.lock();
-    if q.len() < QUEUE_MAX {
-        q.push_back(ev);
-    }
+    without_interrupts(|| {
+        let mut q = QUEUE.lock();
+        if q.len == QUEUE_MAX {
+            DROPPED.fetch_add(1, Ordering::Relaxed);
+            return;
+        }
+        let tail = (q.head + q.len) % QUEUE_MAX;
+        q.buf[tail] = Some(ev);
+        q.len += 1;
+    });
 }
 
 /// Drain one queued event (interrupt-safe for the desktop loop).
 pub fn poll() -> Option<InputEvent> {
-    without_interrupts(|| QUEUE.lock().pop_front())
+    without_interrupts(|| {
+        let mut q = QUEUE.lock();
+        if q.len == 0 {
+            return None;
+        }
+        let head = q.head;
+        let ev = q.buf[head].take();
+        q.head = (head + 1) % QUEUE_MAX;
+        q.len -= 1;
+        ev
+    })
 }

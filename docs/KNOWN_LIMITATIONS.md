@@ -219,16 +219,17 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
 - One **bootloader-chosen framebuffer mode** (QEMU: 1280×720 BGR); no
   mode-setting, no vsync, software rendering only, **no GPU acceleration**.
 - One 8×8 bitmap font, integer scaling only, no Unicode.
-- Compositor: fixed wallpaper and top bar; **no window focus, drag, resize,
-  z-order controls, or close buttons**; windows draw back-to-front in creation
-  order. Ownership and bounds are enforced. The **live** desktop shows
-  kernel-owned windows; a Ring 3 window is proved on screen in the selftest but
-  a persistent Ring 3 application on the live desktop is not supported yet.
-  (V0.10.)
+- Compositor: fixed wallpaper and top bar; click-to-focus with raise (V0.10)
+  but **no drag, resize, minimize or close buttons**. Ownership and bounds are
+  enforced; a process holds at most 4 windows. One Ring 3 app can be started
+  on the live desktop (`desktop <app>`); the console cannot start more while
+  the desktop runs (it does not read the console), and ESC always leaves the
+  desktop (it exits QEMU). Apps receive focus, key and click events; there is
+  no pointer-motion or key-release event, and a full redraw happens on every
+  change.
 - PS/2 keyboard is scancode set 1, US layout, printable keys plus a few
   controls; no key repeat policy, no IME. Mouse is relative 3-byte packets, no
-  wheel. The first mouse packet after enabling reporting can decode as a benign
-  zero-motion event.
+  wheel. Only the first USB HID device is enumerated.
 - The console reads **polled serial**; the PS/2 keyboard drives the graphical
   desktop, not the console.
 

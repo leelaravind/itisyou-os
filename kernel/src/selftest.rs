@@ -166,6 +166,31 @@ fn proc_tree_tests(suite: &mut Suite) {
     suite.check("proc_kill_live_process", ok);
     proc::drain_all();
 
+    // GUI (V0.10, DESK10-001): a process may neither present nor read the
+    // events of a window it does not own, and holds at most 4 windows.
+    let kwin = crate::gfx::compositor::create_window(0, 600, 400, 40, 20, "k");
+    let ok = kwin.is_ok_and(|w| {
+        let block = alloc::format!("gui-foreign\0{w}\0");
+        load_probe(block.as_bytes())
+            .map(proc::admit)
+            .is_some_and(|pid| {
+                proc::run_until_idle();
+                proc::state_of(pid) == Some(ProcState::Exited(0))
+            })
+    });
+    suite.check("gui_foreign_window_refused", ok);
+    proc::drain_all();
+    crate::gfx::compositor::remove_owned(0);
+    let ok = load_probe(b"gui-quota\0")
+        .map(proc::admit)
+        .is_some_and(|pid| {
+            proc::run_until_idle();
+            proc::state_of(pid) == Some(ProcState::Exited(0))
+        })
+        && crate::gfx::compositor::window_count() == 0;
+    suite.check("gui_window_quota", ok);
+    proc::drain_all();
+
     // console_read (V0.10, SHELL10-001): nobody owns the console's input in
     // the selftest image, so every caller is refused.
     let ok = load_probe(b"console-read\0")

@@ -7,6 +7,12 @@
 //! injects input through the QEMU monitor proves the full graphics+input path
 //! end to end. ESC exits with a verification summary; a hard timeout fails
 //! closed so a hang can never masquerade as success (plan §12.2).
+//!
+//! V0.10 (DESK10-001): Ring 3 apps live on the desktop too. `desktop <app>`
+//! starts one; a left click focuses (and raises) the window under the
+//! cursor; keys go to the focused window — to its owner's `gui_event` if a
+//! Ring 3 process owns it, to the desktop itself if the kernel does. ESC is
+//! always the desktop's. Apps get the CPU at the loop's safe point.
 
 use crate::gfx::compositor;
 use crate::input::{self, InputEvent};
@@ -61,9 +67,9 @@ struct DeskState {
     cursor: (isize, isize),
 }
 
-/// Enter the desktop loop. Never returns: exits QEMU on ESC (success) or the
-/// fail-closed timeout (failure).
-pub fn run() -> ! {
+/// Enter the desktop loop, optionally starting a Ring 3 app on it. Never
+/// returns: exits QEMU on ESC (success) or the fail-closed timeout (failure).
+pub fn run(app: Option<&str>) -> ! {
     serial_println!("[ITISYOU:MODE] desktop");
 
     let win = match compositor::create_window(0, WIN_X, WIN_Y, WIN_W, WIN_H, "ITISYOU Desktop") {
@@ -73,6 +79,17 @@ pub fn run() -> ! {
             qemu::exit(qemu::ExitCode::Failed);
         }
     };
+    // The desktop's own window has the focus until a click moves it.
+    compositor::set_focus(win);
+    if let Some(path) = app {
+        match crate::user::load_with(path, kernel_core::caps::CAP_LEGACY_FULL, None) {
+            Ok(p) => {
+                let pid = crate::proc::admit(p);
+                serial_println!("[ITISYOU:INFO] DESKTOP-APP pid={pid} path={path}");
+            }
+            Err(e) => serial_println!("[ITISYOU:INFO] DESKTOP-APP path={path} load_failed={e:?}"),
+        }
+    }
 
     let mut state = DeskState {
         cursor: compositor::cursor(),
@@ -117,6 +134,18 @@ pub fn run() -> ! {
                         compositor::composite();
                         qemu::exit(qemu::ExitCode::Success);
                     }
+                    // Route: a Ring 3 app with the focus gets the key.
+                    if let Some(a) = k.ascii {
+                        if let Some((to, owner)) = compositor::deliver_key(a) {
+                            serial_println!(
+                                "[ITISYOU:INFO] DESKTOP-ROUTE key={} win={to} owner={owner}",
+                                printable(a)
+                            );
+                            crate::proc::wake_gui(owner);
+                            continue;
+                        }
+                        serial_println!("[ITISYOU:INFO] DESKTOP-KEY {}", printable(a));
+                    }
                     state.keys += 1;
                     if let Some(a) = k.ascii {
                         state.last_key = a;
@@ -126,12 +155,29 @@ pub fn run() -> ! {
                 InputEvent::Key(_) => {}
                 InputEvent::Mouse(m) => {
                     state.mice += 1;
+                    // A left-button press is a click: focus what is under the
+                    // cursor.
+                    if m.left && !state.left {
+                        let clicked = compositor::click_at_cursor();
+                        if let Some((to, owner)) = clicked.focused {
+                            serial_println!("[ITISYOU:INFO] DESKTOP-FOCUS win={to} owner={owner}");
+                        }
+                        for pid in clicked.wake {
+                            if pid != 0 {
+                                crate::proc::wake_gui(pid);
+                            }
+                        }
+                    }
                     state.left = m.left;
                     dirty = true;
                 }
             }
         }
 
+        // A window came or went (an app started or exited): redraw too.
+        if compositor::take_dirty() {
+            dirty = true;
+        }
         if dirty {
             redraw(win, &state);
             compositor::composite();
@@ -151,6 +197,15 @@ pub fn run() -> ! {
         crate::sched::safe_point();
         // Sleep until the next interrupt (100 Hz timer or an input IRQ).
         x86_64::instructions::hlt();
+    }
+}
+
+/// A key as it is logged: the character, or `<special>`.
+fn printable(a: u8) -> char {
+    if a.is_ascii_graphic() {
+        a as char
+    } else {
+        '?'
     }
 }
 

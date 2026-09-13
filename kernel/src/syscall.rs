@@ -126,6 +126,10 @@ pub const SYS_SVC_REPORT: u64 = 39;
 /// Read one line from the console (V0.10). No capability: owning the
 /// console's input — which only the kernel grants — is the authority.
 pub const SYS_CONSOLE_READ: u64 = 40;
+/// Read the next event (focus, key, click) for a window the caller owns
+/// (V0.10). The Gui capability; one 8-byte record (`kernel_core::wm`), or
+/// the caller waits for one.
+pub const SYS_GUI_EVENT: u64 = 41;
 
 pub const ERR_NOSYS: u64 = u64::MAX;
 pub const ERR_FAULT: u64 = u64::MAX - 1;
@@ -451,6 +455,10 @@ extern "C" fn syscall_dispatch(a1: u64, a2: u64, a3: u64, nr: u64) -> u64 {
         },
         SYS_SLEEP => crate::proc::sys_sleep(a1),
         SYS_CONSOLE_READ => crate::console::sys_console_read(a1, a2),
+        SYS_GUI_EVENT => match require_any(CapabilityKind::Gui, rights::USE, "gui_event") {
+            Ok(()) => sys_gui_event(a1, a2, a3),
+            Err(e) => e,
+        },
         SYS_SVC_REPORT => match require_any(CapabilityKind::Service, rights::ADMIN, "svc_report") {
             Ok(()) => crate::services::sys_svc_report(a1, a2),
             Err(e) => e,
@@ -1333,7 +1341,7 @@ fn win_err(e: crate::gfx::compositor::WinError) -> u64 {
         NotFound => ERR_NOENT,
         NotOwner => ERR_PERM,
         OutOfBounds | BadSize => ERR_INVAL,
-        TooMany => ERR_AGAIN,
+        TooMany | NoMemory => ERR_AGAIN,
     }
 }
 
@@ -1408,15 +1416,45 @@ fn sys_gui_text(win: u64, ptr: u64, len: u64) -> u64 {
 }
 
 /// gui_present(win): the caller must own `win`; re-composites the scene.
+/// (Until V0.10 this checked only that the window existed, so any process
+/// with the Gui capability could force composites on anyone's window.)
 fn sys_gui_present(win: u64) -> u64 {
     let pid = CURRENT_PID.load(Ordering::SeqCst);
-    // Ownership check without mutation.
-    if crate::gfx::compositor::window_pixel(win as u32, 0, 0).is_none() {
+    let Ok(id) = u32::try_from(win) else {
         return ERR_NOENT;
+    };
+    if let Err(e) = crate::gfx::compositor::check_owner(pid, id) {
+        return win_err(e);
     }
-    let _ = pid;
     crate::gfx::compositor::composite();
     0
+}
+
+/// gui_event(win, buf, len): the next event for a window the caller owns, as
+/// an 8-byte record (V0.10, syscall 41). The buffer is checked before an
+/// event is taken, so none is lost to a bad pointer. With no event the caller
+/// waits (R4) and resumes with `ERR_AGAIN` for its wrapper to ask again.
+fn sys_gui_event(win: u64, buf: u64, len: u64) -> u64 {
+    use kernel_core::wm::RECORD_LEN;
+    if len < RECORD_LEN as u64 {
+        return ERR_INVAL;
+    }
+    if let Err(e) = validate_user_write(buf, RECORD_LEN as u64) {
+        return e;
+    }
+    let Ok(id) = u32::try_from(win) else {
+        return ERR_NOENT;
+    };
+    let pid = CURRENT_PID.load(Ordering::SeqCst);
+    match crate::gfx::compositor::pop_event(pid, id) {
+        Err(e) => win_err(e),
+        Ok(Some(record)) => copy_to_user(buf, &record).map_or_else(|e| e, |_| RECORD_LEN as u64),
+        Ok(None) => {
+            crate::proc::block_on_gui(pid);
+            transition::save_yield_context(ERR_AGAIN);
+            transition::abort_block();
+        }
+    }
 }
 
 /// write(fd, ptr, len) — fd 1 (serial stdout) only.

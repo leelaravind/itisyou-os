@@ -38,6 +38,8 @@ pub enum ProcState {
     },
     /// Waiting for a console line (V0.10, `console_read`).
     ConsoleWait,
+    /// Waiting for an event on one of its windows (V0.10, `gui_event`).
+    GuiWait,
     Exited(u64),
     Faulted {
         vector: u8,
@@ -598,6 +600,27 @@ fn wake_due_sleepers(table: &mut Table, now: u64) -> bool {
 pub fn block_on_console(pid: u64) {
     if let Some(s) = TABLE.lock().as_mut().and_then(|t| t.slots.get_mut(&pid)) {
         s.state = ProcState::ConsoleWait;
+    }
+}
+
+/// `gui_event` found no event: the caller waits for one (V0.10).
+pub fn block_on_gui(pid: u64) {
+    if let Some(s) = TABLE.lock().as_mut().and_then(|t| t.slots.get_mut(&pid)) {
+        s.state = ProcState::GuiWait;
+    }
+}
+
+/// A window of `pid` has a new event: make it runnable if it was waiting.
+pub fn wake_gui(pid: u64) {
+    let mut guard = TABLE.lock();
+    let Some(table) = guard.as_mut() else {
+        return;
+    };
+    if let Some(s) = table.slots.get_mut(&pid) {
+        if s.state == ProcState::GuiWait {
+            s.state = ProcState::Runnable;
+            table.runq.push_back(pid);
+        }
     }
 }
 

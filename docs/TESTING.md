@@ -162,10 +162,16 @@
     input to `/bin/sh`; the leg's forbids prove which shell read each line —
     the kernel never saw the shell's lines, and the shell never saw the ones
     after `exit` — and a process that does not own the input is refused.
-27. **Kernel copies into user memory** (V0.10, `uaccess-bios`): a program with
+27. **Desktop focus and input routing** (V0.10, `desktop-focus-bios`): a
+    persistent Ring 3 app on the live desktop; the QEMU monitor parks the
+    cursor in the corner (in steps small enough that QEMU's PS/2 queue sends
+    each move whole), moves it onto the app and clicks, types, clicks the
+    desktop's window and types again; the forbid on `GUIECHO-KEY b` states
+    that a key typed after the focus left the app never reached it.
+28. **Kernel copies into user memory** (V0.10, `uaccess-bios`): a program with
     no capability points `args` and `cap_list` at its own read-only code and
     data; the kernel must refuse (`ERR_FAULT`) — before SEC10-001 it panicked.
-28. **Negative cases** (grown alongside subsystems): intentional panic,
+29. **Negative cases** (grown alongside subsystems): intentional panic,
     allocator exhaustion, malformed inputs, timeout classification.
 
 The harness gained `--audio`/`--audio-out` (AC97 → WAV capture, with a non-
