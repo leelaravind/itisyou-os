@@ -9,7 +9,18 @@ https://github.com/leelaravind/itisyou-os (private)
 
 ## Where things stand
 
-**FINAL 15:37 — read first.** The repository is PRIVATE again (15:37:14).
+**UPDATE 16:05 — second public window (owner's 1-hour timer, deadline 16:43).**
+The flaky leg is FIXED and `main` is GREEN: `net-tcp-bios` required an exact
+`owner_exit` line that only appears if the probe exits inside the 1 s
+TIME-WAIT; it now asserts the property itself (no connection left owned by
+the exited program) — commit `0ead17e`, CI `34763748194` all four jobs green.
+V0.10: `v0.10/integration` merged `main` and moved to `0.10.0-dev` (`09584ad`);
+draft PR #2 (not for merge — V0.10 is not complete) ran CI `34764042157`:
+all four jobs green on Linux (program arguments, ITFS reclamation, task stack
+guards on top of v0.9.0). Signing keys moved offline (see Keys below). The
+repository goes PRIVATE again at the end of this window.
+
+**FINAL 15:37 (superseded by the update above).** The repository is PRIVATE again (15:37:14).
 CI on `8fafda5` (`34762496909`) was green. CI on the docs-only commit `4964cc1`
 (`34762696403`) FAILED in one step, "QEMU TCP stream against the host OS TCP
 stack (BIOS)" (`net-tcp-bios`), after that leg had passed on `f06673e`,
