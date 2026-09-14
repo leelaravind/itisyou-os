@@ -53,7 +53,7 @@ use kernel_core::{
 /// Default base seed (override with `ITISYOU_FUZZ_SEED`).
 const BASE_SEED: u64 = 0x1715_1000_5EED_0005;
 /// Iterations of a cost-1 target in the plain `cargo test` pass.
-const FAST: u64 = 3_000;
+const FAST: u64 = 10_000;
 /// Iterations per target in the `full_*` tests unless `ITISYOU_FUZZ_ITERS`
 /// says otherwise.
 const FULL_DEFAULT: u64 = 1_000_000;
