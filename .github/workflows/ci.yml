@@ -20,6 +20,10 @@ jobs:
       - name: CI parity with the local matrix
         run: python3 scripts/check-ci-parity.py
 
+      # V1-SEC-005: every unsafe site is covered by docs/UNSAFE_INVENTORY.md.
+      - name: Unsafe inventory covers every unsafe site
+        run: python3 scripts/check-unsafe-inventory.py
+
       # rust-toolchain.toml pins the exact nightly + components + target.
       - name: Install pinned Rust toolchain
         run: rustup show

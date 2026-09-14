@@ -19,6 +19,8 @@ Stage 'doctor' { & "$root\scripts\doctor.ps1" }
 Stage 'format' { cargo fmt --all -- --check }
 # V1-REL-006: CI must assert exactly what the local matrix asserts.
 Stage 'ci-parity' { python "$root\scripts\check-ci-parity.py" }
+# V1-SEC-005: every unsafe in the kernel is in docs/UNSAFE_INVENTORY.md.
+Stage 'unsafe-inventory' { python "$root\scripts\check-unsafe-inventory.py" }
 # Host and kernel are linted separately on purpose (Cargo.toml note).
 Stage 'clippy-host' { cargo clippy --all-targets -- -D warnings }
 Stage 'clippy-kernel' { cargo clippy -p itisyou-kernel -- -D warnings }
