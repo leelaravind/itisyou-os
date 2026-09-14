@@ -167,7 +167,12 @@ pub fn parse(list: &str) -> Result<u64, CapParseError> {
 /// `<a>` or `<a>-<b>`: plain decimal channel numbers, `a <= b < IPC_CHANNELS`.
 fn parse_channels(range: &str) -> Result<u64, CapParseError> {
     let num = |s: &str| -> Result<u64, CapParseError> {
-        if s.is_empty() || s.len() > 2 || !s.bytes().all(|b| b.is_ascii_digit()) {
+        // Plain decimal with no leading zero: one spelling per channel.
+        if s.is_empty()
+            || s.len() > 2
+            || !s.bytes().all(|b| b.is_ascii_digit())
+            || (s.len() > 1 && s.starts_with('0'))
+        {
             return Err(CapParseError::BadChannels);
         }
         let n = s.bytes().fold(0u64, |n, b| n * 10 + u64::from(b - b'0'));
@@ -225,6 +230,34 @@ pub fn names(caps: u64) -> impl Iterator<Item = &'static str> {
         .map(|(n, _)| *n)
 }
 
+/// A capability set written as a list [`parse`] reads back to the same bits
+/// (V1.0): the names, with `ipc` spelled `ipc:<a>-<b>` unless its channels
+/// are exactly the defaults. Channel bits that are not one range (no parsed
+/// list produces them) are written as plain `ipc`.
+pub struct Describe(pub u64);
+
+impl core::fmt::Display for Describe {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let mut first = true;
+        for (name, bit) in NAMES {
+            if self.0 & bit == 0 {
+                continue;
+            }
+            if !first {
+                f.write_str(",")?;
+            }
+            first = false;
+            match (*bit == CAP_IPC, ipc_channels(self.0)) {
+                (true, Some((lo, hi))) if self.0 & CAP_IPC_CHANNELS_ALL != CAP_IPC_DEFAULT => {
+                    write!(f, "ipc:{lo}-{hi}")?
+                }
+                _ => f.write_str(name)?,
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Delegation rule: a child receives what it requested intersected with what
 /// the parent actually holds. Never amplification, and never the
 /// console-only bits (V0.11).
@@ -275,6 +308,8 @@ mod tests {
             "ipc:a",
             "ipc:+1",
             "ipc:007",
+            "ipc:07",
+            "ipc:2-03",
             "ipc:2,ipc:6",
             "ipc: 2",
             "ipc:0-8",
@@ -297,14 +332,23 @@ mod tests {
             ipc_channels(delegate(CAP_LEGACY_FULL, parse("ipc:6-7").unwrap())),
             None
         );
-        // Every single-range grant round-trips; every other channel set is
-        // refused by the parser or yields no IPC.
+        // Every single-range grant round-trips, also through `Describe`;
+        // every other channel set is refused by the parser or yields no IPC.
         for lo in 0..IPC_CHANNELS {
             for hi in lo..IPC_CHANNELS {
-                let caps = parse(&format!("ipc:{lo}-{hi}")).unwrap();
+                let caps = parse(&format!("ipc:{lo}-{hi},fs_read")).unwrap();
                 assert_eq!(ipc_channels(caps), Some((lo, hi)));
+                assert_eq!(parse(&format!("{}", Describe(caps))), Ok(caps));
             }
         }
+        assert_eq!(
+            format!("{}", Describe(parse("spawn,ipc").unwrap())),
+            "spawn,ipc"
+        );
+        assert_eq!(
+            format!("{}", Describe(parse("ipc:6-7").unwrap())),
+            "ipc:6-7"
+        );
     }
 
     #[test]

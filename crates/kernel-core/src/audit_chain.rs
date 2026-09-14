@@ -211,6 +211,12 @@ fn decimal(text: &str) -> Option<u64> {
     if text.is_empty() || text.len() > 20 || !text.bytes().all(|b| b.is_ascii_digit()) {
         return None;
     }
+    // One spelling per number (V1.0, found by the decoder fuzzer): `007`
+    // and `7` would otherwise be two headers for the same trail, and the
+    // header is outside the chain. The kernel never writes a leading zero.
+    if text.len() > 1 && text.starts_with('0') {
+        return None;
+    }
     text.parse().ok()
 }
 
@@ -539,9 +545,18 @@ mod tests {
             format!("itisyou-audit v2 boot=18446744073709551616 count=0 base={h} head={h}"),
             format!("itisyou-audit v1 boot=1 count=0 base={h} head={h}"),
             format!("itisyou-audit v2boot=1 count=0 base={h} head={h}"),
+            // V1.0 (found by the decoder fuzzer): one spelling per number.
+            format!("itisyou-audit v2 boot=01 count=0 base={h} head={h}"),
+            format!("itisyou-audit v2 boot=1 count=00 base={h} head={h}"),
+            format!("itisyou-audit v1 boot=007 count=2 head={h}"),
         ] {
             assert_eq!(parse_header(&bad), None, "{bad:?}");
         }
+        // Zero itself is still a number.
+        assert!(parse_header(&format!(
+            "itisyou-audit v2 boot=0 count=0 base={h} head={h}"
+        ))
+        .is_some());
     }
 
     fn escaped(text: &str) -> String {

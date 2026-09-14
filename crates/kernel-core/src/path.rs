@@ -14,7 +14,15 @@ pub enum PathError {
     EscapesRoot,
     /// Component longer than the supported maximum (defensive bound).
     ComponentTooLong,
+    /// More than [`MAX_DEPTH`] components deep at some point of the path
+    /// (V1.0, found by the decoder fuzzer): [`normalized`] follows at most
+    /// that many, so a deeper path would normalize to a different file than
+    /// it names.
+    TooDeep,
 }
+
+/// Deepest a path may go at any point.
+pub const MAX_DEPTH: usize = 32;
 
 pub const MAX_COMPONENT: usize = 100;
 
@@ -44,6 +52,9 @@ pub fn validate(path: &str) -> Result<(), PathError> {
                     return Err(PathError::ComponentTooLong);
                 }
                 depth += 1;
+                if depth > MAX_DEPTH as i32 {
+                    return Err(PathError::TooDeep);
+                }
             }
         }
     }
@@ -57,7 +68,6 @@ pub fn validate(path: &str) -> Result<(), PathError> {
 pub fn normalized(path: &str) -> impl Iterator<Item = &str> {
     // Stack of component indices implemented over the input using a small
     // fixed array of slices (max depth bound keeps this allocation-free).
-    const MAX_DEPTH: usize = 32;
     let mut stack: [&str; MAX_DEPTH] = [""; MAX_DEPTH];
     let mut len = 0usize;
     for comp in path.split('/') {
@@ -147,6 +157,41 @@ mod tests {
     fn rejects_oversized_component() {
         let long = format!("/{}", "x".repeat(MAX_COMPONENT + 1));
         assert_eq!(validate(&long), Err(PathError::ComponentTooLong));
+    }
+
+    #[test]
+    fn rejects_paths_deeper_than_normalization_follows() {
+        // V1.0 (found by the decoder fuzzer): `normalized` keeps at most
+        // MAX_DEPTH components, so a path that went deeper normalized to a
+        // different file than it names - `/evil/c2/../c32/y` plus 32 `..` and
+        // `/sandbox/secret` came out as `/sandbox/secret`, though it names
+        // `/evil/sandbox/secret`.
+        let deep: String = (1..=MAX_DEPTH).map(|i| format!("/c{i}")).collect();
+        assert_eq!(validate(&deep), Ok(()));
+        assert_eq!(normalized(&deep).count(), MAX_DEPTH);
+        let deeper = format!("{deep}/y");
+        assert_eq!(validate(&deeper), Err(PathError::TooDeep));
+        // The fuzzer's case: 33 deep at `/y`, then back up.
+        let tricky = format!(
+            "/evil{}/y{}/sandbox/secret",
+            &deep[3..],
+            "/..".repeat(MAX_DEPTH)
+        );
+        assert_eq!(validate(&tricky), Err(PathError::TooDeep));
+        // Exactly MAX_DEPTH deep, then back up: allowed, and normalization
+        // follows it correctly.
+        let edge = format!(
+            "/evil{}{}/sandbox/secret",
+            &deep[3..],
+            "/..".repeat(MAX_DEPTH)
+        );
+        assert_eq!(validate(&edge), Ok(()));
+        assert_eq!(normalized(&edge).collect::<Vec<_>>(), ["sandbox", "secret"]);
+        // Depth counts where the path goes, not its length: going up and
+        // down again stays within bounds.
+        let wandering = "/a/..".repeat(100) + "/b";
+        assert_eq!(validate(&wandering), Ok(()));
+        assert_eq!(normalized(&wandering).collect::<Vec<_>>(), ["b"]);
     }
 
     #[test]

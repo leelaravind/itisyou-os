@@ -1670,7 +1670,18 @@ fn t_caps(mode: Mode) {
         mode,
         || {
             let all = CAP_NAMES.join(",");
-            text_seeds(&["", "gui", "gui,fs_read", " spawn , ipc ", &all, "ipc,ipc"])
+            text_seeds(&[
+                "",
+                "gui",
+                "gui,fs_read",
+                " spawn , ipc ",
+                &all,
+                "ipc,ipc",
+                "ipc:6-7,fs_read",
+                "ipc:2-3",
+                "ipc:0-7,service",
+                "ipc:2,ipc:3",
+            ])
         },
         |seeds, rng, ctx| {
             let s = gen_text(rng, seeds, CAPS_DICT, 200);
@@ -1681,10 +1692,15 @@ fn t_caps(mode: Mode) {
             match caps::parse(&s) {
                 Ok(bits) => {
                     assert_eq!(bits & !caps::CAP_ALL_KNOWN, 0);
-                    let names: Vec<&str> = caps::names(bits).collect();
-                    assert_eq!(caps::parse(&names.join(",")), Ok(bits));
-                    for n in &names {
-                        assert_eq!(caps::parse(n).map(caps::name_of), Ok(*n));
+                    // V1.0 (ADR-0025): every parsed set is written back as a
+                    // list that parses to the same bits, channels included.
+                    let written = format!("{}", caps::Describe(bits));
+                    assert_eq!(caps::parse(&written), Ok(bits), "{written}");
+                    for n in caps::names(bits).filter(|&n| n != "ipc") {
+                        assert_eq!(caps::parse(n).map(caps::name_of), Ok(n));
+                    }
+                    if bits & caps::CAP_IPC != 0 {
+                        assert!(caps::ipc_channels(bits).is_some());
                     }
                     let d = caps::delegate(parent, bits);
                     assert_eq!(d & !(parent & bits), 0, "delegation amplified");
