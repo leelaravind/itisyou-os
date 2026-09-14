@@ -207,6 +207,8 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
             "user-soak",
             "-p",
             "user-sysfuzz",
+            "-p",
+            "user-fault-probe",
         ])
         .arg("--target-dir")
         .arg(&target_dir)
@@ -277,6 +279,7 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
         ("user-flakyd", "bin/flakyd"),
         ("user-soak", "bin/soak"),
         ("user-sysfuzz", "bin/sysfuzz"),
+        ("user-fault-probe", "bin/fault-probe"),
     ];
     entries.push(("bin/".to_string(), Vec::new(), true));
     entries.push(("sbin/".to_string(), Vec::new(), true));

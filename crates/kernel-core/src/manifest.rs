@@ -37,7 +37,9 @@ pub enum ManifestError {
     UnknownCapability,
 }
 
-fn valid_name(s: &str) -> bool {
+/// A valid application name: 1-16 of `a-z`, `0-9` and `-`, not starting
+/// with `-`. Also what the package store and `pkg launch` accept (V1.0).
+pub fn valid_name(s: &str) -> bool {
     !s.is_empty()
         && s.len() <= MAX_NAME_LEN
         && s.bytes()

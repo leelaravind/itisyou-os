@@ -284,6 +284,57 @@ Remove-Item $trustDisk -ErrorAction SilentlyContinue
     '--timeout-secs', '240', '--label', 'trust-bios')
 Remove-Item $trustDisk -ErrorAction SilentlyContinue
 
+Write-Output '=== QEMU V1.0: a hostile package store is refused, not obeyed (BIOS) ==='
+# SEC1-004/005 (the V1-SEC-002 review). `store import` plants what only a
+# disk edited outside the OS could hold. (1) The hello-app package - signed
+# by the published test key, whose scope is `hello-` - filed as
+# `other-app.1.pkg`: `pkg launch other-app` must refuse (name_mismatch), where
+# before it ran the package as other-app. (2) A package filed as `...1.pkg`:
+# before, `pkg list` showed an app `..` whose sandbox `/apps/..` was `/`; now
+# the name means nothing and `pkg launch ..` is refused. (3) A commit marker
+# for version 4294967295: the next `pkg install` must refuse (version_space)
+# rather than overflow and panic the kernel. (4) `hello-app.+2.ok`, a second
+# spelling of version 2, is ignored: the install that follows is v1, and it
+# launches.
+$hostileDisk = Join-Path $env:ITISYOU_SCRATCH 'itisyou-hostile-store.img'
+Remove-Item $hostileDisk -ErrorAction SilentlyContinue
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $hostileDisk,
+    '--expect', 'B190',
+    '--send', 'store import /pkgs/hello-app-1.itpkg other-app.1.pkg',
+    '--send', 'store put other-app.1.ok ok',
+    '--send', 'store import /pkgs/hello-app-1.itpkg ...1.pkg',
+    '--send', 'store put ...1.ok ok',
+    '--send', 'pkg list',
+    '--send', 'pkg launch other-app',
+    '--send', 'pkg launch ..',
+    '--send', 'store put hello-app.4294967295.ok ok',
+    '--send', 'pkg install /pkgs/hello-app-1.itpkg',
+    '--send', 'store rm hello-app.4294967295.ok',
+    '--send', 'store put hello-app.+2.ok ok',
+    '--send', 'pkg install /pkgs/hello-app-1.itpkg',
+    '--send', 'pkg launch hello-app',
+    '--send', 'shutdown',
+    '--require-order', 'store: import path=/pkgs/hello-app-1.itpkg name=other-app.1.pkg bytes=',
+    '--require-order', '  other-app: active=Some(1)',
+    '--require-order', 'launch name=other-app v=1 result=refused reason=name_mismatch manifest_name=hello-app',
+    '--require-order', 'pkg: launch other-app: BadPackage',
+    '--require-order', 'pkg: launch ..: NotInstalled',
+    '--require-order', 'stage name=hello-app result=refused reason=version_space',
+    '--require-order', 'pkg: install refused: Storage',
+    '--require-order', 'install name=hello-app v=1 result=ok',
+    '--require-order', 'HELLO-APP-OK',
+    # (No double quotes in a marker: Windows PowerShell drops them on the
+    # way to a native program.)
+    '--require', 'action=pkg_launch cap=0x0 result=denied',
+    '--require', 'reason=bad_name',
+    '--require', 'action=pkg_stage cap=0x0 result=denied',
+    '--forbid', '  ..: active=',
+    '--forbid', 'launch name=other-app v=1 caps=',
+    '--forbid', 'launch name=.. ',
+    '--timeout-secs', '240', '--label', 'pkg-store-hostile-bios')
+Remove-Item $hostileDisk -ErrorAction SilentlyContinue
+
 Write-Output '=== QEMU long-running background services (BIOS) ==='
 # V0.8 persistent services: `tickd` and `flapd` are ordinary Ring 3 processes
 # started at boot with exactly the capabilities they declare (tickd IPC-only,
@@ -558,6 +609,77 @@ Write-Output '=== QEMU hardening: SMEP/SMAP/UMIP, W^X, stack guard (BIOS) ==='
     '--forbid', 'HARDEN-LEAK-SGDT',
     '--forbid', 'STACKGUARD-LEAK',
     '--timeout-secs', '240', '--label', 'harden-bios')
+
+Write-Output '=== QEMU V1.0: every CPU exception from Ring 3 is contained (BIOS) ==='
+# SEC1-001/002/003 (the V1-SEC-002 review). Before V1.0 only #BP, #UD, #GP,
+# #PF and #DF had IDT gates: a `div` by zero, `int1` or a TF single step from
+# a program with no capabilities found a gate that was not present, became a
+# double fault and panicked the kernel. Now each ends only the program (the
+# runner fails the leg on a kernel panic), and the system goes on - a
+# program still runs afterwards. `stack` pushes through a non-canonical
+# stack pointer: #SS on hardware, #GP under QEMU TCG, contained either way.
+# x87 and SSE instructions fault because the FPU is off for programs (its
+# state was never switched between them, SEC1-002), and after a syscall the
+# argument and scratch registers come back zero rather than holding what
+# the kernel left in them (SEC1-003).
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B210',
+    '--send', 'run /bin/fault-probe - -- div0',
+    '--send', 'run /bin/fault-probe - -- int1',
+    '--send', 'run /bin/fault-probe - -- step',
+    '--send', 'run /bin/fault-probe - -- stack',
+    '--send', 'run /bin/fault-probe - -- x87',
+    '--send', 'run /bin/fault-probe - -- sse',
+    '--send', 'run /bin/fault-probe - -- regs',
+    '--send', 'run /bin/child',
+    '--send', 'shutdown',
+    '--require', 'cpu_protection smep=true smap=true umip=true user_fpu=off',
+    '--require-order', 'FAULTPROBE-ARMED mode=div0',
+    '--require-order', 'exception=divide_error vector=0 cs_rpl=3',
+    '--require-order', 'run: /bin/fault-probe: Fault { vector: 0,',
+    '--require-order', 'FAULTPROBE-ARMED mode=int1',
+    '--require-order', 'exception=debug vector=1 cs_rpl=3',
+    '--require-order', 'run: /bin/fault-probe: Fault { vector: 1,',
+    '--require-order', 'FAULTPROBE-ARMED mode=step',
+    '--require-order', 'exception=debug vector=1 cs_rpl=3',
+    '--require-order', 'run: /bin/fault-probe: Fault { vector: 1,',
+    '--require-order', 'FAULTPROBE-ARMED mode=stack',
+    '--require-order', 'run: /bin/fault-probe: Fault { vector: ',
+    '--require-order', 'FAULTPROBE-ARMED mode=x87',
+    '--require-order', 'exception=device_not_available vector=7 cs_rpl=3',
+    '--require-order', 'run: /bin/fault-probe: Fault { vector: 7,',
+    '--require-order', 'FAULTPROBE-ARMED mode=sse',
+    '--require-order', 'exception=invalid_opcode cs_rpl=3',
+    '--require-order', 'run: /bin/fault-probe: Fault { vector: 6,',
+    '--require-order', 'FAULTPROBE-REGS clear=true checked=12',
+    '--require-order', 'run: /bin/child: Exit(7)',
+    '--forbid', 'FAULTPROBE-UNCONTAINED',
+    '--forbid', 'FAULTPROBE-REGS clear=false',
+    '--timeout-secs', '180', '--label', 'fault-contain-bios')
+
+Write-Output '=== QEMU V1.0: CPU exceptions contained, FPU off (UEFI) ==='
+# The same under OVMF, whose handoff leaves CR4.OSFXSR set: the kernel must
+# clear it, or SSE would run - and leak - in Ring 3.
+& $runner @('--image', 'target/images/itisyou-kernel-uefi.img', '--uefi',
+    '--expect', 'B210',
+    '--send', 'run /bin/fault-probe - -- div0',
+    '--send', 'run /bin/fault-probe - -- x87',
+    '--send', 'run /bin/fault-probe - -- sse',
+    '--send', 'run /bin/fault-probe - -- regs',
+    '--send', 'run /bin/child',
+    '--send', 'shutdown',
+    '--require', 'cpu_protection smep=true smap=true umip=true user_fpu=off',
+    '--require-order', 'FAULTPROBE-ARMED mode=div0',
+    '--require-order', 'run: /bin/fault-probe: Fault { vector: 0,',
+    '--require-order', 'FAULTPROBE-ARMED mode=x87',
+    '--require-order', 'run: /bin/fault-probe: Fault { vector: 7,',
+    '--require-order', 'FAULTPROBE-ARMED mode=sse',
+    '--require-order', 'run: /bin/fault-probe: Fault { vector: 6,',
+    '--require-order', 'FAULTPROBE-REGS clear=true checked=12',
+    '--require-order', 'run: /bin/child: Exit(7)',
+    '--forbid', 'FAULTPROBE-UNCONTAINED',
+    '--forbid', 'FAULTPROBE-REGS clear=false',
+    '--timeout-secs', '240', '--label', 'fault-contain-uefi')
 
 Write-Output '=== QEMU program arguments: console and parent-to-child (BIOS) ==='
 # V0.10 PROC10-001. Every process carries an immutable argument block (at most

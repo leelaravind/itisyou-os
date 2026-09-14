@@ -1,0 +1,17 @@
+cargo-features = ["per-package-target"]
+
+[package]
+name = "user-fault-probe"
+version.workspace = true
+edition.workspace = true
+description = "/bin/fault-probe: CPU exceptions from Ring 3 end the program, not the kernel (V1.0)."
+forced-target = "x86_64-unknown-none"
+
+[dependencies]
+ulib = { path = "../ulib" }
+
+[[bin]]
+name = "user-fault-probe"
+path = "src/main.rs"
+test = false
+bench = false

@@ -391,6 +391,41 @@ jobs:
             --timeout-secs 300 --label trust-bios
           rm -f artifacts/trust-test.img
 
+      - name: QEMU V1.0 a hostile package store is refused (BIOS)
+        run: |
+          # SEC1-004/005: a package filed under another app's name, an app
+          # named `..`, a version 4294967295 and a signed version spelling.
+          rm -f artifacts/hostile-store.img
+          mkdir -p artifacts
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
+            --nvme-persist artifacts/hostile-store.img --expect B190 \
+            --send "store import /pkgs/hello-app-1.itpkg other-app.1.pkg" \
+            --send "store put other-app.1.ok ok" \
+            --send "store import /pkgs/hello-app-1.itpkg ...1.pkg" \
+            --send "store put ...1.ok ok" \
+            --send "pkg list" --send "pkg launch other-app" --send "pkg launch .." \
+            --send "store put hello-app.4294967295.ok ok" \
+            --send "pkg install /pkgs/hello-app-1.itpkg" \
+            --send "store rm hello-app.4294967295.ok" \
+            --send "store put hello-app.+2.ok ok" \
+            --send "pkg install /pkgs/hello-app-1.itpkg" \
+            --send "pkg launch hello-app" --send "shutdown" \
+            --require-order "store: import path=/pkgs/hello-app-1.itpkg name=other-app.1.pkg bytes=" \
+            --require-order "  other-app: active=Some(1)" \
+            --require-order "launch name=other-app v=1 result=refused reason=name_mismatch manifest_name=hello-app" \
+            --require-order "pkg: launch other-app: BadPackage" \
+            --require-order "pkg: launch ..: NotInstalled" \
+            --require-order "stage name=hello-app result=refused reason=version_space" \
+            --require-order "pkg: install refused: Storage" \
+            --require-order "install name=hello-app v=1 result=ok" \
+            --require-order "HELLO-APP-OK" \
+            --require "action=pkg_launch cap=0x0 result=denied" --require "reason=bad_name" \
+            --require "action=pkg_stage cap=0x0 result=denied" \
+            --forbid "  ..: active=" --forbid "launch name=other-app v=1 caps=" \
+            --forbid "launch name=.. " \
+            --timeout-secs 300 --label pkg-store-hostile-bios
+          rm -f artifacts/hostile-store.img
+
       - name: QEMU kernel stack guard (BIOS)
         run: |
           cargo run -q -p qemu-runner -- \
@@ -760,6 +795,60 @@ jobs:
           # not writable, and a kernel address is unreadable. The two
           # --forbid assertions state the refusals, which print no line.
           cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --expect B210             --send "harden"             --send "run /bin/init"             --send "run /bin/wx-test"             --send "run /bin/harden-probe"             --send "run /bin/stack-guard-probe"             --send "run /bin/pf-test"             --send "shutdown"             --require "cpu_protection smep=true smap=true umip=true"             --require "harden: smep=true smap=true umip=true"             --require "RING3-DONE"             --require "load failed: WxSegment"             --require "HARDEN-PROBE-SGDT"             --require "vector=13 addr=0x0 contained=true"             --require "STACKGUARD-WROTE page=15"             --require "vector=14 addr=0x7ffffdf000 contained=true"             --require "addr=0xffff8000dead0000 contained=true"             --forbid "HARDEN-LEAK-SGDT"             --forbid "STACKGUARD-LEAK"             --timeout-secs 300 --label harden-bios
+
+      - name: QEMU V1.0 every CPU exception from Ring 3 is contained (BIOS)
+        run: |
+          # SEC1-001/002/003: #DE, #DB (int1, TF), a non-canonical stack push,
+          # x87 and SSE each end only the program; after a syscall the
+          # scratch registers come back zero. The runner fails on a panic.
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
+            --expect B210 \
+            --send "run /bin/fault-probe - -- div0" --send "run /bin/fault-probe - -- int1" \
+            --send "run /bin/fault-probe - -- step" --send "run /bin/fault-probe - -- stack" \
+            --send "run /bin/fault-probe - -- x87" --send "run /bin/fault-probe - -- sse" \
+            --send "run /bin/fault-probe - -- regs" --send "run /bin/child" --send "shutdown" \
+            --require "cpu_protection smep=true smap=true umip=true user_fpu=off" \
+            --require-order "FAULTPROBE-ARMED mode=div0" \
+            --require-order "exception=divide_error vector=0 cs_rpl=3" \
+            --require-order "run: /bin/fault-probe: Fault { vector: 0," \
+            --require-order "FAULTPROBE-ARMED mode=int1" \
+            --require-order "exception=debug vector=1 cs_rpl=3" \
+            --require-order "run: /bin/fault-probe: Fault { vector: 1," \
+            --require-order "FAULTPROBE-ARMED mode=step" \
+            --require-order "exception=debug vector=1 cs_rpl=3" \
+            --require-order "run: /bin/fault-probe: Fault { vector: 1," \
+            --require-order "FAULTPROBE-ARMED mode=stack" \
+            --require-order "run: /bin/fault-probe: Fault { vector: " \
+            --require-order "FAULTPROBE-ARMED mode=x87" \
+            --require-order "exception=device_not_available vector=7 cs_rpl=3" \
+            --require-order "run: /bin/fault-probe: Fault { vector: 7," \
+            --require-order "FAULTPROBE-ARMED mode=sse" \
+            --require-order "exception=invalid_opcode cs_rpl=3" \
+            --require-order "run: /bin/fault-probe: Fault { vector: 6," \
+            --require-order "FAULTPROBE-REGS clear=true checked=12" \
+            --require-order "run: /bin/child: Exit(7)" \
+            --forbid "FAULTPROBE-UNCONTAINED" --forbid "FAULTPROBE-REGS clear=false" \
+            --timeout-secs 240 --label fault-contain-bios
+
+      - name: QEMU V1.0 CPU exceptions contained, FPU off (UEFI)
+        run: |
+          # OVMF leaves CR4.OSFXSR set; the kernel must clear it.
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-uefi.img --uefi \
+            --expect B210 \
+            --send "run /bin/fault-probe - -- div0" --send "run /bin/fault-probe - -- x87" \
+            --send "run /bin/fault-probe - -- sse" --send "run /bin/fault-probe - -- regs" \
+            --send "run /bin/child" --send "shutdown" \
+            --require "cpu_protection smep=true smap=true umip=true user_fpu=off" \
+            --require-order "FAULTPROBE-ARMED mode=div0" \
+            --require-order "run: /bin/fault-probe: Fault { vector: 0," \
+            --require-order "FAULTPROBE-ARMED mode=x87" \
+            --require-order "run: /bin/fault-probe: Fault { vector: 7," \
+            --require-order "FAULTPROBE-ARMED mode=sse" \
+            --require-order "run: /bin/fault-probe: Fault { vector: 6," \
+            --require-order "FAULTPROBE-REGS clear=true checked=12" \
+            --require-order "run: /bin/child: Exit(7)" \
+            --forbid "FAULTPROBE-UNCONTAINED" --forbid "FAULTPROBE-REGS clear=false" \
+            --timeout-secs 300 --label fault-contain-uefi
 
       - name: QEMU program arguments (console and parent-to-child)
         run: |

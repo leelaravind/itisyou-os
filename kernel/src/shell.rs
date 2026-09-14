@@ -614,7 +614,7 @@ fn cmd_irq() {
 fn cmd_store(args: &[&str]) {
     let Some(&sub) = args.first() else {
         crate::serial_println!(
-            "store: subcommands: ls | put <name> <text> | cat <name> | rm <name> | df"
+            "store: subcommands: ls | put <name> <text> | import <path> <name> | cat <name> | rm <name> | df"
         );
         return;
     };
@@ -671,6 +671,27 @@ fn cmd_store(args: &[&str]) {
                 None => crate::serial_println!("store: no persistent storage attached"),
             }
         }
+        // V1.0: copy a boot-image file into the store byte for byte - how a
+        // leg plants a store only a disk edited outside the OS could hold
+        // (a package filed under another app's name). Trusted console, as
+        // `put` is.
+        ("import", Some(path)) => match (args.get(2), crate::fs::read(path)) {
+            (Some(name), Ok(data)) => {
+                let data = data.to_vec();
+                match crate::with_persistent_store(|fs| fs.write(name, &data)) {
+                    Some(Ok(())) => crate::serial_println!(
+                        "store: import path={path} name={name} bytes={}",
+                        data.len()
+                    ),
+                    Some(Err(e)) => {
+                        crate::serial_println!("store: import name={name} failed: {e:?}")
+                    }
+                    None => crate::serial_println!("store: no persistent storage attached"),
+                }
+            }
+            (None, _) => crate::serial_println!("store: import <path> <name>"),
+            (_, Err(e)) => crate::serial_println!("store: import path={path} failed: {e:?}"),
+        },
         ("cat", Some(name)) => match crate::with_persistent_store(|fs| fs.read(name)) {
             Some(Ok(data)) => match core::str::from_utf8(&data) {
                 // A program may have written the contents: one line, no
@@ -689,7 +710,7 @@ fn cmd_store(args: &[&str]) {
             None => crate::serial_println!("store: no persistent storage attached"),
         },
         _ => crate::serial_println!(
-            "store: subcommands: ls | put <name> <text> | cat <name> | rm <name> | df"
+            "store: subcommands: ls | put <name> <text> | import <path> <name> | cat <name> | rm <name> | df"
         ),
     }
 }

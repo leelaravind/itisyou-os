@@ -250,11 +250,15 @@ pub fn stage(fs: &mut FileSystem, pkg_bytes: &[u8]) -> Result<(String, u32), Pla
     require_trusted(&parsed, "pkg_verify_signature")?;
     let app = parsed.manifest.name.to_string();
     let st = state(fs, &app);
-    let next = st
-        .active
-        .max(st.orphan_staged)
-        .max(st.dangling_ok)
-        .map_or(1, |v| v + 1);
+    let Some(next) = update::next_version(&st) else {
+        // SEC1-005: the store already holds version 4294967295 (only a disk
+        // edited outside the OS can): there is no next one.
+        crate::serial_println!(
+            "[ITISYOU:PKG] stage name={app} result=refused reason=version_space"
+        );
+        crate::audit::denied_reason("pkg_stage", 0, "version_space");
+        return Err(PlatformError::Storage);
+    };
     if let Err(e) = fs.create(&format!("{app}.{next}.pkg"), pkg_bytes) {
         crate::serial_println!(
             "[ITISYOU:PKG] stage name={app} v={next} result=storage_error {e:?}"
@@ -283,6 +287,9 @@ pub fn install(fs: &mut FileSystem, pkg_bytes: &[u8]) -> Result<(String, u32), P
 /// marker (one atomic superblock transition). The demoted package file is
 /// kept as forensic evidence.
 pub fn rollback(fs: &mut FileSystem, app: &str) -> Result<(u32, u32), PlatformError> {
+    if !kernel_core::manifest::valid_name(app) {
+        return Err(PlatformError::NotInstalled);
+    }
     let st = state(fs, app);
     let active = st.active.ok_or(PlatformError::NotInstalled)?;
     let previous = st.previous.ok_or(PlatformError::NoPrevious)?;
@@ -364,6 +371,12 @@ pub fn prepare_launch(
     app: &str,
     launcher_caps: u64,
 ) -> Result<Prepared, PlatformError> {
+    // The name is the operator's, but it builds store names, the sandbox and
+    // the process path: a manifest name or nothing (SEC1-004).
+    if !kernel_core::manifest::valid_name(app) {
+        crate::audit::denied_reason("pkg_launch", 0, "bad_name");
+        return Err(PlatformError::NotInstalled);
+    }
     let st = state(fs, app);
     let v = st.active.ok_or(PlatformError::NotInstalled)?;
     let bytes = fs.read(&format!("{app}.{v}.pkg")).map_err(fs_err)?;
@@ -376,6 +389,21 @@ pub fn prepare_launch(
     // package that was trustworthy when installed is not automatically
     // trustworthy when run.
     require_trusted(&parsed, "pkg_launch_signature")?;
+    // V1.0 (SEC1-004, the V1-SEC-002 review): the signature vouches for the
+    // name the package gives ITSELF, and a key's scope is checked against
+    // that name - so the package stored as `<app>` must be that app. Before,
+    // a disk could hold a package signed for `hello-x` (in the published test
+    // key's `hello-` scope) as `other-app.1.pkg`, and `pkg launch other-app`
+    // ran it as other-app: the scope did not apply at launch, and the
+    // console and the audit trail named the wrong app.
+    if parsed.manifest.name != app {
+        crate::serial_println!(
+            "[ITISYOU:PKG] launch name={app} v={v} result=refused reason=name_mismatch manifest_name={}",
+            crate::untrusted(parsed.manifest.name)
+        );
+        crate::audit::denied_reason("pkg_launch", 0, "name_mismatch");
+        return Err(PlatformError::BadPackage);
+    }
     let granted = caps::delegate(launcher_caps, parsed.manifest.caps);
     let sandbox = Arc::new(alloc::vec![format!("/apps/{app}"), String::from("/etc"),]);
     let mut process =

@@ -362,6 +362,14 @@ impl Driver for XhciDriver {
         let hccparams1 = Xhci::read32(base, CAP_HCCPARAMS1);
         let dboff = (Xhci::read32(base, CAP_DBOFF) & !0x3) as u64;
         let rtsoff = (Xhci::read32(base, CAP_RTSOFF) & !0x1F) as u64;
+        // DBOFF and RTSOFF are device-supplied offsets into the BAR; a hostile
+        // or malfunctioning controller can point them outside the mapped
+        // window, where a doorbell or runtime write would fault the kernel
+        // (V1.0, USB1-002, the V1-SEC-002 review). Both register banks must
+        // sit inside `window`; leave a page of headroom for the registers.
+        if dboff >= window || rtsoff >= window {
+            return Err(DriverError::InitFailed("xhci DBOFF/RTSOFF outside BAR"));
+        }
         let max_slots = (hcsparams1 & 0xFF) as u8;
         let max_ports = ((hcsparams1 >> 24) & 0xFF) as u8;
         let context_size = if hccparams1 & (1 << 2) != 0 { 64 } else { 32 };
@@ -391,6 +399,13 @@ impl Driver for XhciDriver {
         let dcbaa = Dma::alloc().ok_or(DriverError::InitFailed("xhci DCBAA"))?;
         let scratch_count =
             (((hcsparams2 >> 21) & 0x1F) << 5 | ((hcsparams2 >> 27) & 0x1F)) as usize;
+        // The pointer array is one 4 KiB DMA frame — 512 8-byte entries. The
+        // field allows up to 1023; a controller asking for more than fits
+        // would have its array written past the frame, into whatever physical
+        // frame follows (V1.0, USB1-001, the V1-SEC-002 review).
+        if scratch_count > 4096 / 8 {
+            return Err(DriverError::InitFailed("xhci scratchpad count too large"));
+        }
         let mut scratchpads = alloc::vec::Vec::new();
         if scratch_count > 0 {
             let array = Dma::alloc().ok_or(DriverError::InitFailed("xhci scratchpad array"))?;

@@ -45,6 +45,8 @@ pub enum PagingError {
     MapTo(MapToError<Size4KiB>),
     Unmap(UnmapError),
     FlagUpdate(FlagUpdateError),
+    /// A device-supplied MMIO window was zero or absurdly large (V1.0).
+    MmioTooLarge,
 }
 
 /// Initialize the paging abstraction.
@@ -226,6 +228,14 @@ pub fn map_mmio(phys: u64, size: u64) -> Result<u64, PagingError> {
 
     let page_off = phys & 0xFFF;
     let phys_base = phys & !0xFFF;
+    // A device-supplied BAR size is bounded here (V1.0, USB1-003): a hostile
+    // or malfunctioning controller could report a size near u64::MAX, whose
+    // page count overflowed (a panic in this build) or asked to map an
+    // impossible window. No real MMIO BAR is anywhere near 64 MiB.
+    const MAX_MMIO_BYTES: u64 = 64 * 1024 * 1024;
+    if size == 0 || size > MAX_MMIO_BYTES {
+        return Err(PagingError::MmioTooLarge);
+    }
     let pages = (size + page_off).div_ceil(4096);
     let span = pages * 4096;
     let mut maps = MMIO_MAPS.lock();

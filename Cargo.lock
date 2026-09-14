@@ -642,6 +642,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "user-fault-probe"
+version = "0.11.0"
+dependencies = [
+ "ulib",
+]
+
+[[package]]
 name = "user-flags-probe"
 version = "0.11.0"
 dependencies = [

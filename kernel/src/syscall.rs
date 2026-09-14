@@ -412,6 +412,18 @@ unsafe extern "C" fn syscall_entry() {
         "pop qword ptr [rip + SYSCALL_USER_RSP]",
         "pop r11",
         "pop rcx",
+        // V1.0 (SEC1-003, found by the V1-SEC-002 review): the dispatcher is
+        // an ordinary function, so the argument and scratch registers hold
+        // whatever it left - kernel addresses and values. sysret changes
+        // only rcx and r11, so clear the rest the syscall ABI does not
+        // return (rax carries the result; rbx, rbp and r12-r15 are the
+        // program's own, preserved by the dispatcher).
+        "xor edi, edi",
+        "xor esi, esi",
+        "xor edx, edx",
+        "xor r8d, r8d",
+        "xor r9d, r9d",
+        "xor r10d, r10d",
         "mov rsp, [rip + SYSCALL_USER_RSP]",
         "sysretq",
         dispatch = sym syscall_dispatch,
@@ -1203,7 +1215,11 @@ fn sys_fs_list(buf_ptr: u64, buf_len: u64) -> u64 {
     ) {
         return ERR_PERM;
     }
-    let Some(listing) = crate::with_persistent_store(|fs| {
+    // Never format: a read-only syscall must not write the disk (V1.0,
+    // FS1-001) — a `fs_read`/`fs_list` holder has only READ rights, and a
+    // blank or unmountable disk that `with_persistent_store` would format is
+    // read as "no entries" instead.
+    let Some(listing) = crate::with_mounted_store(|fs| {
         let mut out = alloc::string::String::new();
         // Kernel-owned files are not part of the namespace programs see
         // (SEC11-001), so they are not listed either.
@@ -1259,7 +1275,9 @@ fn sys_fs_read(path_ptr: u64, path_len: u64, req_ptr: u64) -> u64 {
         Some(name) if refuse_kernel_owned(name, "fs_read", kernel_core::caps::CAP_FS_READ) => {
             return ERR_PERM;
         }
-        Some(name) => match crate::with_persistent_store(|fs| fs.read(name)) {
+        // Never format on a read (V1.0, FS1-001): with_mounted_store, so a
+        // READ right can never cause the destructive write a format is.
+        Some(name) => match crate::with_mounted_store(|fs| fs.read(name)) {
             Some(Ok(d)) => d,
             _ => return ERR_NOENT,
         },

@@ -28,17 +28,45 @@ pub enum Kind {
 }
 
 /// Parse `<app>.<v>.pkg` / `<app>.<v>.ok` → (app, version, kind).
+///
+/// Strict since V1.0 (SEC1-005, the V1-SEC-002 review): `app` must be a
+/// valid manifest name and `v` plain decimal - digits only, no sign, no
+/// leading zero - which is exactly what the kernel writes. Before, a store
+/// name only a hostile disk could hold was read too: `...1.pkg` named an app
+/// `..` whose launch sandbox `/apps/..` normalized to `/`, and
+/// `hello-app.+2.ok` was version 2 under a spelling `pkg recover` could not
+/// rebuild to remove. Now such names mean nothing and are ignored.
 pub fn parse_store_name(name: &str) -> Option<(&str, u32, Kind)> {
+    let (app, ver, kind) = split_store_name(name)?;
+    if !crate::manifest::valid_name(app) || !plain_decimal(ver) {
+        return None;
+    }
+    let v: u32 = ver.parse().ok()?;
+    Some((app, v, kind))
+}
+
+fn split_store_name(name: &str) -> Option<(&str, &str, Kind)> {
     let (rest, kind) = match name.strip_suffix(".pkg") {
         Some(r) => (r, Kind::Pkg),
         None => (name.strip_suffix(".ok")?, Kind::Ok),
     };
     let (app, ver) = rest.rsplit_once('.')?;
-    if app.is_empty() {
-        return None;
+    Some((app, ver, kind))
+}
+
+fn plain_decimal(s: &str) -> bool {
+    !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()) && (s == "0" || !s.starts_with('0'))
+}
+
+/// The store version the next install takes: one past every version the
+/// store holds in any state. `None` when that would pass `u32::MAX` - V1.0
+/// (SEC1-005): `v + 1` overflowed, and the kernel panicked on the operator's
+/// next `pkg install` over a disk holding version 4294967295.
+pub fn next_version(state: &StoreState) -> Option<u32> {
+    match state.active.max(state.orphan_staged).max(state.dangling_ok) {
+        None => Some(1),
+        Some(v) => v.checked_add(1),
     }
-    let v: u32 = ver.parse().ok()?;
-    Some((app, v, kind))
 }
 
 /// The audit trail's name in the store (V0.8).
@@ -51,9 +79,13 @@ pub const AUDIT_TRAIL: &str = "audit.log";
 /// syscalls, and these names are not part of that namespace. Before V0.11 a
 /// program holding `fs_write` could delete an application's highest `.ok` — a
 /// rollback nobody approved — or plant one, or replace the audit trail with an
-/// empty one that verifies.
+/// empty one that verifies. Deliberately wider than the strict parse: any
+/// `<name>.<number>.pkg|ok` a lenient reader would take (a sign, leading
+/// zeros, any app part) stays out of programs' reach as well.
 pub fn kernel_owned(name: &str) -> bool {
-    name == AUDIT_TRAIL || parse_store_name(name).is_some()
+    name == AUDIT_TRAIL
+        || split_store_name(name)
+            .is_some_and(|(app, ver, _)| !app.is_empty() && ver.parse::<u32>().is_ok())
 }
 
 const MAX_VERSIONS: usize = 16;
@@ -140,6 +172,78 @@ mod tests {
         assert_eq!(parse_store_name("hello.pkg"), None); // no version
         assert_eq!(parse_store_name("hello.x.pkg"), None); // non-numeric
         assert_eq!(parse_store_name(".1.pkg"), None); // empty app
+        assert_eq!(parse_store_name("a.0.ok"), Some(("a", 0, Kind::Ok)));
+        assert_eq!(
+            parse_store_name("hello-app.4294967295.ok"),
+            Some(("hello-app", u32::MAX, Kind::Ok))
+        );
+    }
+
+    #[test]
+    fn only_names_the_kernel_writes_are_read() {
+        // SEC1-005: what only a hostile disk can hold means nothing.
+        for name in [
+            "...1.pkg",                // app `..`: its sandbox would be /apps/..
+            "../data.1.ok",            // app with a slash
+            "Hello.1.pkg",             // not a manifest name
+            "-x.1.pkg",                // leading dash
+            "seventeen-chars-x.1.pkg", // longer than a manifest name
+            "hello-app.+2.ok",         // signed version
+            "hello-app.02.ok",         // leading zero
+            "hello-app.4294967296.ok", // past u32
+            "hello-app. 2.ok",
+        ] {
+            assert_eq!(parse_store_name(name), None, "{name}");
+        }
+        // ...but every one of them is still out of programs' reach when a
+        // lenient reader would take it for a store name.
+        for name in [
+            "...1.pkg",
+            "Hello.1.pkg",
+            "hello-app.+2.ok",
+            "hello-app.02.ok",
+        ] {
+            assert!(kernel_owned(name), "{name}");
+        }
+        // And the resolver ignores them next to real entries.
+        let s = resolve(
+            "hello-app",
+            [
+                "hello-app.1.pkg",
+                "hello-app.1.ok",
+                "hello-app.+9.ok",
+                "hello-app.09.pkg",
+            ]
+            .into_iter(),
+        );
+        assert_eq!(
+            s,
+            StoreState {
+                active: Some(1),
+                ..Default::default()
+            }
+        );
+    }
+
+    #[test]
+    fn the_next_version_never_overflows() {
+        // SEC1-005: a store holding u32::MAX in any state has no next version.
+        assert_eq!(next_version(&StoreState::default()), Some(1));
+        let at = |active, orphan_staged, dangling_ok| StoreState {
+            active,
+            orphan_staged,
+            dangling_ok,
+            previous: None,
+        };
+        assert_eq!(next_version(&at(Some(3), None, None)), Some(4));
+        assert_eq!(next_version(&at(Some(3), Some(7), Some(5))), Some(8));
+        assert_eq!(next_version(&at(Some(1), None, Some(u32::MAX))), None);
+        assert_eq!(next_version(&at(None, Some(u32::MAX), None)), None);
+        assert_eq!(next_version(&at(Some(u32::MAX), None, None)), None);
+        assert_eq!(
+            next_version(&at(Some(u32::MAX - 1), None, None)),
+            Some(u32::MAX)
+        );
     }
 
     #[test]

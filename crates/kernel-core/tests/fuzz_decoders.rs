@@ -3769,10 +3769,14 @@ fn t_update(mode: Mode) {
             let s = gen_text(rng, seeds, UPDATE_DICT, 64);
             ctx.note(s.as_bytes());
             let parsed = update::parse_store_name(&s);
-            assert_eq!(
-                update::kernel_owned(&s),
-                s == update::AUDIT_TRAIL || parsed.is_some()
-            );
+            // Every name the strict parser reads is kernel-owned; the audit
+            // trail is too. `kernel_owned` is deliberately WIDER (V1.0,
+            // SEC1-005): a lenient spelling the parser now rejects - a signed
+            // or zero-padded version, a non-manifest app part - must still be
+            // out of programs' reach, so the implication is one-way.
+            if parsed.is_some() || s == update::AUDIT_TRAIL {
+                assert!(update::kernel_owned(&s));
+            }
             if let Some((app, v, kind)) = parsed {
                 assert!(!app.is_empty());
                 let ext = if kind == Kind::Pkg { "pkg" } else { "ok" };
