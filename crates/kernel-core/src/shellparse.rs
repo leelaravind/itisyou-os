@@ -38,9 +38,11 @@ impl<'a> CommandLine<'a> {
         (self.len > 0).then(|| self.args[0])
     }
 
-    /// Arguments after the command name.
+    /// Arguments after the command name (none for an empty line).
     pub fn args(&self) -> &[&'a str] {
-        &self.args[1..self.len]
+        // An empty line has no command, so `1..0` would be an inverted range
+        // (V1-REL-005 fuzzing found the panic).
+        self.args.get(1..self.len).unwrap_or(&[])
     }
 
     pub fn is_empty(&self) -> bool {
@@ -78,6 +80,18 @@ mod tests {
         assert!(parse("").unwrap().is_empty());
         assert!(parse("   \t  ").unwrap().is_empty());
         assert_eq!(parse("  ").unwrap().command(), None);
+    }
+
+    /// V1-REL-005 regression: `args()` of an empty or all-whitespace line
+    /// sliced `args[1..0]` and panicked.
+    #[test]
+    fn args_of_an_empty_line_is_empty() {
+        for line in ["", "   \t  "] {
+            let cl = parse(line).unwrap();
+            assert!(cl.is_empty());
+            assert!(cl.args().is_empty());
+        }
+        assert!(parse("cmd").unwrap().args().is_empty());
     }
 
     #[test]
