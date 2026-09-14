@@ -1049,7 +1049,8 @@ jobs:
             --send "run /bin/ai-probe -- view-denied" \
             --send "run /bin/ai-probe sys_view - -- view" \
             --send "sched pause" --send "run /bin/ai-probe sys_view - -- view" \
-            --send "sched resume" --send "shutdown" \
+            --send "sched resume" --send "run /bin/ai-probe - - -- ansi" --send "shutdown" \
+            --require "AIPROBE-ANSI \x1b[2A\x1b[2K\x0dforged" \
             --require "AIPROBE-VIEW-DENIED err=perm" \
             --require "action=sys_view cap=0x0 result=denied" \
             --require "kind=sysadmin reason=no_handle" \

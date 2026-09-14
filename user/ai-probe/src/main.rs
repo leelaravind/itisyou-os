@@ -427,6 +427,11 @@ extern "C" fn _start() -> ! {
             }
         },
         Some(b"direct") => direct(),
+        // V0.11 (OUT11-001): terminal control sequences in program output
+        // are shown, never performed.
+        Some(b"ansi") => {
+            write("AIPROBE-ANSI \x1b[2A\x1b[2K\rforged\n");
+        }
         // V0.11 (S10): the kernel -> init mailbox is init's alone.
         Some(b"initctl") => {
             let mut buf = [0u8; 24];

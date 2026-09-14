@@ -1486,7 +1486,10 @@ Write-Output '=== QEMU V0.11: the approved system view (BIOS) ==='
     '--send', 'sched pause',
     '--send', 'run /bin/ai-probe sys_view - -- view',
     '--send', 'sched resume',
+    '--send', 'run /bin/ai-probe - - -- ansi',
     '--send', 'shutdown',
+    # OUT11-001: cursor-up, clear-line and carriage return shown escaped.
+    '--require', 'AIPROBE-ANSI \x1b[2A\x1b[2K\x0dforged',
     '--require', 'AIPROBE-VIEW-DENIED err=perm',
     '--require', 'action=sys_view cap=0x0 result=denied',
     '--require', 'kind=sysadmin reason=no_handle',

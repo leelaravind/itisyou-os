@@ -10,7 +10,9 @@
 //! kernel reports the exit.
 //!
 //! Every `[ITISYOU:` a process prints becomes `[RING3-U:`: the kernel's
-//! evidence prefix belongs to the kernel.
+//! evidence prefix belongs to the kernel. Since V0.11 its control
+//! characters are shown escaped as well (`\x1b`, `\x0d`, ...), so it cannot
+//! move the cursor to redraw the kernel's lines on the operator's terminal.
 
 use crate::sync::Mutex;
 use kernel_core::linebuf::{neutralize_markers, LineBuf};
@@ -36,27 +38,23 @@ const FREE: Slot = Slot {
 static OUT: Mutex<[Slot; SLOTS]> = Mutex::new([FREE; SLOTS]);
 
 /// Send one line (or chunk) to the serial port in a single locked write:
-/// kernel markers neutralized, invalid UTF-8 shown as U+FFFD.
+/// kernel markers neutralized, invalid UTF-8 shown as U+FFFD, and (V0.11,
+/// OUT11-001) every control character but the line feed and the tab shown
+/// escaped rather than performed.
 fn emit(chunk: &[u8]) {
     let mut line = [0u8; LINE + 1];
     let n = chunk.len().min(line.len());
     line[..n].copy_from_slice(&chunk[..n]);
     neutralize_markers(&mut line[..n]);
-    crate::serial::write_fmt(format_args!("{}", Lossy(&line[..n])));
+    crate::serial::write_fmt(format_args!("{}", Escaped(&line[..n])));
 }
 
-/// Display bytes as UTF-8, replacing each invalid sequence with U+FFFD.
-struct Lossy<'a>(&'a [u8]);
+/// Process output as the console shows it (`linebuf::write_escaped`).
+struct Escaped<'a>(&'a [u8]);
 
-impl core::fmt::Display for Lossy<'_> {
+impl core::fmt::Display for Escaped<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        for chunk in self.0.utf8_chunks() {
-            f.write_str(chunk.valid())?;
-            if !chunk.invalid().is_empty() {
-                f.write_str("\u{FFFD}")?;
-            }
-        }
-        Ok(())
+        kernel_core::linebuf::write_escaped(self.0, f)
     }
 }
 

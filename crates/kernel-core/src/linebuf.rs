@@ -117,9 +117,60 @@ pub fn neutralize_markers(line: &mut [u8]) -> usize {
     count
 }
 
+/// Write one line (or chunk) of process output for the console (V0.11,
+/// OUT11-001): invalid UTF-8 as U+FFFD, and every control character except
+/// the line feed and the tab escaped - `\x1b` for ESC, `\x0d` for a carriage
+/// return, `\u{9b}` for the C1 CSI - so a program cannot move the cursor,
+/// clear the screen or redraw what the kernel printed, such as a proposal's
+/// preview before the operator approves it. The kernel's marker prefix is
+/// neutralized separately ([`neutralize_markers`]).
+pub fn write_escaped(bytes: &[u8], out: &mut impl core::fmt::Write) -> core::fmt::Result {
+    for chunk in bytes.utf8_chunks() {
+        for c in chunk.valid().chars() {
+            match c {
+                '\n' | '\t' => out.write_char(c)?,
+                c if c.is_ascii_control() => write!(out, "\\x{:02x}", c as u32)?,
+                c if c.is_control() => write!(out, "\\u{{{:x}}}", c as u32)?,
+                c => out.write_char(c)?,
+            }
+        }
+        if !chunk.invalid().is_empty() {
+            out.write_str("\u{FFFD}")?;
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn escaped(b: &[u8]) -> String {
+        let mut s = String::new();
+        write_escaped(b, &mut s).unwrap();
+        s
+    }
+
+    #[test]
+    fn process_output_cannot_drive_the_terminal() {
+        // Printable text, tabs and the line feed pass through.
+        assert_eq!(escaped(b"TICKC-OK passes=3\tx\n"), "TICKC-OK passes=3\tx\n");
+        // Cursor up two lines, clear the line, carriage return: all shown,
+        // none performed.
+        assert_eq!(
+            escaped(b"AIPROBE-ANSI \x1b[2A\x1b[2K\rforged\n"),
+            "AIPROBE-ANSI \\x1b[2A\\x1b[2K\\x0dforged\n"
+        );
+        assert_eq!(escaped("\u{9b}2J\u{7f}".as_bytes()), "\\u{9b}2J\\x7f");
+        // Invalid UTF-8 is still U+FFFD, and printable non-ASCII stays.
+        assert_eq!(escaped(b"a\xffb"), "a\u{FFFD}b");
+        assert_eq!(escaped("caf\u{e9}".as_bytes()), "caf\u{e9}");
+        // Whatever goes in, the only control characters out are \n and \t.
+        let all: Vec<u8> = (0u8..=255).collect();
+        assert!(escaped(&all)
+            .chars()
+            .all(|c| !c.is_control() || c == '\n' || c == '\t'));
+    }
 
     fn collect<const N: usize>(b: &mut LineBuf<N>, input: &[&[u8]]) -> Vec<Vec<u8>> {
         let mut out = Vec::new();
