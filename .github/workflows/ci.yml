@@ -15,6 +15,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # V1-REL-006: every leg below must assert exactly what the local
+      # matrix (scripts/test.ps1) asserts for the same label.
+      - name: CI parity with the local matrix
+        run: python3 scripts/check-ci-parity.py
+
       # rust-toolchain.toml pins the exact nightly + components + target.
       - name: Install pinned Rust toolchain
         run: rustup show
@@ -125,10 +130,17 @@ jobs:
             --expect B080 --expect B090 --expect B100 --expect B110 \
             --expect B120 --expect B130 --expect B140 --expect B150 \
             --expect B160 \
-            --send help --send version --send memory --send tasks \
-            --send "ls /" --send "cat /etc/version" \
-            --send "run /bin/init" --send shutdown \
+            --send help --send version --send system --send memory --send tasks \
+            --send uptime --send "ls /" --send "cat /etc/version" \
+            --send "echo shell-echo-check" --send definitely-not-a-command \
+            --send "run /bin/init" --send "run /bin/broken" --send panic-test \
+            --send shutdown \
             --require "itisyou-os 0.11.0" \
+            --require "physical: usable_frames=" --require "heap: used=" \
+            --require "etc/" --require "shell-echo-check" \
+            --require "unknown command: definitely-not-a-command" \
+            --require "load failed: Elf(BadMagic)" \
+            --require "panic-test: pass 'confirm'" \
             --require "task 0: kmain" \
             --require "RING3-DONE" \
             --require "run: /bin/init: Exit(0)" \
@@ -210,7 +222,7 @@ jobs:
           # Enable Slot, Address Device, two control IN transfers,
           # Configure Endpoint, SET_CONFIGURATION/SET_PROTOCOL, and an
           # interrupt transfer carrying a real keypress tagged src=xhci.
-          cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --xhci --expect B190 --expect B210             --send "lsdev" --send "xhciwait"             --inject-after "XHCI-HID-WAITING"             --monitor-cmd "sendkey g"             --send "shutdown"             --require "xhci ready caplength="             --require "xhci device vendor=0x0627"             --require "xhci hid iface=0 endpoint=0x81"             --require "XHCI-HID-REPORT bytes=8"             --require "ascii=g"             --require "[ITISYOU:INPUT] key=g src=xhci"             --forbid "xhci enumerate_failed"             --timeout-secs 300 --label xhci-hid-bios
+          cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --xhci --expect B190 --expect B210             --send "lsdev" --send "xhciwait"             --inject-after "XHCI-HID-WAITING"             --monitor-cmd "sendkey g"             --send "shutdown"             --require "xhci ready caplength="             --require "xhci device vendor=0x0627"             --require "xhci hid iface=0 endpoint=0x81"             --require "XHCI-HID-REPORT bytes=8"             --require "ascii=g"             --require "[ITISYOU:INPUT] key=g src=xhci"             --require "driver: xhci"             --forbid "xhci enumerate_failed"             --timeout-secs 300 --label xhci-hid-bios
 
       - name: QEMU system platform (caps, sandbox, services, packages)
         run: |
@@ -233,7 +245,7 @@ jobs:
           # Proves both directions (client AND responder), the capability
           # gate, and that five hostile frames are refused and answered by
           # nothing.
-          cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --net --expect B190 --expect B200             --send "run /bin/net-probe network"             --send "run /bin/net-denied -"             --send "ping 10.0.2.2 2"             --send "resolve os.itisyou.app"             --send "net" --send "audit" --send "shutdown"             --require "nic_ready driver=e1000 mac=52:54:00:12:34:56 link_up=true"             --require "iface_up ip=10.0.2.15 gateway=10.0.2.2"             --require "NETPROBE-IFACE mac=52:54:00:12:34:56 ip=10.0.2.15 link_up=1"             --require "NETPROBE-BOUND port=40100"             --require "NETPROBE-ECHO-OK bytes=25 from=10.0.2.2"             --require "NETPROBE-RESOLVE-OK name=os.itisyou.app address=93.184.216.34"             --require "NETPROBE-OK"             --require "NETDENY-OK call=net_info"             --require "NETDENY-OK call=udp_bind"             --require "NETDENY-OK call=udp_send"             --require "NETDENY-OK call=udp_recv"             --require "NETDENY-OK call=net_resolve"             --require "NETDENY-ALL-DENIED"             --require "action=udp_bind cap=0x0 result=denied"             --require "kind=network reason=no_handle"             --require "PING-SUMMARY target=10.0.2.2 sent=2 received=2"             --require "RESOLVE-OK name=os.itisyou.app address=93.184.216.34"             --require "[HOST:NET] guest_mac=52:54:00:12:34:56"             --require "[HOST:NET] guest_ip=10.0.2.15"             --require "[HOST:NET] guest_arp_reply from=10.0.2.15"             --require "[HOST:NET] guest_icmp_reply id=4919"             --require "[HOST:NET] dns_query name=os.itisyou.app type=1 class=1"             --require "guest_arp_replies=1 guest_icmp_replies=1 hostile_sent=true replies_to_hostile=0"             --require "bad_ip_csum=0 bad_udp_csum=0 bad_icmp_csum=0"             --require "rx_malformed=3 rx_unwanted=2"             --timeout-secs 300 --label net-bios
+          cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --net --expect B190 --expect B200             --send "run /bin/net-probe network"             --send "run /bin/net-denied -"             --send "ping 10.0.2.2 2"             --send "resolve os.itisyou.app"             --send "net" --send "audit" --send "shutdown"             --require "nic_ready driver=e1000 mac=52:54:00:12:34:56 link_up=true"             --require "iface_up ip=10.0.2.15 gateway=10.0.2.2"             --require "NETPROBE-IFACE mac=52:54:00:12:34:56 ip=10.0.2.15 link_up=1"             --require "NETPROBE-BOUND port=40100"             --require "NETPROBE-ECHO-OK bytes=25 from=10.0.2.2"             --require "NETPROBE-RESOLVE-OK name=os.itisyou.app address=93.184.216.34"             --require "NETPROBE-OK"             --require "NETDENY-OK call=net_info"             --require "NETDENY-OK call=udp_bind"             --require "NETDENY-OK call=udp_send"             --require "NETDENY-OK call=udp_recv"             --require "NETDENY-OK call=net_resolve"             --require "NETDENY-ALL-DENIED"             --require "action=udp_bind cap=0x0 result=denied"             --require "kind=network reason=no_handle"             --require "PING-SUMMARY target=10.0.2.2 sent=2 received=2"             --require "RESOLVE-OK name=os.itisyou.app address=93.184.216.34"             --require "[HOST:NET] guest_mac=52:54:00:12:34:56"             --require "[HOST:NET] guest_ip=10.0.2.15"             --require "[HOST:NET] guest_arp_reply from=10.0.2.15"             --require "[HOST:NET] guest_icmp_reply id=4919"             --require "[HOST:NET] dns_query name=os.itisyou.app type=1 class=1"             --require "guest_arp_replies=1 guest_icmp_replies=1 hostile_sent=true replies_to_hostile=0"             --require "bad_ip_csum=0 bad_udp_csum=0 bad_icmp_csum=0"             --require "rx_malformed=3 rx_unwanted=2"             --require "action=udp_bind cap=0x100 result=ok"             --require "action=net_info cap=0x0 result=denied"             --require "[HOST:NET] hostile_probe_start"             --timeout-secs 300 --label net-bios
 
       - name: QEMU DHCP against QEMU user-mode networking (BIOS)
         run: |
@@ -273,6 +285,7 @@ jobs:
             --require "PING6-SUMMARY target=fec0::2 sent=2 received=2" \
             --require "PING-SUMMARY target=10.0.2.2 sent=1 received=1" \
             --require "rx_malformed=0 rx_unwanted=0 router_adverts=1" \
+            --require "net6: link_local=fe80::5054:ff:fe12:3456 global=fec0::5054:ff:fe12:3456 router=fe80::2" \
             --forbid "IPV6-NO-ROUTER" \
             --timeout-secs 240 --label net-ipv6-bios
 
@@ -926,12 +939,19 @@ jobs:
           # dropped the unsaved records from the chain) and saves again.
           # Boot 3 must find the second boot's trail verified.
           rm -f artifacts/audit-window.img
-          sends=()
-          for run in $(seq 1 11); do
-            sends+=(--send "run /bin/fs-writer fs_read,fs_write")
-          done
           cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
-            --nvme-persist artifacts/audit-window.img --expect B210 "${sends[@]}" \
+            --nvme-persist artifacts/audit-window.img --expect B210 \
+            --send "run /bin/fs-writer fs_read,fs_write" \
+            --send "run /bin/fs-writer fs_read,fs_write" \
+            --send "run /bin/fs-writer fs_read,fs_write" \
+            --send "run /bin/fs-writer fs_read,fs_write" \
+            --send "run /bin/fs-writer fs_read,fs_write" \
+            --send "run /bin/fs-writer fs_read,fs_write" \
+            --send "run /bin/fs-writer fs_read,fs_write" \
+            --send "run /bin/fs-writer fs_read,fs_write" \
+            --send "run /bin/fs-writer fs_read,fs_write" \
+            --send "run /bin/fs-writer fs_read,fs_write" \
+            --send "run /bin/fs-writer fs_read,fs_write" \
             --send "audit save" --send "audit verify" --send "audit" --send "shutdown" \
             --require "trail_recovered status=absent" \
             --require "trail_saved records=128 " \

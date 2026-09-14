@@ -54,6 +54,8 @@ if (Test-Path 'target/images/itisyou-kernel-selftest-uefi.img') {
         '--require', 'RING3-HELLO', '--require', 'RING3-DONE',
         '--require', 'RING3-PARENT-DONE', '--require', 'RING3-PARENT-IPC-OK',
         '--require', 'nvme_ready blocks=', '--require', 'SPIN-FINITE-OK',
+        '--require', 'gfx width=', '--require', 'RING3-GUI-OK',
+        '--expect', 'B170', '--expect', 'B180',
         '--timeout-secs', '300', '--label', 'selftest-uefi')
 } else {
     Write-Output 'SKIPPED: UEFI image absent - bootloader UEFI stage blocked upstream (rust-osdev/bootloader#579)'
