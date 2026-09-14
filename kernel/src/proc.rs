@@ -803,12 +803,23 @@ fn spawn_common(
             // before installing the delegated one, so the child never holds
             // two sets (and the table never leaks the discarded slots).
             crate::capability::revoke_owner(child.pid);
-            child.handles = crate::capability::delegate_to_child(
+            let (handles, all_granted) = crate::capability::delegate_to_child(
                 parent_pid,
                 child.pid,
                 child_caps,
                 crate::interrupts::ticks(),
             );
+            // The global capability table is full (CAP1-001): refuse loudly
+            // rather than admit a child with a silently reduced set and audit
+            // it as if it held `child_caps`. Free what was loaded and grant
+            // partially, so nothing leaks.
+            if !all_granted {
+                crate::capability::revoke_owner(child.pid);
+                child.space.teardown();
+                crate::audit::denied_reason(action, child_caps, "capability_table_full");
+                return ERR_AGAIN;
+            }
+            child.handles = handles;
             let argc = args.count();
             child.args = args;
             // V0.10: the spawner is the parent — the only process that may

@@ -21,13 +21,13 @@ register cleanup) that no per-subsystem review owned.
 
 **Result.** 37 distinct findings survived refutation: **3 high, 15 medium, 19
 low** (the critic's `cpu-1` and `cpu-3` are the same defects as `proc-1` and
-`sc-1`). Every high is **fixed**. Of the mediums, 7 are fixed and 8 are
+`sc-1`). Every high is **fixed**. Of the mediums, 8 are fixed and 7 are
 accepted and recorded in `docs/KNOWN_LIMITATIONS.md` (each an availability
 limit a capability holder or a hostile disk can impose on a single-user VM —
-none crosses a privilege boundary or corrupts kernel memory). 17 findings in
+none crosses a privilege boundary or corrupts kernel memory). 18 findings in
 all are fixed, each with a QEMU leg and a mutation control (the fix disabled,
 the leg shown failing, the fix restored): see `scripts/test.ps1` legs
-`fault-contain-{bios,uefi}`, `pkg-store-hostile-bios`, `gui-quota-bios`, the
+`fault-contain-{bios,uefi}`, `pkg-store-hostile-bios`, `gui-quota-bios`, `cap-exhaust-bios`, the
 `sysfuzz-*` legs, and the net/fs/platform legs, and
 `E:\claude-tmp\itisyou-audit\v1\sec002\` for the mutation controls. The one refuted finding (`pkg-4`) is kept in the table
 with the refuter's reasoning.
@@ -39,7 +39,7 @@ NET1-001 (non-recursive ICMP responder), NET1-002 (broadcast/multicast source
 and echo drop), NET1-003 (in-place TCB reset), NET1-004 (bounded NIC drain),
 GUI1-001 (per-owner window pixel quota), FS1-001 (read-only syscalls never
 format), USB1-001/002/003 (xHCI and MMIO
-bounds).
+bounds), CAP1-001 (loud refusal on capability-table exhaustion).
 
 ## Findings
 
@@ -57,7 +57,7 @@ left for a hardening pass.
 | audit-1 | audit-console | medium | confirmed | accepted | `kernel/src/audit.rs:91` | Any process, with no capabilities, can flush every earlier record out of the stored 128-record trail window and the 64-record ring |
 | out-1 | audit-console | medium | confirmed | accepted | `kernel/src/serial.rs:30` | Ring 3 partial output leaves the console 'mid-line' and stops every busy-point slice, which defeats approve's retry-service verification |
 | audit-2 | audit-console | medium | confirmed | accepted | `kernel/src/syscall.rs:1146` | A program holding fs_write can take every ITFS directory slot (or the free space) so the kernel-owned audit trail can never be saved |
-| cap-1 | caps-ipc | medium | confirmed | accepted | `kernel/src/capability.rs:99` | Global 256-entry capability table has no per-process/per-tree quota and no process limit; a spawn holder fills it and every later process silently gets no authority |
+| cap-1 | caps-ipc | medium | confirmed | fixed | `kernel/src/capability.rs:99` | Global 256-entry capability table has no per-process/per-tree quota and no process limit; a spawn holder fills it and every later process silently gets no authority |
 | cap-2 | caps-ipc | medium | confirmed | accepted | `kernel/src/syscall.rs:983` | Any zero-capability program can flush the audit window at will with ungated cap_check denials, evicting evidence of earlier actions before `audit save` |
 | fs-1 | fs | medium | confirmed | fixed | `kernel/src/lib.rs:321` | Read-only fs_read/fs_list can format the persistent store (READ right causes a destructive write); the 'never format a corrupt disk' rule is also ineffective |
 | fs-2 | fs | medium | confirmed | accepted | `kernel/src/syscall.rs:1146` | One program can take all 12 ITFS directory slots with names the console cannot type: package install/update and (if the trail is absent) audit persistence blocked across reboots with no in-OS recovery |

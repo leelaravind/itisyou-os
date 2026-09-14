@@ -1210,6 +1210,28 @@ Remove-Item $updDisk -ErrorAction SilentlyContinue
 Remove-Item $updDisk -ErrorAction SilentlyContinue
 Remove-Item $platDisk -ErrorAction SilentlyContinue
 
+Write-Output '=== QEMU capability-table exhaustion is loud, not silent (BIOS) ==='
+# V1.0 CAP1-001 (the V1-SEC-002 review): a program holding `spawn` cannot
+# silently exhaust the 256-entry capability table and leave every later
+# process with no authority while the spawn audit still claims the full set.
+# proc-probe spawns long-lived children (each taking 8 handles) until the
+# table is full; that spawn is refused with ERR_AGAIN and audited
+# `capability_table_full`, and a program run afterwards still works
+# (`/bin/child` exits 7). The exact number that fit depends on the baseline,
+# so the leg asserts the refusal happened, not a count.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B210',
+    '--send', 'run /bin/proc-probe spawn,ipc,gui,dev,fs_read,audio,fs_write,network,proc_control -- cap-exhaust',
+    '--send', 'run /bin/child',
+    '--send', 'shutdown',
+    '--require', 'PROCPROBE-CAP-EXHAUST-OK spawned=',
+    # (No double quotes in a marker: Windows PowerShell drops them for a
+    # native program. The reason string is unique to this refusal.)
+    '--require', 'reason=capability_table_full',
+    '--require', 'run: /bin/child: Exit(7)',
+    '--forbid', 'PROCPROBE-FAILED',
+    '--timeout-secs', '200', '--label', 'cap-exhaust-bios')
+
 Write-Output '=== QEMU intentional panic (BIOS) ==='
 & $runner @('--image', 'target/images/itisyou-kernel-panictest-bios.img',
     '--expect', 'B010', '--expect', 'B020', '--expect-panic',

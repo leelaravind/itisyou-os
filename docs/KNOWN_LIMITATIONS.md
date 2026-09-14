@@ -234,8 +234,11 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
   CPU under a frame flood (NET1-004); read-only `fs_read`/`fs_list` could
   format a blank or unmountable disk (FS1-001); one Gui program could take the
   whole compositor budget, now bounded by a per-owner pixel quota that leaves
-  the desktop and other programs their share (GUI1-001); and xHCI/MMIO device
-  inputs were bounded (USB1-001/002/003).
+  the desktop and other programs their share (GUI1-001); a program holding
+  `spawn` could exhaust the capability table and silently deny authority to
+  every later process (its spawn still audited as if the child held the full
+  set), now refused loudly with `capability_table_full` (CAP1-001); and
+  xHCI/MMIO device inputs were bounded (USB1-001/002/003).
 - **Availability limits a capability holder or a hostile disk can impose
   (V1-SEC-002, accepted for an experimental single-user VM: each needs an
   authority the operator granted or a disk edited outside the OS, none
@@ -255,11 +258,6 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
     its space) so the kernel-owned audit trail cannot be saved and no package
     can install, until the operator removes the files. Nothing reserves a
     slot for kernel-owned names.
-  - A program with the Process capability can **exhaust the 256-entry
-    capability table** by spawning long-lived children; once it is full,
-    later processes launch with a reduced or empty handle set (fail-closed,
-    but a denial of authority to everything started afterward). There is no
-    per-tree handle quota or process limit.
   - A remote peer can **pin TCP slots and ports until reboot**: a connection
     left in FIN-WAIT-2, or with unsent data behind a zero window, is never
     reclaimed, and its local port stays unusable. Eight such connections

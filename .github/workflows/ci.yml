@@ -1137,6 +1137,24 @@ jobs:
           cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --nvme-persist artifacts/update-test.img             --expect B190             --send "pkg recover"             --send "pkg launch hello-app"             --send "shutdown"             --require "orphan_staged=v2 action=remove"             --require "launch name=hello-app v=1"             --require "HELLO-APP-OK"             --timeout-secs 240 --label update-recovery
           rm -f artifacts/update-test.img
 
+      - name: QEMU capability-table exhaustion is loud (BIOS)
+        run: |
+          # V1.0 CAP1-001: a spawn holder cannot silently exhaust the 256-entry
+          # capability table and leave later processes with no authority. The
+          # spawn is refused (capability_table_full) rather than admitted with
+          # a reduced set; a program run afterwards still works.
+          cargo run -q -p qemu-runner -- \
+            --image target/images/itisyou-kernel-bios.img \
+            --expect B210 \
+            --send "run /bin/proc-probe spawn,ipc,gui,dev,fs_read,audio,fs_write,network,proc_control -- cap-exhaust" \
+            --send "run /bin/child" \
+            --send "shutdown" \
+            --require "PROCPROBE-CAP-EXHAUST-OK spawned=" \
+            --require "reason=capability_table_full" \
+            --require "run: /bin/child: Exit(7)" \
+            --forbid "PROCPROBE-FAILED" \
+            --timeout-secs 240 --label cap-exhaust-bios
+
       - name: QEMU intentional panic (BIOS)
         run: |
           cargo run -q -p qemu-runner -- \

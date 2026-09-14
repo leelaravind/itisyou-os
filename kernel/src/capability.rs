@@ -71,15 +71,26 @@ pub fn handles_for(pid: u64, bits: u64) -> HandleSet {
 /// code that enforces every other check: a child can only receive rights its
 /// parent actually holds *right now*, over a scope inside the parent's. A
 /// parent whose own authority was revoked or expired can no longer pass it on.
+/// Returns the child's handle set and whether every handle it should have
+/// received was granted. `false` means the global table was full (V1.0,
+/// CAP1-001): a caller that gets `false` must refuse the launch rather than
+/// admit a process with a silently reduced authority — otherwise a program
+/// holding `spawn` could fill the table with long-lived children and every
+/// later process (the console's own launches included) would run with no
+/// authority, unreported, while the spawn audit still claimed the full set.
+/// A handle the parent legitimately cannot delegate (it does not hold it, or
+/// the child's scope is not inside the parent's) is NOT a shortfall — that is
+/// ordinary least-privilege narrowing.
 pub fn delegate_to_child(
     parent_pid: u64,
     child_pid: u64,
     requested_bits: u64,
     now: u64,
-) -> HandleSet {
+) -> (HandleSet, bool) {
     let requested = rights_from_bits(requested_bits);
     let parent_handles = crate::syscall::current_handles();
     let mut set = EMPTY_HANDLES;
+    let mut all_granted = true;
     let mut table = TABLE.lock();
     for (index, &want) in requested.iter().enumerate() {
         if want == 0 {
@@ -96,11 +107,15 @@ pub fn delegate_to_child(
         else {
             continue;
         };
-        if let Ok(handle) = table.delegate(parent, parent_pid, child_pid, scope, want, now) {
-            set[index] = handle;
+        match table.delegate(parent, parent_pid, child_pid, scope, want, now) {
+            Ok(handle) => set[index] = handle,
+            // The one failure that is not the parent's own least-privilege:
+            // the table has no free slot for a handle the parent could pass.
+            Err(CapabilityError::TableFull) => all_granted = false,
+            Err(_) => {}
         }
     }
-    set
+    (set, all_granted)
 }
 
 /// Validate one handle for an operation. This is the single enforcement point

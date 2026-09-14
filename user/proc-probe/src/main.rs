@@ -367,6 +367,42 @@ extern "C" fn _start() -> ! {
             }
             write("PROCPROBE-GUI-QUOTA-OK windows=4\n");
         }
+        Some(b"cap-exhaust") => {
+            // V1.0 (CAP1-001): a program holding `spawn` cannot silently
+            // exhaust the global capability table and leave every later
+            // process with no authority. Spawn long-lived children, each
+            // taking several handles, until the table is full; the spawn must
+            // then be refused with ERR_AGAIN (the kernel audits
+            // capability_table_full), never admitted with a reduced set and
+            // audited as if it held them all.
+            let child_caps = ulib::CAP_IPC
+                | ulib::CAP_GUI
+                | ulib::CAP_DEV
+                | ulib::CAP_FS_READ
+                | ulib::CAP_AUDIO
+                | ulib::CAP_FS_WRITE
+                | ulib::CAP_NETWORK
+                | ulib::CAP_PROC_CONTROL;
+            let mut spawned = 0u64;
+            let mut refused = false;
+            for _ in 0..300 {
+                let r = ulib::spawn_caps("/bin/spin-forever", child_caps);
+                if r == ERR_AGAIN {
+                    refused = true;
+                    break;
+                }
+                if is_err(r) {
+                    fail("cap-exhaust-err");
+                }
+                spawned += 1;
+            }
+            if !refused {
+                fail("cap-exhaust-nolimit");
+            }
+            write("PROCPROBE-CAP-EXHAUST-OK spawned=");
+            write_u64(spawned);
+            write("\n");
+        }
         Some(b"gui-pixels") => {
             // V1.0 (GUI1-001): a Ring 3 owner's windows are bounded by a
             // pixel quota (half the compositor budget), not just a window
