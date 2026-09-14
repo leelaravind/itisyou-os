@@ -2,7 +2,7 @@
   "tag": "v1.0.0",
   "version": "1.0.0",
   "published": true,
-  "commit": "PENDING",
+  "commit": "5593e5020670b983d34f5447c5103b19fc638f16",
   "builtBy": "Local build on Windows 11 (x86_64), pinned nightly-2026-08-01. GitHub Actions was unavailable (the repository is private with no Actions minutes), so these are locally-built bytes, not a CI build. The build is deterministic: two full-clean builds on the same host (cargo clean of target/ and target-user/ between them) produced these exact digests. A Linux build (as CI produces) yields different bytes \u2014 Rust embeds the source path in panic locations, and the path separators differ (kernel\\src on Windows, kernel/src on Linux) \u2014 so the CI-built SHA-256 will differ and will be added when the CI window opens.",
   "builtAt": "2026-09-14T10:05:36Z",
   "reproducibility": "Reproducible on the build host: two full-clean builds (target/ and target-user/ both removed between them, no shared cache for the kernel or the user programs) produced identical digests for every image. image-builder removes the non-determinism sources found in v0.8.1 (random GPT GUIDs; the link time and CodeView GUID in the embedded UEFI loader) and the user-program archive is a deterministic ustar. This release is Windows-built and reproducible on Windows; a Linux/CI build produces different bytes (path separators in panic-location strings) and is pending the CI window.",

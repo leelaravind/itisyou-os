@@ -46,7 +46,7 @@ export interface Release {
 export const RELEASES: Release[] = [
   {
     tag: 'v1.0.0',
-    commit: 'PENDING',
+    commit: '5593e50',
     date: '2026-09-14',
     milestone: 'V1.0 — Experimental Personal OS (VM-verified)',
     ciRun: 'none — local build (GitHub CI pending)',
