@@ -25,20 +25,33 @@ leg and a mutation control unless noted):
 - V1-SEC-005 unsafe inventory; V1-SEC-006 IPC channel scoping (ADR-0025);
 - V1-SEC-002 whole-attack-surface review — 13-agent workflow
   `wf_bb439a1a-29a`, 37 findings (3 high, 15 medium, 19 low); all 3 highs
-  and 16 findings fixed with legs and controls, 9 mediums recorded accepted
-  in `docs/KNOWN_LIMITATIONS.md`. Full table: `docs/V1_SECURITY_REVIEW.md`.
-  Fix IDs SEC1-001..005, NET1-001..004, FS1-001, USB1-001..003.
+  and **18 findings fixed** with legs and controls, 7 mediums recorded
+  accepted in `docs/KNOWN_LIMITATIONS.md`. Full table:
+  `docs/V1_SECURITY_REVIEW.md`. Fix IDs SEC1-001..005, NET1-001..004,
+  FS1-001, USB1-001..003, GUI1-001, CAP1-001.
 
-Last full local gate on `b99024b` (host loaded by another VM): all ~72 QEMU
-legs pass except `net-ipv6-responder-bios` and `ai-retry-bios`, which flaked
-under load and **pass in isolation** (`run-legs.ps1`, LEGS-OK) — the two
-most timing-sensitive legs, on code paths this branch did not change.
-Mechanical checks green (ci-parity 72, unsafe-inventory 196 sites, secret
-scan 388 files clean). Mutation controls in `E:\claude-tmp\itisyou-audit\v1\`.
+Last full local gate on `b99024b`: all ~72 QEMU legs pass except
+`net-ipv6-responder-bios` and `ai-retry-bios`, which flaked under host load
+and **pass in isolation** (`run-legs.ps1`, LEGS-OK) — the two most
+timing-sensitive legs, on code paths this branch did not change. Mechanical
+checks green (ci-parity 74 legs, unsafe-inventory 196 sites, secret scan
+388 files clean). Mutation controls in `E:\claude-tmp\itisyou-audit\v1\`.
+
+**The V1.0 artifact is built and locally verified** (a release candidate at a
+scratch 1.0.0 stamp, reverted): two clean builds produce **byte-identical**
+image digests (reproducible), `scripts\release-boot-test.ps1` is **OK** on
+UEFI+BIOS (boots, self-IDs `itisyou-os 1.0.0`, init pid 1, persistent store,
+networking), SHA-256 recorded in `E:\claude-tmp\itisyou-audit\v1\release\`
+(BIOS `7df0fbfe…7b20a`, UEFI `60c6a418…0af81`). Wrangler is authenticated to
+the owner's Cloudflare account, so deployment is not blocked.
 
 The V1.0 release-time criteria (V1-REL-001/002 whole matrix green ×3 + CI,
 V1-REP-* reproducibility/tag, V1-SEC-007/BOOT/ENV/DD website+download) can
-only be verified by the release run and stay open until the CI window opens.
+only be closed by the release run and stay open until the CI window opens.
+The genuinely external blocker is the GitHub CI window: the *published*
+release must be the CI-built bytes and the site's release model requires a
+green-CI-backed tag, so v0.11.0 then v1.0.0 both wait on the owner opening a
+public CI window (or fixing Actions billing).
 
 ---
 
