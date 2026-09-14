@@ -428,9 +428,10 @@ extern "C" fn _start() -> ! {
         },
         Some(b"direct") => direct(),
         // V0.11 (OUT11-001): terminal control sequences in program output
-        // are shown, never performed.
+        // are shown, never performed; a right-to-left override (which would
+        // display the reversed text after it as a kernel marker) likewise.
         Some(b"ansi") => {
-            write("AIPROBE-ANSI \x1b[2A\x1b[2K\rforged\n");
+            write("AIPROBE-ANSI \x1b[2A\x1b[2K\rforged\u{202e}:UOYSITI]\n");
         }
         // V0.11 (S10): the kernel -> init mailbox is init's alone.
         Some(b"initctl") => {

@@ -699,8 +699,9 @@ pub fn for_each(mut f: impl FnMut(u64, u64, &str, ProcState)) {
 }
 
 /// spawn(path_ptr, path_len) — load an ELF from the VFS into a new process
-/// and admit it. Returns the child pid, or ERR_*. The child INHERITS the
-/// parent's capabilities and FS sandbox exactly (V0.7) — spawning can never
+/// and admit it. Returns the child pid, or ERR_*. The child inherits the
+/// parent's capabilities (less the console-only ones, which `caps::delegate`
+/// never passes on - V0.11) and its FS sandbox (V0.7) — spawning can never
 /// amplify authority.
 pub fn sys_spawn(path_ptr: u64, path_len: u64) -> u64 {
     spawn_common(path_ptr, path_len, u64::MAX, user::Args::empty(), "spawn")

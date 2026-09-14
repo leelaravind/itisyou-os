@@ -1,7 +1,7 @@
-# Current status — v0.10.0 released (V0.10 — Userspace System)
+# Current status — V0.11 in development (latest release v0.10.0)
 
-**Timestamp:** 2026-09-13 (Europe/London)
-**Branch:** `main` · **Repository:** `E:\Project\itisyou-os`
+**Timestamp:** 2026-09-14 (Europe/London)
+**Branch:** `main` (release) · `v0.11/work` (development) · **Repository:** `E:\Project\itisyou-os`
 **Latest release:** `v0.10.0` — V0.10 Userspace System. Release commit
 `c936bc7` (CI run `34782271250`, all jobs green, images reproduced
 bit-for-bit by the run's two clean builds); download live at
@@ -9,7 +9,50 @@ https://os.itisyou.app/download (UEFI
 `f98f5cbe89dc295699f75231bc71766eb6c129a60baa41d028f5ac0f315da792`, BIOS
 `d8416a58f367d835a6755662d8d9322b0ba042d7362179030f0a0ea24f44f098`). The
 earlier releases `v0.9.0` and `v0.8.1` stay downloadable.
-**Next:** V0.11 — AI-Native System Layer.
+**Now:** V0.11 — AI-Native System Layer, on branch `v0.11/work` (not yet
+released).
+
+## V0.11 (in development)
+
+Every V0.11 row in `docs/REQUIREMENTS.md` is IMPLEMENTED+VERIFIED on
+`v0.11/work` with QEMU and host evidence, each with a negative control.
+
+- **Audit trail, reviewed first.** Three defects present since v0.8.0 were
+  fixed before any agent code (AUDIT11-001, AUDIT11-002, SEC11-001) and
+  disclosed for v0.10.0 on the site.
+- **The AI-native layer (ADR-0024):**
+  - a pinned diagnostic model trained at build time from synthetic scenarios
+    (MODEL11-001). Its accuracy equals a one-rule baseline, which is reported
+    as such;
+  - a console-only read-only system view (VIEW11-001);
+  - `inferd` running the model in Ring 3 under init (INFER11-001);
+  - runbooks (KB11-001);
+  - an agent with no authority (AGENT11-001);
+  - kernel-checked proposals (PROP11-001);
+  - console-only approval with kernel execution, verification and rollback
+    for `resume-scheduler` (ACT11-001) and for `retry-service` through a
+    kernel→init mailbox (ACT11-002).
+- **Terminal escapes.** Ring 3 output can no longer drive the operator's
+  terminal (OUT11-001).
+- **The adversarial review.** Six independent reviewers covered the whole
+  V0.11 diff, and every finding was verified by a second reviewer. Nine
+  findings were confirmed, and each is now fixed with a leg or selftest and a
+  control:
+  - two console-evidence defects in v0.10.0, disclosed for it: a marker split
+    across output chunks (OUT11-002), and a program-chosen path printed by
+    `ps` (SEC11-002);
+  - a crafted audit trail that crashed recovery, and a false "the next save
+    heals it" claim (AUDIT11-003);
+  - a rollback kill that trusted init's pid, and a fetched-but-unacknowledged
+    retry (ACT11-002);
+  - proposal expiry, and bidi characters in the kernel's echo (PROP11-001,
+    AUDIT11-002);
+  - two tests weaker than their claims (PROP11-001).
+
+Limitations are in `docs/KNOWN_LIMITATIONS.md`: synthetic training, three
+conditions and two actions, unauthenticated IPC, and proposals that are not
+persisted. **Next:** the v0.11.0 release, which needs CI (another short
+public window).
 
 ## V0.9 (released as v0.9.0)
 

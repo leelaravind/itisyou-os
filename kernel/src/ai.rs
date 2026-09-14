@@ -1,10 +1,12 @@
 //! The AI-native system layer's kernel side (V0.11, ADR-0024).
 //!
-//! The kernel runs no model and makes no decision from one. It holds the
-//! provenance anchor — the SHA-256 of the model the build trained, compiled
-//! in — and, as the steps of ADR-0024 land, the approved view (`sys_view`),
-//! the proposal table and the console's approval path. Inference itself runs
-//! in Ring 3 (`/bin/inferd`).
+//! Inference runs in Ring 3 (`/bin/inferd`); the kernel never acts on a
+//! model's output. It holds the provenance anchor - the SHA-256 of the model
+//! the build trained, compiled in - the approved view (`sys_view`), the
+//! proposal table and the console's approval path. It evaluates the shipped
+//! model in exactly one place: to recompute, from the view it served, the
+//! condition a proposal cites, as a CHECK on the agent's claim (`check`); a
+//! match only lets the proposal be filed, never executed.
 
 /// SHA-256 of `/etc/ai/diag.model` as the build trained it (`kernel/build.rs`
 /// checks it against the pin `ai/diag.model.sha256`).
@@ -274,6 +276,9 @@ fn target_or_dash(r: &Record) -> &str {
 pub fn sys_propose(ptr: u64, len: u64) -> u64 {
     use crate::syscall::{ERR_AGAIN, ERR_INVAL, ERR_PERM};
     let pid = crate::syscall::CURRENT_PID.load(core::sync::atomic::Ordering::SeqCst);
+    // Entries past their TTL leave now, not only when the operator next
+    // looks: a table full of stale proposals must not refuse fresh ones.
+    expire_now();
     let result = if len != policy::RECORD_LEN as u64 {
         Err(Refusal::BadLength)
     } else {
@@ -570,13 +575,55 @@ fn slices_until<T>(ms: u64, mut f: impl FnMut() -> Option<T>) -> Option<T> {
     }
 }
 
+/// What came of a command posted to init.
+enum Answer {
+    Acked(kernel_core::initctl::Ack),
+    /// No acknowledgement in time; the command is withdrawn. `fetched`: init
+    /// had read it first, so it may have acted on it.
+    Silent {
+        fetched: bool,
+    },
+}
+
 /// Wait for init's acknowledgement of `seq`; withdraw the command if none.
-fn wait_ack(seq: u32) -> Option<kernel_core::initctl::Ack> {
-    let ack = slices_until(ACK_TIMEOUT_MS, || crate::initd::take_ack(seq));
-    if ack.is_none() {
-        crate::initd::withdraw(seq);
+fn wait_ack(seq: u32) -> Answer {
+    match slices_until(ACK_TIMEOUT_MS, || crate::initd::take_ack(seq)) {
+        Some(a) => Answer::Acked(a),
+        None => Answer::Silent {
+            fetched: crate::initd::withdraw(seq),
+        },
     }
-    ack
+}
+
+/// The program `/etc/init.conf` runs as service `name`.
+fn init_conf_path(name: &str) -> Option<alloc::string::String> {
+    crate::fs::read("/etc/init.conf")
+        .ok()
+        .and_then(|b| core::str::from_utf8(b).ok())
+        .and_then(|t| kernel_core::initconf::parse(t).ok())
+        .and_then(|c| {
+            c.services()
+                .find(|s| s.name == name)
+                .map(|s| alloc::string::String::from(s.path))
+        })
+}
+
+/// Is `pid` a live instance of service `name`: a child of the live init
+/// running the program `/etc/init.conf` names for it? init's stop
+/// acknowledgement names the instance to end, and the kernel kills on that
+/// word only a process that passes this - init holds no kill authority, so
+/// it must not gain any over the rest of the system through the mailbox.
+fn is_instance_of(pid: u64, name: &str) -> bool {
+    let Some(path) = init_conf_path(name) else {
+        return false;
+    };
+    let mut found = false;
+    crate::proc::for_each(|p, parent, ppath, state| {
+        if p == pid && crate::initd::is_init(parent) && ppath == path && !state.is_terminal() {
+            found = true;
+        }
+    });
+    found
 }
 
 fn row_state(name: &str) -> Option<(kernel_core::service::ServiceState, u64, u32)> {
@@ -610,20 +657,31 @@ fn execute_retry(id: u64, r: &Record, detail: &str) -> bool {
         return false;
     };
     let ack = match wait_ack(seq) {
-        Some(a) if a.ok => a,
-        other => {
-            *WATCH.lock() = None;
-            let reason = if other.is_some() {
-                "init_refused"
-            } else {
-                "init_unresponsive"
+        Answer::Acked(a) if a.ok => a,
+        answer => {
+            let (reason, fetched) = match answer {
+                Answer::Acked(_) => ("init_refused", false),
+                Answer::Silent { fetched } => ("init_unresponsive", fetched),
             };
             crate::serial_println!(
-                "[ITISYOU:AI] action_failed id={id} action=retry-service target={name} reason={reason}"
+                "[ITISYOU:AI] action_failed id={id} action=retry-service target={name} reason={reason} fetched={fetched}"
             );
             crate::audit::denied_reason("action_executed", 0, reason);
+            let watch = WATCH.lock().take();
+            if fetched {
+                // init read the retry and then went quiet: it may have
+                // started the service. Undo it as for a failed check.
+                return rollback_retry(id, name, watch);
+            }
+            // init refused it, or never read it (and cannot now: it is
+            // withdrawn), so nothing was started.
             crate::serial_println!(
                 "[ITISYOU:AI] action_rolled_back id={id} action=retry-service target={name} undo=nothing_started"
+            );
+            crate::audit::allowed(
+                "action_rolled_back",
+                0,
+                Some(alloc::format!("id={id} target={name} undo=nothing_started")),
             );
             return false;
         }
@@ -665,15 +723,33 @@ fn execute_retry(id: u64, r: &Record, detail: &str) -> bool {
     if passed {
         return true;
     }
-    // Rollback: init stops supervising it; the kernel kills what init names.
+    rollback_retry(id, name, watch)
+}
+
+/// Undo a retry: init stops supervising the service, and the kernel kills the
+/// instance init names - if it is one (`is_instance_of`). Always `false`.
+fn rollback_retry(id: u64, name: &str, watch: Option<Watch>) -> bool {
+    use kernel_core::initctl::Op;
     let stop_seq = watch
         .and_then(|w| w.stop_seq)
         .or_else(|| crate::initd::post(Op::Stop, name));
-    let stopped = stop_seq.and_then(wait_ack);
+    let stopped = match stop_seq.map(wait_ack) {
+        Some(Answer::Acked(a)) => Some(a),
+        _ => None,
+    };
     let killed = match stopped {
         Some(a) if a.ok && a.pid != 0 => {
-            let _ = crate::proc::kill(a.pid);
-            a.pid
+            if is_instance_of(a.pid, name) {
+                let _ = crate::proc::kill(a.pid);
+                a.pid
+            } else {
+                crate::serial_println!(
+                    "[ITISYOU:AI] rollback_kill_refused id={id} target={name} pid={} reason=not_an_instance",
+                    a.pid
+                );
+                crate::audit::denied_reason("rollback_kill", 0, "not_an_instance");
+                0
+            }
         }
         _ => 0,
     };

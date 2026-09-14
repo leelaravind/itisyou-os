@@ -3,10 +3,18 @@ import Base from '../layouts/Base.astro';
 import Breadcrumbs from '../components/Breadcrumbs.astro';
 import StatusTag from '../components/StatusTag.astro';
 import { JOURNAL } from '../lib/journal';
-import { status, orDash } from '../lib/status';
+import { RELEASES } from '../lib/releases';
 
 const description =
   'The ITISYOU OS system ledger: a chronological record of engineering decisions, failures, root causes and fixes, mirrored from docs/DEVELOPMENT_STORY.md. Tagged releases are listed on the releases page.';
+
+/**
+ * An entry shows a version and commit only when it records a release
+ * (`entry.release`); the commit is that release's, from RELEASES. Other
+ * entries carry no version or commit, so none is shown — the current build's
+ * would be wrong for every entry written before it.
+ */
+const releaseOf = (tag: string | undefined) => (tag ? RELEASES.find((r) => r.tag === tag) : undefined);
 ---
 
 <Base title="Changelog" description={description}>
@@ -24,21 +32,27 @@ const description =
 
     <div class="flex flex-col gap-12">
       {
-        JOURNAL.map((entry) => (
+        JOURNAL.map((entry) => {
+          const rel = releaseOf(entry.release);
+          return (
           <article class="panel panel-hover w-full flex flex-col md:flex-row">
             <div class="w-full md:w-64 border-b md:border-b-0 md:border-r border-line p-6 flex flex-col gap-4 bg-surface-2 shrink-0">
               <div>
                 <p class="font-mono text-mono-label text-muted mb-1">DATE</p>
                 <p class="font-mono text-mono-data text-body">{entry.date} · {entry.time}</p>
               </div>
-              <div>
-                <p class="font-mono text-mono-label text-muted mb-1">BUILD</p>
-                <p class="font-mono text-mono-data text-ink">v{status.version}</p>
-              </div>
-              <div>
-                <p class="font-mono text-mono-label text-muted mb-1">COMMIT</p>
-                <p class="font-mono text-mono-data text-meta">{orDash(status.commit)}</p>
-              </div>
+              {rel && (
+                <div>
+                  <p class="font-mono text-mono-label text-muted mb-1">RELEASE</p>
+                  <p class="font-mono text-mono-data text-ink">{rel.tag}</p>
+                </div>
+              )}
+              {rel && (
+                <div>
+                  <p class="font-mono text-mono-label text-muted mb-1">COMMIT</p>
+                  <p class="font-mono text-mono-data text-meta">{rel.commit}</p>
+                </div>
+              )}
               <div class="mt-2">
                 <StatusTag status={entry.status} />
               </div>
@@ -68,7 +82,8 @@ const description =
               )}
             </div>
           </article>
-        ))
+          );
+        })
       }
     </div>
 

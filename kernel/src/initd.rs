@@ -165,15 +165,20 @@ pub fn take_ack(seq: u32) -> Option<Ack> {
 }
 
 /// Give up on `seq` (no acknowledgement in time): nothing may act on it now.
-pub fn withdraw(seq: u32) {
+/// Returns whether init had already FETCHED it - then init may have acted on
+/// it before going quiet, and the caller must not assume nothing happened.
+pub fn withdraw(seq: u32) -> bool {
     let mut mb = MAILBOX.lock();
+    let mut fetched = false;
     if mb.pending.is_some_and(|c| c.seq == seq) {
+        fetched = mb.delivered;
         mb.pending = None;
         mb.delivered = false;
     }
     if mb.ack.is_some_and(|a| a.seq == seq) {
         mb.ack = None;
     }
+    fetched
 }
 
 fn clear_mailbox() {

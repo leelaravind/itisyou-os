@@ -342,6 +342,46 @@
       "id": "user-copy-hardening",
       "name": "Kernel copies refuse user memory the program cannot write (V0.10)",
       "status": "verified"
+    },
+    {
+      "id": "audit-integrity",
+      "name": "Audit trail and package store kernel-owned, echoes escaped, a stored trail that verifies across boots (V0.11)",
+      "status": "verified"
+    },
+    {
+      "id": "sys-view",
+      "name": "Approved read-only system view, console-granted only (V0.11)",
+      "status": "verified"
+    },
+    {
+      "id": "diag-model",
+      "name": "Pinned diagnostic model, trained at build time from synthetic scenarios (V0.11)",
+      "status": "verified"
+    },
+    {
+      "id": "inference-service",
+      "name": "Ring 3 inference service (inferd) outside the kernel (V0.11)",
+      "status": "verified"
+    },
+    {
+      "id": "diag-agent",
+      "name": "Diagnostic agent with runbooks and no authority to act (V0.11)",
+      "status": "verified"
+    },
+    {
+      "id": "proposals",
+      "name": "Kernel-checked proposals; approve and deny only at the console (V0.11)",
+      "status": "verified"
+    },
+    {
+      "id": "verified-actions",
+      "name": "Approved actions executed, verified and rolled back by the kernel (V0.11)",
+      "status": "verified"
+    },
+    {
+      "id": "output-escaping",
+      "name": "Ring 3 output cannot drive the operator’s terminal (V0.11)",
+      "status": "verified"
     }
   ]
 }

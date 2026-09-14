@@ -18,15 +18,15 @@ const layers = [
   {
     code: 'L5',
     name: 'AI layer',
-    note: 'intelligence, never authority',
-    tag: 'concept',
-    tagLabel: 'Concept',
+    note: 'intelligence, never authority — V0.11, verified on the development branch, not released: a pinned model in Ring 3, an agent that only proposes',
+    tag: 'in-development',
+    tagLabel: 'In Development',
     accent: false,
   },
   {
     code: 'L4',
     name: 'Privileged services / capability engine',
-    note: 'capability handles enforced at every syscall, /sbin/init supervising services from its config, signed packages (V0.7–V0.10); the AI policy engine on top is still concept',
+    note: 'capability handles enforced at every syscall, /sbin/init supervising services from its config, signed packages (V0.7–V0.10); V0.11 (not released) adds kernel-checked proposals and console-only approval on top',
     tag: 'verified',
     tagLabel: 'Verified',
     accent: false,
@@ -136,7 +136,8 @@ const latestRelease = RELEASES[0];
           }
         </ol>
         <p class="font-mono text-[11px] text-muted mt-4">
-          Layers above the kernel are documented direction, not implemented functionality. See
+          Verified layers are machine-checked in QEMU and released. The AI layer is V0.11 work, verified on the
+          development branch but in no release yet. See
           <a href="/architecture" class="underline underline-offset-2 hover:text-ink">/architecture</a>.
         </p>
       </figure>
@@ -235,9 +236,9 @@ const latestRelease = RELEASES[0];
           AI has intelligence,<br />not authority.
         </h2>
         <p class="text-body-base text-meta-bright max-w-2xl mb-8">
-          Any future AI/agent layer reasons about the system and proposes actions; it never executes privileged kernel
-          operations directly. The principle exists now — before any AI component — because it constrains how every
-          kernel interface is designed.
+          The AI/agent layer reasons about the system and proposes actions; it never executes privileged kernel
+          operations directly. The principle came before any AI component, because it constrains how every kernel
+          interface is designed.
         </p>
         <div class="log-block" role="img" aria-label="Intended authority pipeline: agent intent, then policy engine, then risk and permission evaluation, then user approval where required, then deterministic privileged service, then kernel operation, then verification, then audit, then rollback and recovery.">
           <ol class="flex flex-wrap items-center gap-x-3 gap-y-2 list-none">
@@ -266,7 +267,10 @@ const latestRelease = RELEASES[0];
           </ol>
         </div>
         <p class="font-mono text-mono-data text-muted mt-4">
-          No AI component exists in the current runtime. See <a href="/security" class="underline underline-offset-2 hover:text-ink">the security model</a>.
+          The released v0.10.0 image contains no AI component. On the V0.11 development branch — verified in QEMU, not
+          yet released — the first agent runs this pipeline for two actions: it reads an approved view and files a
+          proposal, the kernel checks it against its own facts, only the console approves, and the kernel executes,
+          verifies and rolls back. See <a href="/security" class="underline underline-offset-2 hover:text-ink">the security model</a>.
         </p>
       </div>
     </section>
@@ -359,8 +363,9 @@ const latestRelease = RELEASES[0];
         <div>
           <h2 class="font-sans text-headline-md text-ink mb-4">Source &amp; documentation</h2>
           <p class="text-body-base text-meta-bright mb-4">
-            The repository is private during early development and will open once the V0.1 foundation and its
-            verification evidence stabilize. The engineering documentation is public now.
+            The source repository is private. It has been made public only briefly, so that GitHub CI could run for
+            releases, and the owner decides when it opens. Published releases, their checksums and the engineering
+            evidence are on this site.
           </p>
         </div>
         <div class="flex flex-wrap gap-4">

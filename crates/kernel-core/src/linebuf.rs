@@ -14,7 +14,11 @@
 //!
 //! [`neutralize_markers`] rewrites the kernel's evidence prefix `[ITISYOU:`
 //! wherever it appears in process output, so no program can print a line
-//! that looks like a kernel marker.
+//! that looks like a kernel marker. It works on one emitted chunk at a time,
+//! so no chunk may END with the start of a marker whose rest the next chunk
+//! would supply: [`LineBuf`] keeps such a tail back (V0.11; in v0.10.0 a
+//! marker split across the 256-byte seam, or across two unbuffered writes,
+//! reached the port whole).
 
 /// The prefix every kernel evidence marker starts with.
 pub const KERNEL_MARKER: &[u8] = b"[ITISYOU:";
@@ -56,12 +60,15 @@ impl<const N: usize> LineBuf<N> {
 
     /// Append `bytes`. `emit` receives every complete line (ending in
     /// `\n`, which is included) and, whenever the buffer fills without a
-    /// newline, the full buffer as one chunk.
+    /// newline, the buffer as one chunk - less any tail that could be the
+    /// start of [`KERNEL_MARKER`], which is kept to lead the next chunk
+    /// (V0.11): markers are neutralized one chunk at a time, so a marker
+    /// split across two chunks would reach the port whole, rewritten by
+    /// neither.
     pub fn push(&mut self, bytes: &[u8], mut emit: impl FnMut(&[u8])) {
         for &b in bytes {
             if self.len == N {
-                emit(&self.buf[..self.len]);
-                self.len = 0;
+                self.emit_keeping_marker_tail(&mut emit);
             }
             self.buf[self.len] = b;
             self.len += 1;
@@ -72,13 +79,24 @@ impl<const N: usize> LineBuf<N> {
         }
     }
 
-    /// Emit any pending partial line AS IS — no newline — and empty the
-    /// buffer (V0.10): a prompt, which the console's echo of the answer
-    /// completes.
+    /// Emit the buffer but keep a trailing proper prefix of the marker (if
+    /// the buffer can hold it with room to spare) at its front.
+    fn emit_keeping_marker_tail(&mut self, emit: &mut impl FnMut(&[u8])) {
+        let keep = marker_start_at_end(&self.buf[..self.len]);
+        let keep = if keep < N { keep } else { 0 };
+        let cut = self.len - keep;
+        emit(&self.buf[..cut]);
+        self.buf.copy_within(cut..self.len, 0);
+        self.len = keep;
+    }
+
+    /// Emit any pending partial line — no newline — and empty the buffer
+    /// (V0.10): a prompt, which the console's echo of the answer completes.
+    /// A tail that could start a kernel marker is kept back for the next
+    /// write, as in [`LineBuf::push`] (V0.11).
     pub fn flush_partial(&mut self, mut emit: impl FnMut(&[u8])) {
         if self.len > 0 {
-            emit(&self.buf[..self.len]);
-            self.len = 0;
+            self.emit_keeping_marker_tail(&mut emit);
         }
     }
 
@@ -97,6 +115,17 @@ impl<const N: usize> LineBuf<N> {
         }
         self.len = 0;
     }
+}
+
+/// Length of the longest suffix of `s` that is a PROPER prefix of
+/// [`KERNEL_MARKER`] (0..=8): the bytes a marker straddling the end of `s`
+/// would have started with. Any shorter such suffix is contained in it.
+pub fn marker_start_at_end(s: &[u8]) -> usize {
+    let max = (KERNEL_MARKER.len() - 1).min(s.len());
+    (1..=max)
+        .rev()
+        .find(|&k| s[s.len() - k..] == KERNEL_MARKER[..k])
+        .unwrap_or(0)
 }
 
 /// Rewrite every occurrence of [`KERNEL_MARKER`] in `line` to
@@ -122,15 +151,18 @@ pub fn neutralize_markers(line: &mut [u8]) -> usize {
 /// the line feed and the tab escaped - `\x1b` for ESC, `\x0d` for a carriage
 /// return, `\u{9b}` for the C1 CSI - so a program cannot move the cursor,
 /// clear the screen or redraw what the kernel printed, such as a proposal's
-/// preview before the operator approves it. The kernel's marker prefix is
-/// neutralized separately ([`neutralize_markers`]).
+/// preview before the operator approves it. The invisible format characters
+/// of [`reorders_or_hides`] are escaped the same way. The kernel's marker
+/// prefix is neutralized separately ([`neutralize_markers`]).
 pub fn write_escaped(bytes: &[u8], out: &mut impl core::fmt::Write) -> core::fmt::Result {
     for chunk in bytes.utf8_chunks() {
         for c in chunk.valid().chars() {
             match c {
                 '\n' | '\t' => out.write_char(c)?,
                 c if c.is_ascii_control() => write!(out, "\\x{:02x}", c as u32)?,
-                c if c.is_control() => write!(out, "\\u{{{:x}}}", c as u32)?,
+                c if c.is_control() || reorders_or_hides(c) => {
+                    write!(out, "\\u{{{:x}}}", c as u32)?
+                }
                 c => out.write_char(c)?,
             }
         }
@@ -139,6 +171,24 @@ pub fn write_escaped(bytes: &[u8], out: &mut impl core::fmt::Write) -> core::fmt
         }
     }
     Ok(())
+}
+
+/// Unicode format characters that change how a line is DISPLAYED without
+/// being visible: the bidirectional marks, embeddings, overrides and
+/// isolates (on a terminal that honours them, `\u{202e}` followed by
+/// `:UOYSITI]` displays as `[ITISYOU:` - reversed, the bracket mirrored -
+/// which [`neutralize_markers`], matching bytes in logical order, cannot
+/// see), the zero-width characters and the byte-order mark.
+pub fn reorders_or_hides(c: char) -> bool {
+    matches!(
+        c,
+        '\u{061c}'
+            | '\u{200b}'..='\u{200f}'
+            | '\u{202a}'..='\u{202e}'
+            | '\u{2060}'..='\u{2064}'
+            | '\u{2066}'..='\u{2069}'
+            | '\u{feff}'
+    )
 }
 
 #[cfg(test)]
@@ -170,6 +220,47 @@ mod tests {
         assert!(escaped(&all)
             .chars()
             .all(|c| !c.is_control() || c == '\n' || c == '\t'));
+    }
+
+    #[test]
+    fn process_output_cannot_reorder_or_hide_text() {
+        // A right-to-left override would display this as a kernel marker.
+        assert_eq!(
+            escaped("forged\u{202e}:UOYSITI]".as_bytes()),
+            "forged\\u{202e}:UOYSITI]"
+        );
+        assert_eq!(
+            escaped("a\u{200b}b\u{feff}".as_bytes()),
+            "a\\u{200b}b\\u{feff}"
+        );
+        // Every character in the escaped ranges, and nothing either side.
+        let ranges = [
+            (0x061c, 0x061c),
+            (0x200b, 0x200f),
+            (0x202a, 0x202e),
+            (0x2060, 0x2064),
+            (0x2066, 0x2069),
+            (0xfeff, 0xfeff),
+        ];
+        for (lo, hi) in ranges {
+            for cp in lo..=hi {
+                let c = char::from_u32(cp).unwrap();
+                assert!(reorders_or_hides(c), "{cp:#x}");
+                let s = c.to_string();
+                assert_eq!(escaped(s.as_bytes()), format!("\\u{{{cp:x}}}"));
+            }
+            for cp in [lo - 1, hi + 1] {
+                let c = char::from_u32(cp).unwrap();
+                if !c.is_control() && !ranges.iter().any(|&(l, h)| (l..=h).contains(&cp)) {
+                    assert!(!reorders_or_hides(c), "{cp:#x}");
+                }
+            }
+        }
+        // Printable text in other scripts is untouched.
+        assert_eq!(
+            escaped("\u{5d0}\u{628}\u{4e2d}".as_bytes()),
+            "\u{5d0}\u{628}\u{4e2d}"
+        );
     }
 
     fn collect<const N: usize>(b: &mut LineBuf<N>, input: &[&[u8]]) -> Vec<Vec<u8>> {
@@ -229,6 +320,128 @@ mod tests {
         let mut b = LineBuf::<32>::new();
         let out = collect(&mut b, &[&[0xff, 0x00, b'x', b'\n']]);
         assert_eq!(out, vec![vec![0xff, 0x00, b'x', b'\n']]);
+    }
+
+    /// What reaches the port: each emitted chunk neutralized on its own, as
+    /// `console_out::emit` does, then concatenated.
+    fn wire<const N: usize>(ops: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut b = LineBuf::<N>::new();
+        let mut out = Vec::new();
+        let mut emit = |c: &[u8]| {
+            let mut c = c.to_vec();
+            neutralize_markers(&mut c);
+            out.extend_from_slice(&c);
+        };
+        for (op, bytes) in ops {
+            match *op {
+                "push" => b.push(bytes, &mut emit),
+                "prompt" => b.flush_partial(&mut emit),
+                "flush" => b.flush(&mut emit),
+                _ => unreachable!(),
+            }
+        }
+        out
+    }
+
+    fn has_marker(s: &[u8]) -> bool {
+        s.windows(KERNEL_MARKER.len()).any(|w| w == KERNEL_MARKER)
+    }
+
+    #[test]
+    fn a_marker_split_across_the_buffer_seam_is_still_rewritten() {
+        // v0.10.0: 250 filler bytes then the marker put `[ITISY` at the end
+        // of the first 256-byte chunk and `OU:` at the start of the next.
+        for k in 0..=KERNEL_MARKER.len() + 2 {
+            let mut line = vec![b'.'; 256 - k];
+            line.extend_from_slice(b"[ITISYOU:AI] action_verified id=1 result=pass\n");
+            let out = wire::<256>(&[("push", &line)]);
+            assert!(!has_marker(&out), "split at {k}");
+            assert!(out.windows(9).any(|w| w == RING3_MARKER), "split at {k}");
+            // Nothing lost, nothing reordered.
+            assert_eq!(out.len(), line.len());
+        }
+    }
+
+    #[test]
+    fn a_marker_split_across_writes_prompts_or_unbuffered_writes_is_rewritten() {
+        // Two writes into one buffer.
+        assert!(!has_marker(&wire::<256>(&[
+            ("push", b"[ITISYO"),
+            ("push", b"U:X] y\n")
+        ])));
+        // A prompt flushed in the middle of the marker.
+        let out = wire::<256>(&[
+            ("push", b"name? [ITISY"),
+            ("prompt", b""),
+            ("push", b"OU:X] y\n"),
+        ]);
+        assert!(!has_marker(&out));
+        assert_eq!(out, b"name? [RING3-U:X] y\n");
+        // The unbuffered path: each write its own buffer, flushed with a
+        // newline, so the next write cannot complete a marker.
+        let mut out = wire::<256>(&[("push", b"[ITISYO"), ("flush", b"")]);
+        out.extend(wire::<256>(&[("push", b"U:X] y\n")]));
+        assert!(!has_marker(&out));
+        // A buffer too small to keep a tail still never loses bytes.
+        assert_eq!(
+            wire::<4>(&[("push", b"[ITI"), ("push", b"S\n")]),
+            b"[ITIS\n"
+        );
+    }
+
+    #[test]
+    fn no_chunking_of_any_stream_lets_a_marker_through() {
+        // Deterministic pseudo-random streams dense in marker fragments, cut
+        // into writes and prompts at arbitrary points.
+        let mut x = 0x2545_f491_4f6c_dd1du64;
+        let mut next = |n: u64| {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            x % n
+        };
+        let pieces: [&[u8]; 6] = [b"[ITISYOU:", b"[ITI", b"SYOU:", b"[", b"xyz", b"\n"];
+        for _ in 0..2000 {
+            let mut stream = Vec::new();
+            for _ in 0..(1 + next(80)) {
+                stream.extend_from_slice(pieces[next(6) as usize]);
+            }
+            let mut ops: Vec<(&str, Vec<u8>)> = Vec::new();
+            let mut i = 0;
+            while i < stream.len() {
+                let n = (1 + next(40) as usize).min(stream.len() - i);
+                ops.push(("push", stream[i..i + n].to_vec()));
+                if next(4) == 0 {
+                    ops.push(("prompt", Vec::new()));
+                }
+                i += n;
+            }
+            ops.push(("flush", Vec::new()));
+            let ops: Vec<(&str, &[u8])> = ops.iter().map(|(o, b)| (*o, &b[..])).collect();
+            let a = wire::<16>(&ops);
+            let b = wire::<256>(&ops);
+            assert!(!has_marker(&a) && !has_marker(&b));
+            // Every byte arrives once, in order, as if the whole stream had
+            // been neutralized at once (plus the exit flush's newline).
+            let mut whole = stream.clone();
+            neutralize_markers(&mut whole);
+            assert_eq!(a, b);
+            assert_eq!(&a[..whole.len()], &whole[..]);
+            assert!(a.len() - whole.len() <= 1);
+        }
+    }
+
+    #[test]
+    fn marker_start_at_end_is_the_longest_marker_prefix_suffix() {
+        assert_eq!(marker_start_at_end(b""), 0);
+        assert_eq!(marker_start_at_end(b"abc"), 0);
+        assert_eq!(marker_start_at_end(b"abc["), 1);
+        assert_eq!(marker_start_at_end(b"x[ITISYOU"), 8);
+        // A whole marker at the end is not a PROPER prefix: 0 (it is
+        // neutralized inside the chunk).
+        assert_eq!(marker_start_at_end(b"[ITISYOU:"), 0);
+        // "[ITI[" - only the last "[" can start a marker.
+        assert_eq!(marker_start_at_end(b"[ITI["), 1);
     }
 
     #[test]

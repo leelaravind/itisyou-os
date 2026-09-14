@@ -1312,6 +1312,8 @@ fn cmd_ps() {
             ProcState::Faulted { vector } => alloc::format!("faulted:{vector}"),
             ProcState::Killed => String::from("killed"),
         };
+        // Canonical since the V0.11 review, and escaped all the same.
+        let path = crate::untrusted(path);
         crate::serial_println!("  pid={pid} ppid={ppid} path={path} state={st}");
     });
     crate::serial_println!("ps: processes={n}");
@@ -1364,7 +1366,10 @@ fn cmd_kill(args: &[&str]) {
     match crate::proc::kill(pid) {
         crate::proc::KillResult::Killed { path } => {
             crate::audit::allowed("console_kill", 0, Some(alloc::format!("pid={pid} {path}")));
-            crate::serial_println!("kill: pid={pid} path={path} state=killed");
+            crate::serial_println!(
+                "kill: pid={pid} path={} state=killed",
+                crate::untrusted(&path)
+            );
         }
         crate::proc::KillResult::NoSuch => {
             crate::serial_println!("kill: pid={pid}: no such process")

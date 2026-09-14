@@ -41,7 +41,8 @@ const boundaries = [
     n: 6,
     name: 'AI/agent boundary',
     now: false,
-    text: 'Future — but the V0.7 request → capability check → deterministic service → action → audit path IS the pipeline an agent will use; agents get no other entry point.',
+    dev: true,
+    text: 'V0.11, verified in QEMU on the development branch, not yet released — the released v0.10.0 image has no agent. The agent uses the V0.7 request → capability check → deterministic service → action → audit path and gets no other entry point. It holds two console-only capabilities — the approved view and the right to propose — that no default set, parent, service definition or package manifest can pass on. It files proposals; the kernel checks each against what it knows itself, only the console approves, and the kernel executes, verifies and rolls back. inferd’s answers travel over unauthenticated IPC and are treated as claims.',
   },
   {
     n: 7,
@@ -63,10 +64,13 @@ const threats = [
   ['Hostile TCP peer', 'forged resets or SYNs, segments for no connection, connection-table exhaustion', 'Since v0.9.0 — v0.8.1 has no TCP. Every segment is checksummed against the pseudo-header of the addresses it arrived between and its options are length-checked; a RST is accepted only at exactly the expected sequence number, and a SYN or in-window RST elsewhere draws a challenge ACK (RFC 5961); a segment for no connection gets a RST, never to broadcast; 8 connections with fixed buffers. Not yet: keyed initial sequence numbers (RFC 6528) or rate-limited challenge ACKs'],
   ['Tampered or foreign package', 'modified payload, unsigned or stranger-signed package, forged signature', 'SHA-256 integrity, then Ed25519 authenticity: corrupt, unsigned, stranger-signed and forged packages are each refused for their own reason (verified). Since v0.9.0 only an offline root is compiled in, and a signing key is trusted only through a root-signed certificate limited to a package-name scope and a release-epoch window — revoked, expired, out-of-scope and uncertified signers are each refused. v0.8.1 checks the signature against one compiled-in development key whose seed is published, so it proves the mechanism but anchors no trust'],
   ['Stolen or misused signing key', 'a published development key (v0.8.1); any signing key can leak', 'Since v0.9.0 a leaked signing key is bounded by its certificate’s scope and validity window and retired by a root-signed revocation list, and within a boot, applying an older list than the current one is refused (host-tested); the published test key is certified only for hello-* fixture packages. Not covered: a stolen root key (it is kept offline for that reason), or an attacker who can rewrite the unauthenticated boot image. In v0.8.1 this is not mitigated — accepted for a pre-alpha build, and stated'],
-  ['Edited audit trail', 'records altered, deleted, reordered or inserted on disk; the whole trail rewritten', 'hash-chained records verified on every boot and reported TAMPERED. A whole-trail rewrite (in the limit, a valid empty trail) still passes the chain. Since v0.9.0 the saved head can be anchored with a witness off the disk, and a check reports MISMATCH when the trail recovered at boot disagrees — an explicit command, and the witness must be reachable. v0.8.1 cannot detect a whole-trail rewrite. Found after v0.10.0, true of every release since v0.8.0 and fixed on the V0.11 branch: the verifier cries wolf — a trail saved by any boot after the first, or after the in-memory ring dropped a record, or after audit verify, reads as TAMPERED although untouched (AUDIT11-001)'],
+  ['Edited audit trail', 'records altered, deleted, reordered or inserted on disk; the whole trail rewritten', 'hash-chained records verified on every boot and reported TAMPERED. A whole-trail rewrite (in the limit, a valid empty trail) still passes the chain. Since v0.9.0 the saved head can be anchored with a witness off the disk, and a check reports MISMATCH when the trail recovered at boot disagrees — an explicit command, and the witness must be reachable. v0.8.1 cannot detect a whole-trail rewrite. Found after v0.10.0, true of every release since v0.8.0 and fixed on the V0.11 branch: the verifier cries wolf — a trail saved by any boot after the first, or after the in-memory ring dropped a record, or after audit verify, reads as TAMPERED although untouched (AUDIT11-001); and a crafted multi-megabyte trail on the disk panics boot recovery every time, an offline attacker’s denial of service (AUDIT11-003). On the V0.11 branch a tampered trail also stays reported across saves until the operator removes it'],
   ['A program rewriting the evidence', 'fs_write or fs_delete on the audit trail or on a package’s .pkg/.ok files; a file name or file contents with a line break and a kernel marker in them', 'Not mitigated in v0.10.0 and earlier, found after v0.10.0 and fixed on the V0.11 branch: a program holding fs_write without a sandbox can replace the audit trail (in the limit with a valid empty one, which only the anchor catches) or delete a commit marker, rolling an application back (SEC11-001); and the kernel echoes names and contents a program chose unescaped, so a line break in a name prints a line that reads as a kernel marker (AUDIT11-002). The fix makes the trail and the package store kernel-owned, refuses names with control characters, and escapes every echo'],
   ['Kernel touching user memory by accident', 'confused-deputy bugs, user pointers', 'SMAP forbids kernel access to user pages outside three declared windows; SMEP and UMIP on; W^X for user segments; a guard page below the user stack. Since v0.9.0 a zero-length copy never touches the user pointer: before that fix, found by the V0.10 work and confirmed on the V0.9 kernel, any program could panic the kernel with cap_list(NULL, 0) (SEC09-001, regression-checked in the gate). Since v0.10.0 a buffer the kernel writes must also be writable by the program at every level of the page walk: in v0.9.0 and earlier the kernel checked only that it was mapped, so any program could panic the kernel by pointing cap_list at its own read-only code or data (SEC10-001, found after v0.9.0)'],
   ['Kernel stack overflow', 'a deep or oversized kernel call path — V0.9’s first TCP run overflowed the then-unguarded syscall stack into the capability table', 'Since v0.9.0 — not in v0.8.1: the stack every interrupt and exception from Ring 3 runs on (RSP0) and the double-fault stack sit on unmapped guard pages (both verified unmapped at boot); an RSP0 overflow ends in a double fault that names the stack instead of silent corruption, verified by a deliberate overflow in QEMU. Since v0.10.0 the syscall stack — the one V0.9’s TCP bug overflowed, unguarded in v0.9.0 — and every kernel task stack sit on guard pages too, each verified by a deliberate overflow'],
+  ['A misled or malicious agent', 'a spoofed inference service answering over unauthenticated IPC; a forged model or view digest; a stale view; a diagnosis the model does not support; an action that does not apply; proposal flooding', 'V0.11, verified on the development branch, not released — v0.10.0 has no agent. Everything the agent hands the kernel is a claim: the kernel refuses an unknown model, a view it never served that process or served more than 5 s earlier, a condition its own recomputation with the shipped model does not give, an action the fixed condition → action table does not allow or that does not apply to the system now, a malformed field, and a second pending proposal from the same submitter (8 slots); each refusal is named and audited, and nothing a proposal says acts until the console approves it. Not covered: IPC has no sender identity, so a malicious IPC holder can mislead a diagnosis — though not get an unjustified proposal filed'],
+  ['An approved action that fails or no longer fits', 'the system changed between proposal and approval; an action that does not take effect or makes things worse', 'V0.11, development branch, not released: approve refuses a proposal that is no longer pending and re-checks the precondition from fresh kernel facts (precondition_changed); each action is verified against a post-condition and rolled back if it fails — a control in which the executor does nothing shows the verification failing and the rollback running. The retry-service rollback kills only a live instance of that service under /sbin/init — found by the V0.11 review: the kernel had killed whatever pid init named, and a compromised init naming another service’s pid is now refused (not_an_instance). Not covered: verification checks one post-condition over a short window, not the system’s health afterwards, and init still names which instance of the service to stop. Only two actions exist, and proposals are held in memory only — they do not survive a reboot'],
+  ['A program redrawing what the operator approves', 'escape sequences, carriage returns and C1 controls in a program’s output moving the cursor over a kernel line such as a proposal preview', 'V0.11, development branch, not released: process output shows every control character except line feed and tab escaped, and the invisible Unicode characters that reorder or hide text as well — a right-to-left override could make reversed text display as a kernel marker (OUT11-001, host-tested, and a QEMU probe whose cursor-up, erase-line, carriage return and override arrive as text). Found after v0.10.0 by the V0.11 adversarial review, and true of v0.10.0: a program can print the kernel marker prefix after all, split across the kernel’s 256-byte output chunks or across two writes once every line buffer is taken (OUT11-002); and ps prints the path string a program passed to spawn, so a line break and a marker in a component that .. later removes print as a kernel line of their own (SEC11-002). Both are fixed on the V0.11 branch. Not covered: printable lookalike characters, and a line that merely looks like a preview, without the kernel prefix'],
 ];
 ---
 
@@ -90,13 +94,15 @@ const threats = [
       <div class="md:col-span-4 flex flex-col gap-4">
         <h2 id="s1-title" class="font-mono text-mono-label text-ink tracking-widest">01 // THE CENTRAL PRINCIPLE</h2>
         <p class="text-body-base text-meta-bright">
-          Any future AI/agent layer reasons about the system and proposes actions; it never executes privileged kernel
-          operations directly. The current runtime contains no AI component — the principle exists now because it
-          constrains interface design: every privileged operation is reachable only through a narrow, deterministic,
-          capability-checked and audited path, and an agent will get that path and nothing else.
+          The AI/agent layer reasons about the system and proposes actions; it never executes privileged kernel
+          operations directly. The principle came before any AI component because it constrains interface design:
+          every privileged operation is reachable only through a narrow, deterministic, capability-checked and audited
+          path, and an agent gets that path and nothing else. The released v0.10.0 image contains no AI component; the
+          V0.11 development branch — verified in QEMU, not yet released — carries the first agent, built to this
+          pipeline for exactly two actions.
         </p>
-        <div class="log-block mt-4" aria-label="Intended authority pipeline">
-          <p class="text-muted mb-2">// capability check, service and audit exist today; the agent layer is planned</p>
+        <div class="log-block mt-4" aria-label="Authority pipeline">
+          <p class="text-muted mb-2">// released: capability check, service, audit · V0.11 branch (unreleased): every step, for two actions</p>
           <p>agent intent → policy engine</p>
           <p>&nbsp;&nbsp;→ risk/permission evaluation</p>
           <p>&nbsp;&nbsp;→ user approval (where required)</p>
@@ -106,15 +112,15 @@ const threats = [
         </div>
       </div>
       <div class="md:col-span-8 panel p-6 md:p-8 relative">
-        <div class="absolute top-0 right-0 p-4"><StatusTag status="concept" /></div>
+        <div class="absolute top-0 right-0 p-4"><StatusTag status="in-development" /></div>
         <h3 class="font-sans text-headline-md text-ink mb-6 pr-24">Intelligence / authority separation</h3>
         <div class="flex flex-col md:flex-row gap-6 mt-4">
           <div class="flex-1 border border-line p-6 bg-log">
-            <p class="font-mono text-mono-label text-meta border-b border-line pb-2 mb-4">FUTURE AI / AGENT LAYER</p>
+            <p class="font-mono text-mono-label text-meta border-b border-line pb-2 mb-4">AI / AGENT LAYER (V0.11, UNRELEASED)</p>
             <ul class="font-mono text-mono-data text-meta space-y-2 list-none">
               <li>− no raw hardware access</li>
-              <li>− no direct kernel calls</li>
-              <li>− proposes, never executes</li>
+              <li>− reads only an approved view</li>
+              <li>− proposes; never approves or executes</li>
             </ul>
           </div>
           <div class="flex items-center justify-center relative md:w-10 shrink-0 py-2" aria-hidden="true">
@@ -125,14 +131,16 @@ const threats = [
             <p class="font-mono text-mono-label text-ink border-b border-ink pb-2 mb-4">DETERMINISTIC SYSTEM SIDE</p>
             <ul class="font-mono text-mono-data text-ink space-y-2 list-none">
               <li>+ policy &amp; permission evaluation</li>
+              <li>+ approval at the console only</li>
               <li>+ narrow privileged services</li>
               <li>+ verification, audit, rollback</li>
             </ul>
           </div>
         </div>
         <p class="mt-6 border-t border-line pt-4 font-mono text-mono-data text-meta text-xs">
-          Kernel APIs are designed so privileged operations can later sit behind this layer rather than being callable
-          by an agent directly.
+          On the V0.11 development branch (not released) the agent’s own attempts at svc_report, fs_write and spawn are
+          refused, and no syscall it can call resumes the scheduler or retries a service — only an approve typed at the
+          kernel console reaches either action.
         </p>
       </div>
     </section>
@@ -146,7 +154,10 @@ const threats = [
             <li class="bg-surface p-6 flex flex-col gap-3">
               <div class="flex items-center justify-between gap-3">
                 <span class="font-mono text-mono-label text-muted tracking-widest">BOUNDARY_{String(b.n).padStart(2, '0')}</span>
-                <StatusTag status={b.now ? 'verified' : 'concept'} label={b.now ? 'Current' : 'Future'} />
+                <StatusTag
+                  status={b.now ? 'verified' : b.dev ? 'in-development' : 'concept'}
+                  label={b.now ? 'Current' : b.dev ? 'Unreleased' : 'Future'}
+                />
               </div>
               <h3 class="font-sans text-body-base font-medium text-ink">{b.name}</h3>
               <p class="text-sm text-meta-bright">{b.text}</p>
@@ -163,7 +174,8 @@ const threats = [
         <p class="text-body-base text-meta-bright">
           Each control below is enforced by the current build and exercised by a QEMU leg that must see the refusal
           happen — a control never observed failing is not counted. The current release is v0.10.0; where an earlier
-          release differs, the row says which. The environment is still a single-CPU virtual machine; nothing
+          release differs, the row says which. Rows or clauses marked V0.11 are verified in QEMU on the development
+          branch and are in no release yet. The environment is still a single-CPU virtual machine; nothing
           here is a claim about physical hardware.
         </p>
       </div>
@@ -175,7 +187,10 @@ const threats = [
             ['SANDBOXED FILESYSTEM', 'Reads and writes are confined to per-process path prefixes checked on the normalized path; writing also needs the write right. Traversal and root escapes are refused.'],
             ['SIGNED PACKAGES', 'Installs verify SHA-256 integrity, then an Ed25519 signature — since v0.9.0 against an offline root, through root-signed certificates limited by package-name scope and release-epoch validity, subject to a root-signed revocation list; the root and release private keys are kept outside the source tree, and no real package is signed by the release key yet. v0.8.1 checks against one compiled-in development key whose seed is published: the mechanism is verified, the key anchors no trust.'],
             ['CPU-ENFORCED SEPARATION', 'SMEP, SMAP and UMIP on; W^X for user segments; a guard page below the user stack; user pointers validated before any kernel dereference — since v0.10.0 also for being writable by the program when the kernel writes (v0.9.0 checked only that they were mapped). The kernel’s RSP0 and double-fault stacks (since v0.9.0) and its syscall and task stacks (since v0.10.0) sit on guard pages, Ring 3’s DF/AC flags never reach kernel code, and a zero-length copy never touches the user pointer.'],
-            ['AUDIT TRAIL', 'Every privileged action and every denial is recorded, hash-chained, persisted, and re-verified at boot — an edited trail is reported TAMPERED. Since v0.9.0 the saved head can also be anchored with a witness off the disk and the trail checked against it, which detects a whole-trail rewrite.'],
+            ['AUDIT TRAIL', 'Every privileged action and every denial is recorded, hash-chained, persisted, and re-verified at boot — an edited trail is reported TAMPERED. Since v0.9.0 the saved head can also be anchored with a witness off the disk and the trail checked against it, which detects a whole-trail rewrite. V0.11 (not released) also records every proposal — filed, or refused with its reason — and every approval, denial, execution, verification and rollback; a filed proposal and the action that follows it carry the model and view digests it cited.'],
+            ['CONSOLE-ONLY AGENT AUTHORITY', 'V0.11, development branch, not released. The approved view (sys_view) and the right to propose are granted only by the console: outside the default set, dropped by delegation, refused in /etc/init.conf. A proposal is filed only if the model is the one compiled into the kernel, the view is the last one served to that process and at most 5 s old, the kernel’s own recomputation gives the cited condition, and the action applies to the system now; ten adversarial proposals are each refused for their own reason. approve and deny exist only in the kernel console.'],
+            ['VERIFIED ACTIONS', 'V0.11, development branch, not released. An approved action is re-checked against fresh kernel facts, runs in kernel code, is checked against a post-condition and is rolled back if the check fails — resume-scheduler by the busy-point measurement, retry-service by events through a kernel→init mailbox only the live init can read (init_ctl, refused not_init to anyone else). A control in which the executor does nothing shows the verification failing and the rollback running.'],
+            ['ESCAPED PROCESS OUTPUT', 'V0.11, development branch, not released. Every control character a program writes except line feed and tab, and every invisible character that reorders or hides text, is shown escaped, never performed, so a program cannot move the cursor or reorder a line to redraw a proposal preview the kernel printed (OUT11-001). The kernel’s marker prefix is rewritten across the pieces output is written in (OUT11-002), and a process is shown by the canonical path of the file it runs (SEC11-002). In v0.10.0 escape sequences reach the terminal, a split prefix gets through, and ps prints the path a program chose.'],
             ['VM CONTAINMENT', 'QEMU launches attach only project-generated disposable images; no host filesystem sharing and no disk passthrough (SEC-002). The test network is the harness’s own peer.'],
             ['UNSAFE MINIMIZED', 'unsafe localized and documented with invariants in docs/UNSAFE_INVENTORY.md; the kernel panics on a violated invariant rather than continuing corrupted.'],
           ].map(([label, text]) => (
@@ -247,8 +262,9 @@ const threats = [
         an opaque handle — an index plus a generation — into a kernel-owned table binding the owner, the resource
         scope, the rights and an optional expiry. Holding a handle number grants nothing: the table is consulted on
         every use, so revocation, expiry and narrowing take effect at the next call, and a handle presented by the
-        wrong process is refused. Not yet present: a user-facing policy editor and capability kinds defined at run
-        time.
+        wrong process is refused. V0.11 (development branch, not released) adds two console-only capabilities — the
+        approved view and the right to propose — that no default set, parent, service definition or package manifest
+        can obtain. Not yet present: a user-facing policy editor and capability kinds defined at run time.
       </p>
       <div class="mt-6 flex flex-wrap gap-4">
         <a href="/docs/security-model" class="btn btn-primary">Full security model</a>

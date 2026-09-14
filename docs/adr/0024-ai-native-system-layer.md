@@ -2,12 +2,18 @@
 
 ## Status
 
-Accepted for V0.11 (MODEL11, VIEW11, INFER11, KB11, AGENT11, ACT11). Built
-in the step order below, each step gated by the whole local matrix; a step's
-rows become IMPLEMENTED+VERIFIED only with its QEMU evidence and its
-negative control. The design went through two independent reviews before any
-code — a security review and a feasibility review against the V0.10 code —
-and this record is the result; what they changed is listed at the end.
+Accepted, and implemented in V0.11 (in development — in no release yet; the
+latest release is v0.10.0). Steps S1–S11 have landed on the V0.11 branch in
+the order below, each gated by the whole local matrix. The rows are
+IMPLEMENTED+VERIFIED in `docs/REQUIREMENTS.md` with QEMU evidence:
+MODEL11-001, VIEW11-001, INFER11-001, KB11-001, AGENT11-001, PROP11-001,
+ACT11-001, ACT11-002, and OUT11-001 (the Ring 3 escaping of Decision 8);
+every row records a negative control. They
+rest on the audit-trail fixes AUDIT11-001, AUDIT11-002 and SEC11-001. The
+design went through two independent reviews before any code — a security
+review and a feasibility review against the V0.10 code — and this record is
+the result; what they changed is listed under "What the reviews changed",
+and where the code departs from the text, under "Implementation notes".
 
 ## Context
 
@@ -157,3 +163,72 @@ kernel target — hence integer yes/no detectors; the verification of
 `resume-scheduler` has to use the busy-point measurement, because job slices
 run even while paused; inferd is appended to `/etc/init.conf` so existing pid
 assertions hold; and the wording of every claim (§ Decision 1, 6, 7).
+
+## Implementation notes
+
+Where the V0.11 code (in development) departs from the decision text above
+or makes it concrete, checked against the code and `docs/REQUIREMENTS.md`.
+Retrying a service through the init mailbox is not a departure: it is
+Decision 9 as written.
+
+- **Decision 3.** The process part of the view is counts only; the
+  `truncated` flag marks service rows beyond eight
+  (`sysview::MAX_SERVICES`).
+- **Decisions 5 and 10.** The proposal record carries the runbook id, which
+  must equal the condition (`unknown_runbook` otherwise), and not the
+  runbook's SHA-256: the agent cites the id and a digest prefix in its
+  printed diagnosis (`AGENT-RUNBOOK id= sha=`), and the audit records name
+  the condition. `proposal_submitted` and `action_executed` carry
+  16-hex-digit prefixes of the model and view digests; the other records
+  name the proposal id. Agent-supplied names are validated as
+  `[a-z0-9-]{1,15}` — no underscore, stricter than written.
+- **Decision 6.** The agent files one proposal per run, a paused scheduler
+  first, not one per actionable condition: the kernel keeps one pending
+  proposal per submitter.
+- **Decision 7.** N is 500 ticks (5 s); the TTL is 6000 ticks (60 s). The
+  checks run in the order format → model digest → view binding → view age
+  → recomputation → applicability → table, so a false diagnosis is refused
+  as `diagnosis_mismatch` before applicability is looked at (without the
+  recomputation it is refused only as `not_applicable` — PROP11-001's
+  control). `propose` returns `ERR_INVAL` for a malformed record,
+  `ERR_AGAIN` for `already_pending` and `table_full`, and `ERR_PERM` for
+  every refusal made on the kernel's own knowledge. Pending proposals
+  past their TTL expire whenever a proposal is filed and when the console
+  runs `proposals`, `approve` or `deny` (at first only on the console
+  commands, so a full table stayed full until the operator acted; fixed in
+  S11), and a proposal outlives the process that filed it.
+- **Decision 8.** The Ring 3 control-character escaping is its own
+  requirement, OUT11-001 (`kernel_core::linebuf::write_escaped`, applied by
+  `console_out::emit` after the marker rewrite); since the S11 review it also
+  escapes the invisible characters that reorder or hide text. The review
+  found that "a program cannot print that prefix" did not hold in V0.10's
+  rewrite itself: it ran one output chunk at a time, so a prefix split
+  across chunks got through (OUT11-002), and `ps` printed a spawn path a
+  program chose (SEC11-002). Both are fixed, so the decision's premise now
+  holds as written.
+- **Decision 9.** The verification windows are 100 ticks for
+  `resume-scheduler` (other processes' quanta must rise and the scheduler
+  must not be paused) and 300 ticks for `retry-service`. The kernel waits
+  up to 3 s for each acknowledgement from init and withdraws the command if
+  none comes. The watch posts `stop` from inside init's own report, so the
+  rollback lands before init can restart the service again. The kernel
+  kills the pid named in init's `stop` acknowledgement only if it is a live
+  child of init running the program `/etc/init.conf` gives the service
+  (S11; at first it killed whatever pid init named, which gave init kill
+  authority it does not otherwise hold). If init fetched a `retry` and then
+  did not acknowledge it in time, the kernel rolls it back rather than
+  assume nothing started (S11). A
+  fixture, `/bin/flakyd`, was added as init's fourth service so the success
+  path of `retry-service` is exercised; tickd, flapd and inferd keep pids
+  2–4.
+- **Decision 11.** The console grants the two bits through the caps list
+  of `run`, `bg` or `rsh`; without a list those commands give
+  `CAP_LEGACY_FULL`, which excludes them. A service definition naming one
+  is refused (`console_only_capability`), not silently narrowed; a package
+  manifest naming one is narrowed by `caps::delegate`, like any request
+  beyond the launcher's authority.
+- **Step S3.** The kernel keeps a decoded copy of the model for
+  recomputation only when the initramfs file matches the compiled-in
+  digest; otherwise the boot check prints `initramfs_match=false` and no
+  proposal can pass (the recomputation step refuses it `unknown_model`).
+  The check is never fatal.

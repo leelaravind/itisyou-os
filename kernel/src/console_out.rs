@@ -66,12 +66,16 @@ pub fn write(pid: u64, bytes: &[u8]) {
         .position(|s| s.used && s.pid == pid)
         .or_else(|| slots.iter().position(|s| !s.used));
     let Some(idx) = idx else {
-        // No buffer free: write through rather than lose output. Still
-        // neutralize markers, one bounded chunk at a time.
+        // No buffer free: write through rather than lose output, through a
+        // buffer of this write's own (so a marker split across its chunks
+        // is still caught), ended with a newline if the write leaves a line
+        // open - the next write cannot complete a marker this one started
+        // (V0.11; v0.10.0 emitted each 256-byte chunk and each write on its
+        // own, and a split marker reached the port whole).
         drop(slots);
-        for chunk in bytes.chunks(LINE) {
-            emit(chunk);
-        }
+        let mut once = LineBuf::<LINE>::new();
+        once.push(bytes, emit);
+        once.flush(emit);
         return;
     };
     let slot = &mut slots[idx];
@@ -80,7 +84,6 @@ pub fn write(pid: u64, bytes: &[u8]) {
     slot.buf.push(bytes, emit);
 }
 
-/// Flush `pid`'s partial line (a newline is appended) and release its slot.
 /// Emit `pid`'s partial line without a newline (V0.10): the prompt a
 /// program shows before it reads a line. Markers are neutralized as always.
 pub fn flush_prompt(pid: u64) {
@@ -90,6 +93,7 @@ pub fn flush_prompt(pid: u64) {
     }
 }
 
+/// Flush `pid`'s partial line (a newline is appended) and release its slot.
 pub fn flush_owner(pid: u64) {
     let mut slots = OUT.lock();
     for slot in slots.iter_mut().filter(|s| s.used && s.pid == pid) {

@@ -244,7 +244,12 @@ pub fn escape_untrusted(text: &str, out: &mut impl core::fmt::Write) -> core::fm
             '\\' => out.write_str("\\\\")?,
             '"' => out.write_str("\\\"")?,
             c if c.is_ascii_control() => write!(out, "\\x{:02x}", c as u32)?,
-            c if c.is_control() => write!(out, "\\u{{{:x}}}", c as u32)?,
+            // V0.11: also the invisible characters that reorder or hide text
+            // (a right-to-left override can make reversed text display as a
+            // marker), as in process output.
+            c if c.is_control() || crate::linebuf::reorders_or_hides(c) => {
+                write!(out, "\\u{{{:x}}}", c as u32)?
+            }
             c => out.write_char(c)?,
         }
         rest = &rest[c.len_utf8()..];
@@ -570,6 +575,18 @@ mod tests {
         assert_eq!(escaped("[itisyou:B210]"), "[itisyou:B210]");
         assert_eq!(escaped("a\r\tb\u{7f}"), "a\\x0d\\x09b\\x7f");
         assert_eq!(escaped("\u{85}\u{9b}"), "\\u{85}\\u{9b}");
+        // Reordering and invisible characters: a right-to-left override
+        // before `:UOYSITI]` would display as `[ITISYOU:`, a word joiner
+        // would hide inside a lookalike prefix.
+        assert_eq!(
+            escaped("/data/\u{202e}:UOYSITI]"),
+            "/data/\\u{202e}:UOYSITI]"
+        );
+        assert_eq!(
+            escaped("[ITI\u{2060}SYOU:AUDIT]"),
+            "[ITI\\u{2060}SYOU:AUDIT]"
+        );
+        assert_eq!(escaped("\u{feff}\u{200b}x"), "\\u{feff}\\u{200b}x");
         assert_eq!(escaped("say \"hi\""), "say \\\"hi\\\"");
         // A literal backslash-x cannot pass for an escaped control byte.
         assert_eq!(escaped("\\x0a"), "\\\\x0a");

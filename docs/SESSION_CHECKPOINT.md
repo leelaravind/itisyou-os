@@ -1,11 +1,49 @@
 # Session checkpoint — resumable state
 
-**Timestamp:** 2026-09-13 22:30 Europe/London (session 4, V0.10 released)
+**Timestamp:** 2026-09-14 Europe/London (session 4, V0.11 closure)
 **Repository:** `E:\Project\itisyou-os` · branch `main` · remote
 https://github.com/leelaravind/itisyou-os (private)
 **Tags:** `v0.1.0` … `v0.10.0` (all on green-CI commits).
 
-**V0.10 RELEASED — read first.** `v0.10.0`: release commit `c936bc7` (CI
+**V0.11 CLOSURE — read first.** V0.11 (AI-Native System Layer, ADR-0024)
+is implemented on branch `v0.11/work`, which is pushed and checked out in
+the worktree `E:\claude-tmp\wt-v010w`; `main` is an ancestor of it. Every V0.11
+row in `docs/REQUIREMENTS.md` is IMPLEMENTED+VERIFIED, each with a negative
+control that was rebuilt and run:
+
+- the audit trail: AUDIT11-001, AUDIT11-002, SEC11-001 (disclosed for v0.10.0
+  on `main`, `650a16f`);
+- the AI layer: MODEL11-001, VIEW11-001, INFER11-001, KB11-001, AGENT11-001,
+  PROP11-001, ACT11-001, ACT11-002;
+- terminal escapes: OUT11-001;
+- the pre-release adversarial review (workflow `wf_47df3cf5-c0a`: six
+  reviewers, per-finding verification, nine confirmed): OUT11-002 and
+  SEC11-002 (two v0.10.0 console-evidence defects, disclosed on the site),
+  AUDIT11-003, and fixes folded into ACT11-002, PROP11-001, AUDIT11-002 and
+  OUT11-001.
+
+Full gate on `9ca320c` (before the review): VERIFY OK, 60/60 QEMU legs, 491
+host tests. The S11 closure commit (review fixes, 64 legs) has its own gate;
+see the Local gates table. The mutation scripts are in
+`E:\claude-tmp\itisyou-audit\v011\` (`mutate-s*.ps1`, logs in `nc-logs\`).
+
+NEXT, the v0.11.0 release, following the v0.10.0 runbook:
+1. The release commit: version 0.11.0 in `Cargo.toml`/`Cargo.lock`,
+   `status/current.json`, and the shell legs' `itisyou-os 0.11.0-dev` marker
+   in `scripts/test.ps1` and `.github/workflows/ci.yml`.
+2. Merge into `main`, then scan the full history for secrets.
+3. Open a short public window for CI.
+4. Download the CI images, run `release-boot-test` (it now also requires the
+   pinned model and `inferd`), then stamp.
+5. Deploy staging and then production, with the downloads staged and the
+   v0.10.0, v0.9.0 and v0.8.1 archives kept.
+6. Verify in a browser, then tag.
+7. Make the repository private again.
+
+After that comes V1.0, with its acceptance criteria written and committed
+first (a draft is in `E:\claude-tmp\itisyou-audit\v1\`).
+
+**V0.10 RELEASED (history).** `v0.10.0`: release commit `c936bc7` (CI
 `34782271250`, all four jobs green; reproducible images), stamp commit
 `96f5d68` (CI `34783340401` green) carrying the tag. Production
 `b56300a5-ceec-4e72-b9d1-3936f4f31b01` serves the CI-built images (UEFI
@@ -152,6 +190,8 @@ The rest of this section is the state as of the 14:20 wind-up.
 | `4ceaa4c` (v0.10/integration) | VERIFY OK, 39/39, 385 host tests |
 | `b5cc23d` (v0.10/integration) | VERIFY OK, 39/39, 385 host tests |
 | `e12329b` (v0.10/integration tip) | VERIFY OK, 40/40, 385 host tests |
+| `9ca320c` (v0.11/work, OUT11-001) | VERIFY OK, 60/60, 491 host tests |
+| S11 closure (v0.11/work; the commit that adds this line) | VERIFY OK, 64/64, 497 host tests |
 
 ## Next actions, in order
 

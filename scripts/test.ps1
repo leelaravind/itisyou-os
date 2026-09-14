@@ -874,6 +874,50 @@ Remove-Item $auditDisk -ErrorAction SilentlyContinue
     # V0.11: `audit verify` checks the file without adopting it.
     '--require', 'trail_checked status=TAMPERED reason=chain',
     '--timeout-secs', '240', '--label', 'audit-persist-tamper')
+# AUD08-001, and the V0.11 review: boot recovery must see a forgery too (no
+# other leg boots on a tampered trail), and a tampered trail STAYS reported -
+# a save continues its broken chain rather than laundering it. Boot 4 finds
+# boot 3's forgery and plants one whose head its records cannot reach; boot
+# 5 recovers it, saves and checks; boot 6 still finds it TAMPERED, and the
+# operator removes it; boot 7 starts a fresh trail that verifies.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $auditDisk,
+    '--expect', 'B210',
+    '--send', 'store put audit.log itisyou-audit v2 boot=7 count=0 base=1111111111111111111111111111111111111111111111111111111111111111 head=2222222222222222222222222222222222222222222222222222222222222222',
+    '--send', 'shutdown',
+    '--require', 'trail_recovered status=TAMPERED',
+    '--forbid', 'trail_recovered status=verified',
+    '--timeout-secs', '240', '--label', 'audit-tamper-boot')
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $auditDisk,
+    '--expect', 'B210',
+    '--send', 'audit save',
+    '--send', 'audit verify',
+    '--send', 'shutdown',
+    '--require', 'trail_recovered status=TAMPERED',
+    '--require', 'trail_saved records=',
+    '--require', 'trail_checked status=TAMPERED reason=chain',
+    '--forbid', 'trail_recovered status=verified',
+    '--forbid', 'trail_checked status=verified',
+    '--timeout-secs', '240', '--label', 'audit-tamper-save')
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $auditDisk,
+    '--expect', 'B210',
+    '--send', 'store rm audit.log',
+    '--send', 'shutdown',
+    '--require', 'trail_recovered status=TAMPERED',
+    '--require', 'store: rm name=audit.log',
+    '--forbid', 'trail_recovered status=verified',
+    '--timeout-secs', '240', '--label', 'audit-tamper-stays')
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $auditDisk,
+    '--expect', 'B210',
+    '--send', 'audit save',
+    '--send', 'audit verify',
+    '--send', 'shutdown',
+    '--require', 'trail_recovered status=absent',
+    '--require', 'trail_checked status=verified reason=none',
+    '--timeout-secs', '240', '--label', 'audit-tamper-cleared')
 Remove-Item $auditDisk -ErrorAction SilentlyContinue
 
 Write-Output '=== QEMU audit trail across boots and past the window (BIOS, three boots) ==='
@@ -1056,15 +1100,27 @@ Write-Output '=== QEMU line-atomic Ring 3 output; kernel markers unforgeable (BI
 # services. Both lines must arrive whole, and a line imitating a kernel
 # marker must come out rewritten. (Unbuffered, the lines interleave byte by
 # byte and kernel markers land mid-line.)
+#
+# V0.11 review: a marker straddling the 256-byte line-buffer seam (v0.10.0
+# rewrote each chunk on its own, so it reached the port whole), and a spawn
+# path whose popped component carries a line break and a forged marker (the
+# kernel stored, and `ps` printed, the string the program chose).
 & $runner @('--image', 'target/images/itisyou-kernel-bios.img',
     '--expect', 'B200',
     '--send', 'bg /bin/line-probe spawn',
+    '--send', 'run /bin/line-probe -- P',
+    '--send', 'ps',
     '--send', 'shutdown',
     '--require', 'LINEPROBE-A-0123456789abcdefghijklmnopqrstuv',
     '--require', 'LINEPROBE-B-0123456789abcdefghijklmnopqrstuv',
     '--require', '[RING3-U:SVC] spoofed-by-ring3',
+    '--require', '[RING3-U:SVC] spoofed-split',
     '--require', 'LINEPROBE-OK',
+    '--require', 'LINEPROBE-HOSTILE-PATH result=',
+    '--require', 'path=/bin/spin-forever state=',
     '--forbid', '[ITISYOU:SVC] spoofed-by-ring3',
+    '--forbid', '[ITISYOU:SVC] spoofed-split',
+    '--forbid', '[ITISYOU:AUDIT] forged',
     '--forbid', 'LINEPROBE-FAILED',
     '--timeout-secs', '180', '--label', 'line-atomic-bios')
 
@@ -1488,8 +1544,9 @@ Write-Output '=== QEMU V0.11: the approved system view (BIOS) ==='
     '--send', 'sched resume',
     '--send', 'run /bin/ai-probe - - -- ansi',
     '--send', 'shutdown',
-    # OUT11-001: cursor-up, clear-line and carriage return shown escaped.
-    '--require', 'AIPROBE-ANSI \x1b[2A\x1b[2K\x0dforged',
+    # OUT11-001: cursor-up, clear-line, carriage return and a right-to-left
+    # override shown escaped.
+    '--require', 'AIPROBE-ANSI \x1b[2A\x1b[2K\x0dforged\u{202e}:UOYSITI]',
     '--require', 'AIPROBE-VIEW-DENIED err=perm',
     '--require', 'action=sys_view cap=0x0 result=denied',
     '--require', 'kind=sysadmin reason=no_handle',
@@ -1583,7 +1640,7 @@ Write-Output '=== QEMU V0.11: the diagnostic agent on real situations (BIOS) ===
     '--timeout-secs', '180', '--label', 'ai-diagnose-bios')
 
 Write-Output '=== QEMU V0.11: proposals the kernel checks, and nothing executes (BIOS) ==='
-# ACT11-001, part 1 (ADR-0024). An agent holding `propose` files a record;
+# PROP11-001 (ADR-0024). An agent holding `propose` files a record;
 # the kernel checks, in order, the record's format and vocabulary, the model
 # digest (the one it was built with), the view (the last one it served THIS
 # process, at most 5 s ago), the condition (recomputed from that view with
@@ -1615,15 +1672,20 @@ Write-Output '=== QEMU V0.11: proposals the kernel checks, and nothing executes 
     '--send', 'deny 99',
     '--send', 'proposals',
     '--send', 'shutdown',
-    '--require', 'proposal_refused pid=', '--require', 'reason=unknown_model',
-    '--require', 'proposal_refused pid=', '--require', 'reason=snapshot_mismatch',
-    '--require', 'proposal_refused pid=', '--require', 'reason=snapshot_stale',
-    '--require', 'proposal_refused pid=', '--require', 'reason=diagnosis_mismatch',
-    '--require', 'proposal_refused pid=', '--require', 'reason=not_applicable',
-    '--require', 'proposal_refused pid=', '--require', 'reason=bad_field',
-    '--require', 'proposal_refused pid=', '--require', 'reason=unknown_action',
-    '--require', 'proposal_refused pid=', '--require', 'reason=action_not_allowed',
-    '--require', 'proposal_refused pid=', '--require', 'reason=already_pending',
+    '--require', '[ITISYOU:AI] proposal_refused pid=',
+    # Each run refused for ITS OWN reason: the kernel's refusal comes before
+    # the probe's line for that run, and after the previous run's.
+    '--require-order', 'reason=unknown_model', '--require-order', 'AIPROBE-PROPOSE mode=forge-model refused',
+    '--require-order', 'reason=snapshot_mismatch', '--require-order', 'AIPROBE-PROPOSE mode=never-served refused',
+    '--require-order', 'reason=snapshot_mismatch', '--require-order', 'AIPROBE-PROPOSE mode=forged-view refused',
+    '--require-order', 'reason=snapshot_stale', '--require-order', 'AIPROBE-PROPOSE mode=stale refused',
+    '--require-order', 'reason=diagnosis_mismatch', '--require-order', 'AIPROBE-PROPOSE mode=diagnosis refused',
+    '--require-order', 'reason=not_applicable', '--require-order', 'AIPROBE-PROPOSE mode=not-applicable refused',
+    '--require-order', 'reason=bad_field', '--require-order', 'AIPROBE-PROPOSE mode=bad-field refused',
+    '--require-order', 'reason=unknown_action', '--require-order', 'AIPROBE-PROPOSE mode=bad-action refused',
+    '--require-order', 'reason=action_not_allowed', '--require-order', 'AIPROBE-PROPOSE mode=not-allowed refused',
+    '--require-order', 'AIPROBE-PROPOSE-FILED mode=flood-first id=1',
+    '--require-order', 'reason=already_pending', '--require-order', 'AIPROBE-PROPOSE mode=flood refused',
     '--require', 'AIPROBE-PROPOSE-FILED mode=flood-first id=1',
     '--require', 'proposal_submitted id=1 ',
     '--require', 'model_check=ok snapshot_check=ok diagnosis_check=ok applies=ok',
@@ -1646,7 +1708,7 @@ Write-Output '=== QEMU V0.11: proposals the kernel checks, and nothing executes 
     '--timeout-secs', '240', '--label', 'ai-propose-bios')
 
 Write-Output '=== QEMU V0.11: approval, execution, verification (BIOS) ==='
-# ACT11-001, part 1 (ADR-0024): resume-scheduler. `approve <id>` is the only
+# ACT11-001 (ADR-0024): resume-scheduler. `approve <id>` is the only
 # path from a proposal to an action: it re-checks the TTL and whether the
 # action still applies, executes it in kernel code, verifies it over its
 # window with the same measurement as `busy` (other processes must progress
@@ -1749,9 +1811,13 @@ Write-Output '=== QEMU V0.11: retry-service through init, verified and rolled ba
     '--require', 'reason=not_init',
     '--require', 'flakyd  Running',
     '--require', 'flapd  Failed { restarts: 1 }',
+    # The rollback's kill touched nothing but flapd's instance (V0.11
+    # review: the kernel had killed whatever pid init named).
+    '--require', 'tickd  Running  pid=2 restarts=0',
     '--require', '[ITISYOU:AI] proposal id=1 state=verified',
     '--require', '[ITISYOU:AI] proposal id=2 state=rolled_back',
     '--require', 'action=action_rolled_back cap=0x0 result=ok',
+    '--forbid', 'rollback_kill_refused',
     '--forbid', 'action_verified id=1 result=fail',
     '--forbid', 'action_verified id=2 result=pass',
     '--forbid', 'INIT-REAPED-ORPHAN',

@@ -15,9 +15,42 @@ export interface JournalEntry {
   evidence: string | null;
   /** Module-style status for the tag (allowed vocabulary). */
   status: 'in-development' | 'implemented' | 'blocked';
+  /**
+   * Tag of the release this entry records, set only on entries whose own text
+   * names that release and its release commit. /changelog reads the commit
+   * from RELEASES; an entry without it shows no version or commit, because
+   * the ledger carries none for it.
+   */
+  release?: string;
 }
 
 export const JOURNAL: JournalEntry[] = [
+  {
+    date: '2026-09-14',
+    time: '02:30',
+    session: 'Session 5 — V0.11',
+    title: 'The V0.11 adversarial review: two ways v0.10.0 still let a program forge kernel evidence',
+    what:
+      'Before the release, six independent reviewers read everything V0.11 changed, each trying to break it, and every finding went to a second reviewer told to refute it. Nine findings survived. Two are defects in v0.10.0: a program could still print a genuine kernel marker line by splitting the prefix across the kernel’s 256-byte output chunks — the rewrite looked at one chunk at a time (OUT11-002) — and ps printed the path string a program passed to spawn, so a line break and a marker in a component that .. later removed made the kernel print a forged line itself (SEC11-002). The kernel now keeps a tail that could start a marker for the next chunk and records the canonical path of the file it loaded. Both are disclosed for v0.10.0, which stays as released.',
+    detail:
+      'The rest were in the new code or its evidence: a rollback that killed whatever pid /sbin/init named (now only a live instance of that service — shown with a deliberately compromised init, which could otherwise have had the kernel kill tickd); a retry reported as never started although init had fetched it; proposals that expired only when the operator looked; bidirectional overrides in names the kernel echoes; a crafted multi-megabyte audit trail that panicked boot recovery (AUDIT11-003); a documented claim that the next save heals a TAMPERED trail — it does not, and now a standing leg proves it stays reported until the operator removes it; and two tests weaker than their claims, now tied line to line with a new ordered-require option in the harness and a kernel selftest. Each fix has a QEMU leg or selftest and a control that shows the check can fail.',
+    evidence:
+      'line-atomic-bios · 250 dots + [ITISYOU:SVC] spoofed-split → [RING3-U:SVC] spoofed-split · ps path=/bin/spin-forever · control: the tail not kept → [ITISYOU:SVC] spoofed-split on the wire · ai-retry-bios · rollback_kill_refused … reason=not_an_instance under a compromised init · audit-tamper-save trail_checked status=TAMPERED reason=chain · ai-propose-bios --require-order · requirements OUT11-002, SEC11-002, AUDIT11-003',
+    status: 'in-development',
+  },
+  {
+    date: '2026-09-14',
+    time: '01:30',
+    session: 'Session 5 — V0.11',
+    title: 'V0.11: an agent with intelligence and no authority — verified on the development branch, not released',
+    what:
+      'Every V0.11 requirement is implemented and verified on the development branch, each shown against a negative control: a read-only view of the kernel’s own tables, served only to a process the console grants it (sys_view, syscall 42); a small diagnostic model trained at build time and pinned by digest; inferd, a Ring 3 service that runs it; one runbook per condition; a diagnostic agent that can file proposals (syscall 43) and act on nothing; kernel checks on every proposal; approval only at the console; and two actions — resume-scheduler, and retry-service through a kernel→init mailbox (syscall 44) — each executed in kernel code, verified afterwards and rolled back if the check fails. Process output can no longer drive the operator’s terminal (OUT11-001). v0.11.0 is not released: the latest release, and the download, stay v0.10.0.',
+    detail:
+      'What is weak is written down beside it. The training data is synthetic, generated from hand-written ranges, and the held-out accuracy equals a one-rule baseline: the scenarios define each condition by essentially one feature, so the number shows the designed cases are separable, not that the model diagnoses a real machine. It knows three conditions and can propose two actions. IPC carries no sender identity, so inferd’s answers are claims: a malicious IPC holder can mislead a diagnosis, but the kernel recomputes the condition from the view it served and refuses a mismatch, so it cannot get an unjustified proposal filed. Proposals live only in memory. Building the retry path found two ordering bugs in the new code — posting the rollback’s stop erased the retry’s acknowledgement, and the watch was armed only after the command was posted — both fixed before the step was claimed.',
+    evidence:
+      'ai-model-bios · model sha256=e0fc6642…2d12 bytes=276 initramfs_match=true · held-out 10000 bp = one-rule baseline 10000 bp (synthetic) · ai-diagnose-bios · conditions=service_failed,scheduler_paused · ai-propose-bios · ten adversarial proposals, each refused for its own reason · ai-act-bios · action_verified id=2 result=pass · ai-retry-bios · action_rolled_back id=2 … stop_ack=true … row=failed restarts=1 · requirements MODEL11-001, VIEW11-001, INFER11-001, KB11-001, AGENT11-001, PROP11-001, ACT11-001, ACT11-002, OUT11-001',
+    status: 'in-development',
+  },
   {
     date: '2026-09-13',
     time: '23:40',
@@ -43,6 +76,7 @@ export const JOURNAL: JournalEntry[] = [
     evidence:
       'release commit c936bc7 · workspace version 0.10.0 · CI run 34782271250 green (ubuntu-24.04) — builds and boot-tests the published images · SHA-256 on /download',
     status: 'implemented',
+    release: 'v0.10.0',
   },
   {
     date: '2026-09-13',
@@ -69,6 +103,7 @@ export const JOURNAL: JournalEntry[] = [
     evidence:
       'release commit f06673e · workspace version 0.9.0 · CI run 34760629701 green (ubuntu-24.04) — builds and boot-tests the published images · SHA-256 on /download',
     status: 'implemented',
+    release: 'v0.9.0',
   },
   {
     date: '2026-09-13',

@@ -390,11 +390,16 @@ jobs:
         run: |
           cargo run -q -p qemu-runner -- \
             --image target/images/itisyou-kernel-bios.img --expect B200 \
-            --send "bg /bin/line-probe spawn" --send "shutdown" \
+            --send "bg /bin/line-probe spawn" --send "run /bin/line-probe -- P" \
+            --send "ps" --send "shutdown" \
             --require "LINEPROBE-A-0123456789abcdefghijklmnopqrstuv" \
             --require "LINEPROBE-B-0123456789abcdefghijklmnopqrstuv" \
             --require "[RING3-U:SVC] spoofed-by-ring3" --require "LINEPROBE-OK" \
+            --require "[RING3-U:SVC] spoofed-split" \
+            --require "LINEPROBE-HOSTILE-PATH result=" \
+            --require "path=/bin/spin-forever state=" \
             --forbid "[ITISYOU:SVC] spoofed-by-ring3" --forbid "LINEPROBE-FAILED" \
+            --forbid "[ITISYOU:SVC] spoofed-split" --forbid "[ITISYOU:AUDIT] forged" \
             --timeout-secs 240 --label line-atomic-bios
 
       - name: QEMU kernel copies refuse read-only user memory (BIOS)
@@ -899,6 +904,12 @@ jobs:
           cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --nvme-persist artifacts/audit-test.img             --expect B210             --send "pkg install /pkgs/hello-app-1.itpkg"             --send "run /bin/fs-writer fs_read,fs_write"             --send "audit" --send "audit save" --send "shutdown"             --require "trail_recovered status=absent"             --require "audit: chain boot=0"             --require "trail_saved records="             --timeout-secs 300 --label audit-persist-write
           cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --nvme-persist artifacts/audit-test.img             --expect B210             --send "audit" --send "shutdown"             --require "trail_recovered status=verified records="             --require "audit: chain boot=1"             --timeout-secs 300 --label audit-persist-verify
           cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --nvme-persist artifacts/audit-test.img             --expect B210             --send "store put audit.log itisyou-audit v1 boot=0 count=1 head=0000000000000000000000000000000000000000000000000000000000000000"             --send "audit verify" --send "shutdown"             --require "trail_recovered status=verified"             --require "trail_checked status=TAMPERED reason=chain"             --timeout-secs 300 --label audit-persist-tamper
+          # Boot-time detection, and a tampered trail stays reported across a
+          # save until the operator removes it (AUD08-001, V0.11 review).
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img --nvme-persist artifacts/audit-test.img --expect B210 --send "store put audit.log itisyou-audit v2 boot=7 count=0 base=1111111111111111111111111111111111111111111111111111111111111111 head=2222222222222222222222222222222222222222222222222222222222222222" --send "shutdown" --require "trail_recovered status=TAMPERED" --forbid "trail_recovered status=verified" --timeout-secs 300 --label audit-tamper-boot
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img --nvme-persist artifacts/audit-test.img --expect B210 --send "audit save" --send "audit verify" --send "shutdown" --require "trail_recovered status=TAMPERED" --require "trail_saved records=" --require "trail_checked status=TAMPERED reason=chain" --forbid "trail_recovered status=verified" --forbid "trail_checked status=verified" --timeout-secs 300 --label audit-tamper-save
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img --nvme-persist artifacts/audit-test.img --expect B210 --send "store rm audit.log" --send "shutdown" --require "trail_recovered status=TAMPERED" --require "store: rm name=audit.log" --forbid "trail_recovered status=verified" --timeout-secs 300 --label audit-tamper-stays
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img --nvme-persist artifacts/audit-test.img --expect B210 --send "audit save" --send "audit verify" --send "shutdown" --require "trail_recovered status=absent" --require "trail_checked status=verified reason=none" --timeout-secs 300 --label audit-tamper-cleared
           rm -f artifacts/audit-test.img
 
       - name: QEMU audit trail across boots and past the window (three boots)
@@ -1050,7 +1061,7 @@ jobs:
             --send "run /bin/ai-probe sys_view - -- view" \
             --send "sched pause" --send "run /bin/ai-probe sys_view - -- view" \
             --send "sched resume" --send "run /bin/ai-probe - - -- ansi" --send "shutdown" \
-            --require "AIPROBE-ANSI \x1b[2A\x1b[2K\x0dforged" \
+            --require "AIPROBE-ANSI \x1b[2A\x1b[2K\x0dforged\u{202e}:UOYSITI]" \
             --require "AIPROBE-VIEW-DENIED err=perm" \
             --require "action=sys_view cap=0x0 result=denied" \
             --require "kind=sysadmin reason=no_handle" \
@@ -1125,10 +1136,11 @@ jobs:
 
       - name: QEMU V0.11 proposals the kernel checks, and nothing executes (BIOS)
         run: |
-          # ACT11-001 part 1 (ADR-0024): every adversarial proposal refused
-          # for its own reason (model, view binding and age, recomputed
-          # condition, applicability, format, table), the agent's real one
-          # accepted and listed with its preview, deny final; nothing runs.
+          # PROP11-001 (ADR-0024): every adversarial proposal refused for its
+          # own reason (model, view binding and age, recomputed condition,
+          # applicability, format, table) - the order ties each reason to
+          # its run - the agent's real one accepted and listed with its
+          # preview, deny final; nothing runs.
           cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
             --expect B210 --send "@pause 1500" \
             --send "run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose forge-model" \
@@ -1146,16 +1158,18 @@ jobs:
             --send "run /bin/agent sys_view,propose,ipc,fs_read /etc/ai -- propose" \
             --send "proposals" --send "deny 2" --send "deny 2" --send "deny 99" \
             --send "proposals" --send "shutdown" \
-            --require "proposal_refused pid=" \
-            --require "reason=unknown_model" \
-            --require "reason=snapshot_mismatch" \
-            --require "reason=snapshot_stale" \
-            --require "reason=diagnosis_mismatch" \
-            --require "reason=not_applicable" \
-            --require "reason=bad_field" \
-            --require "reason=unknown_action" \
-            --require "reason=action_not_allowed" \
-            --require "reason=already_pending" \
+            --require "[ITISYOU:AI] proposal_refused pid=" \
+            --require-order "reason=unknown_model" --require-order "AIPROBE-PROPOSE mode=forge-model refused" \
+            --require-order "reason=snapshot_mismatch" --require-order "AIPROBE-PROPOSE mode=never-served refused" \
+            --require-order "reason=snapshot_mismatch" --require-order "AIPROBE-PROPOSE mode=forged-view refused" \
+            --require-order "reason=snapshot_stale" --require-order "AIPROBE-PROPOSE mode=stale refused" \
+            --require-order "reason=diagnosis_mismatch" --require-order "AIPROBE-PROPOSE mode=diagnosis refused" \
+            --require-order "reason=not_applicable" --require-order "AIPROBE-PROPOSE mode=not-applicable refused" \
+            --require-order "reason=bad_field" --require-order "AIPROBE-PROPOSE mode=bad-field refused" \
+            --require-order "reason=unknown_action" --require-order "AIPROBE-PROPOSE mode=bad-action refused" \
+            --require-order "reason=action_not_allowed" --require-order "AIPROBE-PROPOSE mode=not-allowed refused" \
+            --require-order "AIPROBE-PROPOSE-FILED mode=flood-first id=1" \
+            --require-order "reason=already_pending" --require-order "AIPROBE-PROPOSE mode=flood refused" \
             --require "AIPROBE-PROPOSE-FILED mode=flood-first id=1" \
             --require "proposal_submitted id=1 " \
             --require "model_check=ok snapshot_check=ok diagnosis_check=ok applies=ok" \
@@ -1176,7 +1190,7 @@ jobs:
 
       - name: QEMU V0.11 approval, execution, verification (BIOS)
         run: |
-          # ACT11-001 part 1 (ADR-0024): deny final; approve re-checks the
+          # ACT11-001 (ADR-0024): deny final; approve re-checks the
           # precondition, executes resume-scheduler, verifies it with the
           # busy measurement; a stale proposal is refused, not executed.
           cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
@@ -1268,9 +1282,11 @@ jobs:
             --require "reason=not_init" \
             --require "flakyd  Running" \
             --require "flapd  Failed { restarts: 1 }" \
+            --require "tickd  Running  pid=2 restarts=0" \
             --require "[ITISYOU:AI] proposal id=1 state=verified" \
             --require "[ITISYOU:AI] proposal id=2 state=rolled_back" \
             --require "action=action_rolled_back cap=0x0 result=ok" \
+            --forbid "rollback_kill_refused" \
             --forbid "action_verified id=1 result=fail" \
             --forbid "action_verified id=2 result=pass" \
             --forbid "INIT-REAPED-ORPHAN" \

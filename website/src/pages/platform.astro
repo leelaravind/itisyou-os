@@ -18,6 +18,10 @@ const caps = [
   ['network', 'UDP sockets and DNS — scoped to a port (V0.8); TCP connect and listen — scoped to the port the connection is opened for (V0.9)'],
   ['audio', 'reserved — no userspace audio syscall yet'],
   ['sys_admin', 'reserved — userspace service/package control'],
+  ['proc_control', 'reserved — process teardown and control beyond spawning and waiting (the process kind’s CONTROL right: ending an existing process). No syscall checks it yet: Ring 3 has no kill, and kill is a kernel-console command'],
+  ['service','the supervisor report to the kernel’s service table (svc_report, V0.10); on the V0.11 development branch also init’s kernel mailbox (init_ctl), which in addition requires the caller to be the live /sbin/init'],
+  ['sys_view', 'the approved read-only system view (sys_view) — V0.11, development branch, not released. Console-granted only: in no default set, never delegated to a child, refused in /etc/init.conf'],
+  ['propose', 'filing a proposal for the console to approve or deny (propose) — V0.11, development branch, not released. Console-granted only, like sys_view; a proposal grants nothing by itself'],
 ];
 
 const evidence = [
@@ -80,8 +84,8 @@ const evidence = [
         System Platform
       </h1>
       <p class="font-sans text-headline-md text-meta-bright max-w-2xl border-l-2 border-ink pl-4 py-1">
-        Authority is explicit, delegated narrowly, checked in the kernel, and audited — for every process, and for any
-        future AI agent equally.
+        Authority is explicit, delegated narrowly, checked in the kernel, and audited — for every process, and for an
+        AI agent equally.
       </p>
       <p class="font-mono text-mono-data text-muted mt-6">
         v{status.version} · milestone “{status.milestone}” · everything below is machine-verified in QEMU (ADR-0012)
@@ -93,10 +97,22 @@ const evidence = [
       <div class="md:col-span-4 flex flex-col gap-4">
         <h2 id="p1-title" class="font-mono text-mono-label text-ink tracking-widest">01 // CAPABILITIES</h2>
         <p class="text-body-base text-meta-bright">
-          Beyond the basic runtime (write/exit/yield/getpid), <em>every</em> syscall requires an explicit capability
-          bit or it returns <span class="font-mono text-mono-data">ERR_PERM</span> and lands in the audit trail —
-          default deny, enforced at the single kernel dispatch boundary. Delegation only narrows:
-          <span class="font-mono text-mono-data">spawn</span> inherits the parent's set exactly, and
+          Thirteen syscalls need no capability, because each acts only on the caller itself:
+          <span class="font-mono text-mono-data">write</span> (fd 1, its console output),
+          <span class="font-mono text-mono-data">exit</span>, <span class="font-mono text-mono-data">yield</span>,
+          <span class="font-mono text-mono-data">getpid</span>, <span class="font-mono text-mono-data">uptime</span>,
+          <span class="font-mono text-mono-data">args</span> (its own arguments),
+          <span class="font-mono text-mono-data">sleep</span>, <span class="font-mono text-mono-data">udp_close</span> (a
+          socket it already owns), and <span class="font-mono text-mono-data">cap_list</span>,
+          <span class="font-mono text-mono-data">cap_check</span>, <span class="font-mono text-mono-data">cap_revoke</span>
+          and <span class="font-mono text-mono-data">cap_restrict</span> (its own handles, which it can inspect, drop or
+          narrow but never widen). The thirteenth, <span class="font-mono text-mono-data">console_read</span>, is limited
+          instead to the one process the kernel has lent the console’s input; anyone else gets
+          <span class="font-mono text-mono-data">ERR_PERM</span>, audited. <em>Every</em> other syscall is default deny:
+          the caller must hold a live capability handle of the right kind, rights and scope, or it gets
+          <span class="font-mono text-mono-data">ERR_PERM</span> and the refusal lands in the audit trail, enforced in the
+          kernel’s syscall layer. Delegation only narrows: <span class="font-mono text-mono-data">spawn</span> inherits
+          the parent's set exactly (on the V0.11 development branch, minus the two console-only capabilities), and
           <span class="font-mono text-mono-data">spawn_caps</span> grants <em>parent ∩ requested</em>. A child can
           never hold what its parent lacked.
         </p>
@@ -230,10 +246,23 @@ const evidence = [
       <div class="md:col-span-8 flex flex-col gap-4">
         <p class="text-body-base text-meta-bright max-w-3xl">
           The platform's privileged path — <span class="font-mono text-mono-data">request → identity → capability
-          check → deterministic service → action → audit</span> — is the <em>only</em> privileged path. A future AI
-          agent gets no other entry point: it will request actions exactly like any untrusted application, subject to
-          the same default-deny capabilities, the same sandbox, and the same audit trail. There is no AI component in
-          the kernel, and none is planned there.
+          check → deterministic service → action → audit</span> — is the <em>only</em> privileged path. An AI agent
+          gets no other entry point: it requests actions exactly like any untrusted application, subject to the same
+          default-deny capabilities, the same sandbox, and the same audit trail. The released v0.10.0 image contains no
+          AI component.
+        </p>
+        <p class="text-body-base text-meta-bright max-w-3xl">
+          On the V0.11 development branch — verified in QEMU, not yet released — the first agent works exactly this
+          way. It holds the view and the right to propose, both console-granted only, plus IPC and reads under
+          <span class="font-mono text-mono-data">/etc/ai</span>; its own attempts at
+          <span class="font-mono text-mono-data">svc_report</span>, <span class="font-mono text-mono-data">fs_write</span>
+          and <span class="font-mono text-mono-data">spawn</span> are refused, and no syscall it can call performs either
+          of its two actions — resuming the scheduler, retrying a failed service. Inference runs in Ring 3, in inferd under
+          <span class="font-mono text-mono-data">/sbin/init</span>; the kernel only re-evaluates the pinned model on the
+          view it served, to check the agent’s claim, and never acts on a model’s output. A proposal the kernel accepts
+          waits for <span class="font-mono text-mono-data">approve</span> or <span class="font-mono text-mono-data">deny</span>
+          at the console; an approved action runs in kernel code, is verified, is rolled back if the check fails, and
+          each step is audited with the model and view digests the proposal cited.
         </p>
         <p class="font-mono text-mono-data text-muted">
           Source: <a href="/docs/security-model" class="underline underline-offset-2 hover:text-ink">docs/SECURITY_MODEL.md</a> ·

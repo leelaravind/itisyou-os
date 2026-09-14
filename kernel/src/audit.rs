@@ -245,23 +245,49 @@ impl StoredTrail<'_> {
     }
 }
 
-/// Parse a stored trail's bytes; `None` when they are not a trail at all.
+/// Longest stored trail the kernel reads: far above any genuine one (at most
+/// [`TRAIL_MAX`] records of a few hundred bytes), far below the heap. The
+/// file is on disk, so its size is the disk's claim: a larger one is not a
+/// trail and is reported unreadable, never allocated (V0.11 review - a
+/// crafted multi-megabyte trail panicked recovery on every boot).
+const TRAIL_BYTES_MAX: usize = 256 * 1024;
+
+/// Parse a stored trail's bytes; `None` when they are not a trail at all -
+/// including one with more record lines than any kernel ever stored.
 fn parse_trail(bytes: &[u8]) -> Option<StoredTrail<'_>> {
     let text = core::str::from_utf8(bytes).ok()?;
     let mut lines = text.lines();
     let header = kernel_core::audit_chain::parse_header(lines.next()?)?;
-    Some(StoredTrail {
-        header,
-        records: lines.map(str::as_bytes).collect(),
-    })
+    let records: alloc::vec::Vec<&[u8]> = lines.take(TRAIL_MAX + 1).map(str::as_bytes).collect();
+    if records.len() > TRAIL_MAX {
+        return None;
+    }
+    Some(StoredTrail { header, records })
+}
+
+/// Selftest: does [`parse_trail`] take a trail of `n` record lines? (It must
+/// for every n up to [`TRAIL_MAX`] and refuse every larger one, whatever the
+/// header claims, without collecting more than `TRAIL_MAX + 1` of them.)
+pub fn parse_trail_accepts(n: usize) -> bool {
+    let zeros = "0".repeat(64);
+    let mut text = alloc::format!("itisyou-audit v2 boot=0 count={n} base={zeros} head={zeros}");
+    for _ in 0..n {
+        text.push_str("\nx");
+    }
+    parse_trail(text.as_bytes()).is_some()
 }
 
 /// Read the stored trail, without ever formatting the disk: `None` when
-/// there is no store or no trail file.
+/// there is no store or no trail file; an empty (unreadable) trail when the
+/// file is larger than [`TRAIL_BYTES_MAX`].
 fn read_trail() -> Option<alloc::vec::Vec<u8>> {
     // Read-only mount: reading must never be the reason a disk gets
     // formatted (see `with_mounted_store`).
-    crate::with_mounted_store(|fs| fs.read(TRAIL_NAME))?.ok()
+    crate::with_mounted_store(|fs| match fs.size_of(TRAIL_NAME) {
+        Some(n) if n > TRAIL_BYTES_MAX => Ok(alloc::vec::Vec::new()),
+        _ => fs.read(TRAIL_NAME),
+    })?
+    .ok()
 }
 
 /// Read and verify the persisted trail at boot, and continue its chain.

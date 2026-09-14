@@ -10,10 +10,13 @@
  * milestones are Planned; the far research milestones are Concept — documented
  * direction, not active work.
  *
- * `current` marks the milestone `main` is on. Pages treat a current milestone
- * that is not yet Verified as "built but unreleased" and say its work is not
- * in the download, so `current` must never sit on a milestone whose work is
- * not on `main` (work on a side branch is neither current nor released).
+ * `current` marks the milestone of the branch this site is built from — the
+ * one status/current.json names. Pages treat a current milestone that is not
+ * yet Verified as "built but unreleased" and say its work is not in the
+ * download, so `current` must never sit on a milestone whose work is not on
+ * that branch (work on another branch is neither current nor released). V0.11
+ * is current on its development branch, v0.11/work, whose status/current.json
+ * names it; the text says "development branch" wherever that matters.
  */
 import type { ModuleStatus } from './status';
 
@@ -133,7 +136,6 @@ export const MILESTONES: Milestone[] = [
     id: 'V0.10',
     name: 'Userspace System',
     status: 'verified',
-    current: true,
     summary:
       'Released as v0.10.0. Background programs keep running whatever the console is doing: bounded slices at audited safe points (the kernel stays non-preemptible), measured per command. A process tree — only a parent collects its child, non-blocking wait_nohang, sleep, orphans handed on, ps and kill. /sbin/init runs as pid 1, starts and supervises the services named in /etc/init.conf with exactly the capabilities the file gives them, reports them through a kernel-checked record, and is restarted by the kernel if it dies. Program arguments, a Ring 3 shell that borrows the console’s input, filesystem space reclamation, and persistent Ring 3 applications on the live desktop with click-to-focus and keys routed to the focused window. Found and fixed on the way, each shown against a negative control: a denial of service in every earlier release (the kernel wrote through user pages the program could not write), the syscall stack V0.9 left unguarded, Ring 3 DF/AC flags reaching kernel code, a mouse-packet framing bug, and an interrupt-unsafe input queue. Stated limits: no kernel preemption (non-schedulable regions are measured and listed), configuration only in the boot image, a shell without pipes or job control, one app per desktop session.',
     components: ['Always-on scheduler + process tree', '/sbin/init from /etc/init.conf', 'Ring 3 shell; desktop apps with focus'],
@@ -141,14 +143,17 @@ export const MILESTONES: Milestone[] = [
   {
     id: 'V0.11',
     name: 'AI-Native System Layer',
-    status: 'concept',
+    status: 'in-development',
+    current: true,
     summary:
-      'A local inference service outside the kernel (a small model running in Ring 3, trained reproducibly from the repository), system knowledge over an approved read-only view of local state, a diagnostic agent, policy-controlled actions with preview and explicit approval, provenance and audit, post-action verification with rollback. The agent has intelligence, not authority.',
+      'Implemented and verified on the development branch — host tests and QEMU legs, each shown against a negative control — and not yet released. The agent has intelligence, not authority. The audit trail came first: three defects present since v0.8.0 were fixed before any agent code (a stored trail that read as TAMPERED once a later boot had saved it, a trail and package store that a program holding fs_write without a sandbox could rewrite, file names that could print forged kernel markers). Then the layer: a fixed, read-only view of the kernel’s own tables (sys_view, syscall 42), served only to a process the console grants a console-only capability; a small diagnostic model — three integer yes/no detectors trained at build time from SYNTHETIC scenarios and pinned by digest — whose held-out accuracy equals a one-rule baseline, so it shows the designed cases are separable, not that it diagnoses real machines; inferd, a Ring 3 service under /sbin/init that runs the model; one runbook per condition; and a diagnostic agent that can file proposals (propose, syscall 43) and do nothing else. The kernel checks every proposal against what it knows itself — the shipped model, the view it served that process, its own recomputation of the diagnosis, the system as it is now — and only the console can approve one. Two actions exist, both kernel code, each verified afterwards and rolled back if the check fails: resume-scheduler, and retry-service through a kernel→init mailbox (init_ctl, syscall 44). Process output can no longer drive the operator’s terminal. Stated limits: synthetic training data, three conditions and two actions, unauthenticated IPC (inferd’s answers are claims the kernel re-checks), proposals held only in memory.',
     components: [
-      'Local inference service (outside the kernel)',
-      'Policy-controlled actions with preview/approval',
-      'Provenance, audit, post-action verification',
+      'Read-only system view; pinned diagnostic model; inferd in Ring 3',
+      'Diagnostic agent with runbooks; kernel-checked proposals',
+      'Console-only approval; kernel execution, verification, rollback',
     ],
+    release:
+      'Release pending. Every V0.11 requirement is implemented and verified on the development branch (v0.11/work), each with a negative control; what remains is the release itself — the branch brought onto main, a release commit naming 0.11.0, CI green on that commit (GitHub runs the jobs only during a short public window for the repository, as for v0.9.0 and v0.10.0), then the tag, the website and the download. Until then V0.11 is not released and not downloadable: the latest release, and the current download, is v0.10.0.',
   },
   {
     id: 'V1.0',

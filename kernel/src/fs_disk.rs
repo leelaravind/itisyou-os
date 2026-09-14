@@ -12,7 +12,6 @@
 //! before the first data block is written, independently of the allocator.
 
 use crate::device::block::{BlockDevice, BlockError, BLOCK_SIZE};
-use alloc::vec;
 use alloc::vec::Vec;
 use kernel_core::itfs::{self, FsError, Space, SuperBlock};
 
@@ -20,6 +19,9 @@ use kernel_core::itfs::{self, FsError, Space, SuperBlock};
 pub enum Error {
     Block(BlockError),
     Fs(FsError),
+    /// A file larger than the kernel can allocate to read it (V0.11): an
+    /// error, never an allocation failure (which panics).
+    NoMemory,
 }
 
 impl From<BlockError> for Error {
@@ -215,10 +217,20 @@ impl<'a> FileSystem<'a> {
         Ok(())
     }
 
-    /// Read a file's full contents.
+    /// A file's size in bytes, as its directory entry records it.
+    pub fn size_of(&self, name: &str) -> Option<usize> {
+        self.sb.find(name).map(|e| e.size as usize)
+    }
+
+    /// Read a file's full contents. The size comes from the disk, so the
+    /// buffer is reserved fallibly: a crafted directory entry claiming more
+    /// than the heap holds is `NoMemory`, not a kernel panic (V0.11 review).
     pub fn read(&self, name: &str) -> Result<Vec<u8>, Error> {
         let entry = *self.sb.find(name).ok_or(FsError::NotFound)?;
-        let mut out = vec![0u8; entry.size as usize];
+        let mut out = Vec::new();
+        out.try_reserve_exact(entry.size as usize)
+            .map_err(|_| Error::NoMemory)?;
+        out.resize(entry.size as usize, 0);
         let mut lba = entry.start_block as u64;
         let mut off = 0usize;
         let mut block = [0u8; BLOCK_SIZE];

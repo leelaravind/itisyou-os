@@ -323,7 +323,12 @@ impl SuperBlock {
         if name.len() > NAME_LEN {
             return Err(FsError::NameTooLong);
         }
-        if name.chars().any(char::is_control) {
+        // Control characters (a line break would split an audit record), and
+        // since the V0.11 review the invisible ones that reorder or hide text.
+        if name
+            .chars()
+            .any(|c| c.is_control() || crate::linebuf::reorders_or_hides(c))
+        {
             return Err(FsError::NameInvalid);
         }
         Ok(())
@@ -635,6 +640,11 @@ mod tests {
             "a\u{7f}",
             "a\u{85}b",
             "\u{9b}x",
+            // Reordering and invisible characters (V0.11 review).
+            "\u{202e}:UOYSITI]",
+            "a\u{200b}b",
+            "\u{feff}x",
+            "a\u{2066}b",
         ] {
             assert_eq!(sb.allocate(name, 10), Err(FsError::NameInvalid), "{name:?}");
         }

@@ -9,17 +9,26 @@ const description =
   'How ITISYOU OS is engineered: the verification loop, the deterministic QEMU test harness, requirement traceability with evidence, and the running development story.';
 
 /**
- * V0.9 rows mirrored from docs/REQUIREMENTS.md. Matrix states map onto the
- * site vocabulary: IMPLEMENTED+VERIFIED -> verified, IN PROGRESS -> in-development.
+ * V0.11 rows mirrored from docs/REQUIREMENTS.md (§ V0.11, in development —
+ * verified on the development branch, not released). Matrix states map onto
+ * the site vocabulary: IMPLEMENTED+VERIFIED -> verified, IN PROGRESS -> in-development.
  */
 const traceability = [
-  { id: 'IRQ09-002', req: 'Line-based IRQs moved to the I/O APIC; 8259 PIC retired', status: 'verified', evidence: 'irq-bios · pic_retired masks=0xff/0xff · timer_route_proof masked_ticks=0 result=ioapic_only' },
-  { id: 'NET09-001', req: 'TCP: connection state machine, retransmission, Ring 3 streams', status: 'verified', evidence: 'net-tcp-bios against the host TCP stack · injected_losses=2 · pattern_ok=true' },
-  { id: 'KEY09-001', req: 'Signing-key hierarchy: offline root, certified signing keys, signed revocation', status: 'verified', evidence: 'trust-bios · revoked_signer · certificate_expired · out_of_scope' },
-  { id: 'HARD09-001', req: 'A kernel stack overflow faults instead of corrupting kernel data', status: 'verified', evidence: 'stack-guard-bios · kernel_stack_overflow stack=priv … guard_hit=true' },
-  { id: 'SEC09-001', req: 'No Ring 3 argument can make the kernel form a slice from an invalid pointer', status: 'verified', evidence: 'negative control null-copy-unfixed panics · CAPH-NULL-LIST-OK · TCPPROBE-NULL-SEND-OK' },
-  { id: 'REG-V09', req: 'Every V0.1–V0.8 leg stays green on the V0.9 interrupt path', status: 'verified', evidence: 'local gate 36/36 QEMU legs, 366 host tests (08d836c) · CI run 34760629701 on the release commit f06673e' },
-  { id: 'CI-V09', req: 'CI green for V0.9', status: 'verified', evidence: 'CI run 34760629701 on the release commit f06673e: QEMU matrix, reproducible images, website, secret scan' },
+  { id: 'AUDIT11-001', req: 'A stored audit trail nobody touched verifies — after any number of boots and records', status: 'verified', evidence: 'published v0.10.0 image: boot 3 trail_recovered status=TAMPERED records=2 · fixed: audit-window-verify verified records=128, chain boot=2' },
+  { id: 'AUDIT11-002', req: 'Text a program or a disk chose never reaches the console as a line of its own or as a kernel marker', status: 'verified', evidence: 'fs-write-bios · forging name refused (FSWRITE-ERRORS-OK) · store: echo.txt = line1\\x0a[RING3-U:AUDIT] forged-content' },
+  { id: 'SEC11-001', req: 'The audit trail and the package store are the kernel’s: no program reaches them through the filesystem syscalls', status: 'verified', evidence: 'fs-write-bios · FSWRITE-KERNEL-OWNED-REFUSED · action=fs_write cap=0x80 result=denied · reason=kernel_owned' },
+  { id: 'MODEL11-001', req: 'A small diagnostic model, trained reproducibly from the repository, pinned, shipped as the build trained it', status: 'verified', evidence: 'ai-model-bios · model sha256=e0fc6642…2d12 bytes=276 initramfs_match=true decode=ok · held-out 10000 bp = one-rule baseline 10000 bp (synthetic data)' },
+  { id: 'VIEW11-001', req: 'An approved, read-only view of local state, served only to a process the console granted it', status: 'verified', evidence: 'ai-view-bios · AIPROBE-VIEW-DENIED err=perm without the capability · AIPROBE-VIEW service=flapd state=failed restarts=3 by_init=1' },
+  { id: 'INFER11-001', req: 'A local inference service outside the kernel runs the model in Ring 3', status: 'verified', evidence: 'ai-infer-bios · INFERD-READY model=e0fc6642563aba99 channel=6 · AIPROBE-INFER conditions=service_failed match=true model_match=true' },
+  { id: 'KB11-001', req: 'A runbook entry per condition, cited by id and digest', status: 'verified', evidence: 'ai-diagnose-bios · AGENT-RUNBOOK id=service_failed sha=93697f82da24ee27 · AGENT-RUNBOOK-MISSING forbidden' },
+  { id: 'AGENT11-001', req: 'A diagnostic agent with intelligence and no authority', status: 'verified', evidence: 'ai-diagnose-bios · conditions=service_failed · conditions=service_failed,scheduler_paused · conditions=service_failed,denial_burst' },
+  { id: 'PROP11-001', req: 'A proposal is filed only after the kernel checks it against what it knows itself; nothing it files can act', status: 'verified', evidence: 'ai-propose-bios · ten adversarial proposals, each refused for its own reason · AIPROBE-ACCEPTED forbidden' },
+  { id: 'ACT11-001', req: 'An approved action runs in kernel code, is verified, and is rolled back if the check fails; only the console approves', status: 'verified', evidence: 'ai-act-bios · proposal_approved id=2 by=console · action_verified id=2 result=pass · approve 3 refused precondition_changed' },
+  { id: 'ACT11-002', req: 'retry-service through the service’s supervisor, verified by events, rolled back deterministically', status: 'verified', evidence: 'ai-retry-bios · action_verified id=1 result=pass · action_rolled_back id=2 … stop_ack=true … row=failed restarts=1' },
+  { id: 'OUT11-001', req: 'Ring 3 output cannot drive the operator’s terminal', status: 'verified', evidence: 'ai-view-bios · AIPROBE-ANSI \\x1b[2A\\x1b[2K\\x0dforged\\u{202e}:UOYSITI] on one line' },
+  { id: 'OUT11-002', req: 'No process can print a kernel marker by splitting it across the pieces its output is written in', status: 'verified', evidence: 'line-atomic-bios · 250 dots + [ITISYOU:SVC] spoofed-split in one write → [RING3-U:SVC] spoofed-split · defect in v0.10.0' },
+  { id: 'SEC11-002', req: 'The kernel records and prints the path of the file a process runs, never a string a program chose', status: 'verified', evidence: 'line-atomic-bios · spawn through /bin/\\n[ITISYOU:AUDIT] forged…/../spin-forever → ps path=/bin/spin-forever · defect in v0.10.0' },
+  { id: 'AUDIT11-003', req: 'A crafted stored trail cannot crash boot recovery; a tampered trail stays reported until the operator removes it', status: 'verified', evidence: 'selftest audit_trail_parse_bounded · audit-tamper-save trail_checked status=TAMPERED reason=chain · audit-tamper-cleared verified' },
 ];
 
 const pyramid = [
@@ -105,7 +114,7 @@ const pyramid = [
     <section aria-labelledby="trace-title">
       <div class="flex flex-wrap items-end justify-between gap-4 border-b border-line-soft pb-4 mb-8">
         <h2 id="trace-title" class="font-sans text-headline-md text-ink">Requirement traceability</h2>
-        <p class="font-mono text-mono-data text-meta">V0.9 excerpt — full matrix lives in docs/REQUIREMENTS.md</p>
+        <p class="font-mono text-mono-data text-meta">V0.11 excerpt — full matrix lives in docs/REQUIREMENTS.md</p>
       </div>
       <div class="table-scroll panel">
         <table class="w-full border-collapse min-w-[640px]">
@@ -135,7 +144,9 @@ const pyramid = [
       </div>
       <p class="font-mono text-mono-data text-muted mt-4">
         A requirement is never deleted because it is difficult. Statuses collapse to implemented+verified / blocked /
-        not-applicable at reporting time; the V0.10 rows are all terminal at the v0.10.0 release.
+        not-applicable at reporting time. The V0.11 rows above are IMPLEMENTED+VERIFIED on the development branch, each
+        with a negative control; they are not in a release until v0.11.0 is tagged. The V0.10 rows are all terminal at
+        the v0.10.0 release.
       </p>
     </section>
 

@@ -127,9 +127,18 @@
     (`audit-window-write`/`-continue`/`-verify`, AUDIT11-001): more records
     than the stored window holds, so the save must move `base` off genesis;
     a second boot that recovers, adds records, checks mid-boot and saves; and
-    a third that must find that trail verified. In the anchor test,
-    `audit verify` after the forged empty trail is written reports
-    `reason=replaced` while the system is still up.
+    a third that must find that trail verified. Four more boots on the
+    tamper disk (`audit-tamper-boot`/`-save`/`-stays`/`-cleared`,
+    AUDIT11-003) show boot recovery reporting a forgery, a save that does
+    not launder a tampered trail, the next boot still reporting it, and a
+    fresh trail verifying once the operator has removed it. The anchor test (V0.9, four
+    boots on one disk: `audit-anchor-save`/`-match`/`-forge`/`-detect`)
+    anchors the saved head with the runner's witness over QEMU's user-mode
+    network, matches it on a fresh boot, writes a valid empty trail, and then
+    requires boot 4's recovery to call the forgery verified (the unkeyed
+    chain's weakness) while the anchor check reports `MISMATCH`; since V0.11
+    `audit verify` in the forging boot already reports `reason=replaced
+    records=0` while the system is still up.
 21. **Hardening** (V0.8, `harden-bios`): SMEP/SMAP/UMIP on, a W^X segment
     refused at load, `sgdt` from Ring 3 a contained #GP, the stack guard exactly
     16 pages down, and a Ring 3 read of a kernel address refused. Two
@@ -142,6 +151,7 @@
     used/free/pinned/largest-run numbers predicted by a host test, and a second
     boot on the same disk reads back the last revision and the same report.
 23. **Always-on co-scheduling** (V0.10, `sched-always-on-bios` +
+    `sched-pause-bios`, which replaced the early control leg
     `sched-always-on-negative`): background processes keep running while the
     console is busy. The runner's `@pause <ms>` send holds the console idle at
     its prompt (idle slices must be non-zero); `busy` with scheduling paused
@@ -164,7 +174,8 @@
     does not own, `ready` from a non-init, no capability) and one accepted
     report about its own child.
 25. **Userspace init** (V0.10, `init-bios`): init boots as pid 1 and starts
-    tickd and flapd (pids 2 and 3) before the console; `/sbin/init` checks the
+    tickd and flapd (pids 2 and 3) before the console — since V0.11 also
+    inferd and flakyd (pids 4 and 5, `services=4`); `/sbin/init` checks the
     shipped `/etc/init.conf` and two broken fixtures (a dependency cycle, an
     unknown capability) with exact line and reason, is refused the file
     without the filesystem capability, and supervises a service from a test
@@ -184,7 +195,78 @@
 28. **Kernel copies into user memory** (V0.10, `uaccess-bios`): a program with
     no capability points `args` and `cap_list` at its own read-only code and
     data; the kernel must refuse (`ERR_FAULT`) — before SEC10-001 it panicked.
-29. **Negative cases** (grown alongside subsystems): intentional panic,
+29. **Diagnostic model** (V0.11, `ai-model-bios`, MODEL11-001): the build
+    trains the model from `ai/scenarios.txt` and refuses a stale pin; at boot
+    the kernel must print `[ITISYOU:AI] model sha256=<pin> bytes=276
+    initramfs_match=true decode=ok`, with the pin read from
+    `ai/diag.model.sha256` by the leg itself — the initramfs carries exactly
+    the bytes the build trained and the kernel was compiled against. On CI the
+    build trains on Linux, so the same pin there is the cross-host check. The
+    accuracy figures and the codec's refusals are host tests
+    (`kernel_core::model`).
+30. **Approved view and terminal escaping** (V0.11, `ai-view-bios`,
+    VIEW11-001 and OUT11-001): `sys_view` is refused to a program with no
+    capabilities (`reason=no_handle`) and to a `run` without a caps list
+    (`reason=scope_denied`: the legacy default does not carry it); granted by
+    name, the record decodes with the host-tested codec and tells the truth —
+    flapd failed after 3 restarts, tickd running, both reported by init,
+    `paused=1` after `sched pause` — and a buffer one byte short gets nothing
+    (`AIPROBE-VIEW-SMALL-OK`). In the same leg a program writes cursor-up,
+    erase-line and a carriage return before `forged`; the log must show them
+    escaped on one line (`AIPROBE-ANSI \x1b[2A\x1b[2K\x0dforged`).
+31. **Ring 3 inference** (V0.11, `ai-infer-bios`, INFER11-001): init starts
+    inferd as pid 4 (`caps=0x12`) with the shipped model; its `check` mode
+    accepts that file and refuses each hostile fixture for its own reason
+    (`bad_magic`, `bad_length`, `bad_dimensions`, `weight_out_of_range`).
+    `/bin/ai-probe infer` asks inferd about the real view and recomputes the
+    answer from the model file itself: `match=true model_match=true` for
+    `service_failed`, and for `service_failed,scheduler_paused` with the
+    scheduler paused (job-wait slices still run inferd); `match=false` and a
+    timeout are forbidden.
+32. **Diagnostic agent and runbooks** (V0.11, `ai-diagnose-bios`,
+    AGENT11-001 and KB11-001): three situations the leg constructs, each
+    with its EXACT condition set — the booted system (`service_failed`,
+    `action=retry-service target=flapd`), the scheduler paused
+    (`service_failed,scheduler_paused`, `action=resume-scheduler`) and a
+    burst of denials from `sandbox-probe` run with no capabilities
+    (`service_failed,denial_burst`, `action=none`) — every condition's
+    runbook cited by id and digest, and the agent refused without the view
+    capability. `conditions=none` is forbidden: the healthy case cannot occur
+    on the shipped image (flapd fails on every boot) and is host-tested only.
+33. **Proposals** (V0.11, `ai-propose-bios`, PROP11-001): ten adversarial
+    `ai-probe` runs, each its own process — an unknown model, a view never
+    served and a forged one, a stale view, a condition the model does not
+    find, an action that does not apply, a marker smuggled in as the target,
+    an unknown action, an action the condition may not propose, a second
+    pending proposal. Every refusal reason must appear and no probe may be
+    accepted (`AIPROBE-ACCEPTED` forbidden); the leg checks the set of
+    reasons, not which run produced which. Without `propose` the capability
+    gate refuses; with the agent's authority `svc_report`, `fs_write` and
+    `spawn` are all refused; the agent's real proposal is filed, listed with
+    its preview, and `deny` is final. `action_executed` is forbidden — this
+    leg has no `approve`.
+34. **Approval, execution, verification** (V0.11, `ai-act-bios`,
+    ACT11-001): on a paused system a denied proposal cannot be approved and
+    `busy 1000` shows the background still starved; an approved
+    `resume-scheduler` executes, passes its verification (the `busy`
+    measurement: other processes must progress at busy points) and a second
+    `busy 1000` shows the background running; a proposal made moot by
+    resuming by hand is refused `precondition_changed` and expired, never
+    executed. The `action_executed` audit record carries
+    `approved_by=console` and the model and view digests.
+    `action_rolled_back` is forbidden here: the rollback of
+    `resume-scheduler` is exercised only by that row's mutation control.
+35. **retry-service through init** (V0.11, `ai-retry-bios`, ACT11-002):
+    flakyd has failed at boot (`restarts=3`); after `busy 3000`, so that its
+    3 s of guest uptime have passed, a proposal to retry it goes through
+    init's mailbox (`post`, `INIT-RETRY`, `ack`), executes and verifies
+    (`tripped=false running_same_pid=true`). The agent's proposal to retry
+    flapd trips the watch when flapd fails again, init stops it, the kernel
+    kills the instance init names, and `svc` shows `flapd  Failed { restarts:
+    1 }` — a deterministic rollback, not three more restarts. A non-init
+    caller of `init_ctl` is refused `not_init`; `INIT-REAPED-ORPHAN` and
+    `action_failed` are forbidden.
+36. **Negative cases** (grown alongside subsystems): intentional panic,
     allocator exhaustion, malformed inputs, timeout classification.
 
 The harness gained `--audio`/`--audio-out` (AC97 → WAV capture, with a non-
@@ -195,7 +277,14 @@ implementation with its own gateway, DHCP server and DNS forwarder; added in
 V0.8.1), `@pause <ms>` in a `--send` list (hold the next command back so
 the console sits idle; V0.10), and `--forbid` (a substring that must NOT
 appear) alongside the
-serial + monitor channels. Every leg now runs on a CPU advertising `+smep,+smap,+umip`,
+serial + monitor channels. `@pause` waits in the host's wall-clock time and
+only holds typing back; a wait in GUEST time is the kernel console's own
+`busy <ms>` (1–10000 ms of TSC time calibrated against the PIT, running
+background slices at busy points and reporting whether other processes
+progressed). Guest time runs slower than the wall clock under emulation, so
+a leg that needs the guest to age uses `busy` — `ai-retry-bios` runs
+`busy 3000` because flakyd counts guest uptime. Every leg now runs on a CPU
+advertising `+smep,+smap,+umip`,
 so the whole matrix passing is itself evidence that supervisor-mode protection
 did not break the kernel's own access to user memory.
 
@@ -223,9 +312,13 @@ duration, full command line).
 ## Commands
 
 ```powershell
-scripts\test.ps1     # host unit tests + the full QEMU matrix (36 legs at v0.9.0)
+scripts\test.ps1     # host unit tests + the full QEMU matrix (64 legs in V0.11 development; 50 at v0.10.0, 36 at v0.9.0)
 scripts\verify.ps1   # canonical full gate (adds doctor, fmt, both clippy gates, website, secret scan)
 ```
+
+CI (`.github/workflows/ci.yml`) runs the same 64 legs, by label, with longer
+timeouts; the ten legs V0.11 added (`audit-window-*` and the seven `ai-*`)
+send and assert exactly what `scripts/test.ps1` does.
 
 ## Release-consistency and website verification
 
@@ -253,6 +346,46 @@ scripts\verify.ps1   # canonical full gate (adds doctor, fmt, both clippy gates,
 - `scripts/release-boot-test.ps1 -Dir <dir> -Version <v>` boots the exact
   release files (UEFI + BIOS console, two-boot persistence, user-mode network)
   and reports their digests afterwards, which must be unchanged.
+
+## Mutation controls (V0.11)
+
+A leg that passes says nothing about a fix unless it fails without it. Every
+V0.11 row in `docs/REQUIREMENTS.md` records at least one such control
+(KB11-001's and MODEL11-001's are build-time: a runbook removed, or a
+scenario bound moved, fails the kernel build). The QEMU controls were run
+one at a time, the same way: one fix or
+check is disabled by an exact source edit (whose anchor must match exactly
+once, or the control is not run), the image is rebuilt, the legs that must
+catch it are run, and the result is recorded — which required markers went
+missing or which forbidden one appeared, with the serial log kept. The
+source is then restored from a byte copy whatever happened, its SHA-256
+compared with the original's, and its timestamp bumped so that cargo
+rebuilds from the restored file instead of reusing the mutated build.
+Controls on host logic follow the same pattern against
+`cargo test -p kernel-core`; MODEL11-001's is a data change instead (one
+scenario bound moved by 1 fails both the pin test and the kernel build).
+What each control disabled and how the leg failed is in the row's evidence
+(for example PROP11-001: without the recomputation, the false diagnosis is
+refused only as `not_applicable`); the scripts that apply and restore the
+edits are local tooling, not part of `scripts/`.
+
+Some controls are experiments rather than removals: to show a check holds
+against a component that misbehaves, the component is changed instead —
+for ACT11-002 a deliberately compromised `/sbin/init` that names another
+service's pid in its `stop` acknowledgement, or never acknowledges a
+`retry` — and the kernel run both with and without its check.
+
+`--require-order` (V0.11) lets a leg tie one line to another: the listed
+substrings must appear in that order, each on a later line than the
+previous one (greedy earliest match, host-tested in `qemu-runner`).
+`ai-propose-bios` uses it to show each adversarial run was refused for its
+own reason; with two runs swapped the leg fails `out-of-order:`, though
+every reason still appears somewhere.
+
+The V0.11 adversarial review (six reviewers over the V0.11 diff, each
+finding verified independently) found two defects in v0.10.0's console
+evidence — OUT11-002, SEC11-002 — and AUDIT11-003; each fix has a leg and a
+control like the rest.
 
 ## Rules
 

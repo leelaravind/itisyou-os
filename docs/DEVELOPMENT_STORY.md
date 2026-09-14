@@ -1054,3 +1054,123 @@ marker — the very thing V0.10 had stopped programs from printing directly.
 All three are fixed on the V0.11 branch, each shown first on the released
 image or on the fixed kernel with the fix switched off; v0.10.0 is disclosed
 here and stays as released.
+
+## 2026-09-14 — V0.11: an agent with intelligence and no authority (in development)
+
+The rule V0.11 was designed around (ADR-0024) is that the agent may know
+things and suggest things, and may never do anything. Everything it hands the
+kernel is treated as a claim, and the kernel checks each claim against what
+it knows itself. The only path from a suggestion to an action goes through
+the console, and each action the kernel carries out is verified afterwards
+and undone if the check fails. The layer was built bottom-up in ten steps.
+Each step got its own QEMU leg and at least one control: the step's key check
+disabled, the image rebuilt, the leg shown failing, the check restored.
+
+**A model measured honestly.** The diagnostic model is deliberately small:
+three integer yes/no detectors (a failed service, a paused scheduler, a burst
+of denials) over sixteen features of a read-only system view, trained at build
+time by an averaged perceptron, with no floating point anywhere. Its training
+data is synthetic, generated from ranges written in `ai/scenarios.txt`,
+because there is no fleet of real systems to learn from. The build trains it
+and refuses to continue if the result does not match the digest pinned in the
+repository; the kernel checks that digest again at boot. On held-out examples
+it is exactly right every time, and a one-rule baseline is exactly right every
+time too. That second number is the honest one. The scenarios define each
+condition by essentially one feature, so the accuracy shows the designed
+cases are separable. It does not show that the model can diagnose a real
+machine. The requirements and the site say that rather than quote a
+perfect score.
+
+**The pieces, each with less authority than the last.** The kernel serves a
+fixed 232-byte view of its own tables: counts, allow-listed service rows and
+scheduler state, with no paths, arguments or payloads. Only a process the
+console started with a console-only capability gets it: init cannot grant it,
+delegation drops it and `/etc/init.conf` may not name it. A Ring 3 service,
+`inferd`, runs the model under `/sbin/init`. It answers over IPC, which has no
+sender identity, so its answers are claims too. The agent is a deterministic
+Ring 3 program: it reads the view, asks `inferd`, looks up a fixed runbook
+for each condition and prints a diagnosis. The leg builds three real
+situations and requires each exact set of conditions. When the agent
+proposes an action, the kernel runs its checks in order, and the first one
+that fails names the refusal. The model must be the shipped one. The view
+must be the last one served to that same process, and recent. The kernel
+recomputes the condition from those exact bytes with its own copy of the
+model. The action must apply to the system as the kernel sees it now. Ten
+adversarial proposals are each refused for exactly their own reason. With
+the recomputation switched off, a false diagnosis is still refused, but only
+by the later applicability check, and its own refusal disappears. That
+proves the check is what refuses it, not luck.
+
+**Verification that measures something.** `approve` re-checks the proposal
+against fresh facts, runs the action in kernel code, verifies it and rolls
+it back if the check fails. The first action, resuming a paused scheduler,
+could not be verified by "other processes made progress": the console's job
+waits already give background processes slices while the scheduler is paused.
+So verification uses the busy-point measurement, which a paused scheduler
+fails. The control makes the executor do nothing and shows the verification
+fail and the rollback run. The second action, retrying a failed service,
+could not simply start the program: that would take the service's row away
+from its supervisor. Instead the kernel posts a command to a one-slot mailbox
+that only the live init can read and acknowledge. The mailbox is cleared if
+init dies, so a command never reaches its successor. Verification is
+event-driven: a watch trips on any failure or restart report for that
+service inside the window, and rolls it back at once by stopping the service
+and killing the instance.
+
+Building the retry path found two ordering bugs in new code. Posting the
+rollback's `stop` erased the retry's acknowledgement before the kernel had
+read it, so a failing retry looked like one init had never answered. And the
+watch was armed only after the command was posted, which left a gap where
+init's report could arrive unwatched. Acknowledgements are now matched by
+sequence number and never cleared by a post, and the watch is armed first.
+The fixture that exercises the success path, `flakyd`, fails while the
+system is under three seconds old. Its first run succeeded too early because
+the leg waited in wall-clock time, and under QEMU's emulation guest time
+runs slower than wall time. The leg now waits in guest time.
+
+**One more console forgery.** Reviewing the approval path as an attacker,
+the question was what the operator actually sees before typing
+`approve`. V0.10 had stopped programs from printing the kernel's marker
+prefix, but their escape sequences and carriage returns still reached the
+terminal. A program could move the cursor up and rewrite the preview the
+kernel had just printed. Process output now shows every control character
+except the line feed and the tab as an escape (`\x1b`, `\x0d`). The leg's
+probe tries it, and the control shows the raw sequence reaching the log
+when the escaping is removed (OUT11-001).
+
+**The review that did not stop at V0.11's own code.** Before the release,
+six independent reviewers each took one area of everything V0.11 changed
+and tried to break it. Every finding then went to a second reviewer told
+to refute it, and nine survived. The two that mattered most were not in the
+new code. V0.10 had stopped programs from printing the kernel's marker
+prefix by rewriting it in each chunk of output — one chunk at a time. So a
+program that wrote 250 filler bytes and then the marker put `[ITISY` at
+the end of one 256-byte chunk and `OU:` at the start of the next. Neither
+chunk contained the marker, and the serial port received it whole
+(OUT11-002). And `ps` printed whatever path string a program had passed to
+`spawn`. A component that a later `..` removed could carry a line break
+and a marker, so the kernel itself printed the forgery (SEC11-002). Both are
+in v0.10.0 and are disclosed for it. Now the buffer keeps back a tail that
+could start a marker, and the kernel records the path of the file it
+actually loaded.
+
+The review also turned up a rollback that would kill whatever pid init
+named. A deliberately compromised init, built for the experiment, got the
+unfixed kernel to kill tickd. The kernel now kills only a live instance of
+that service. Two tests turned out to be weaker than what their rows
+claimed. One showed that each refusal reason appeared somewhere, not that
+each run got its own. The harness grew an ordered require for it, and the
+other became a kernel selftest. A documented residual also turned out to
+be false: it said the next save would heal a tampered audit trail. It
+doesn't, by design, and four new boots now prove the trail stays reported
+until the operator removes it. Every one of these fixes was then shown
+failing with the check removed, like the rest.
+
+What V0.11 does not do is written down beside what it does. The model
+diagnoses three conditions and knows nothing it was not designed to know. It
+can propose only two actions. IPC is still unauthenticated, so a malicious
+IPC holder can mislead a diagnosis, though it cannot get an unjustified
+proposal filed. Proposals live only in memory. And because `flapd` fails by
+design at boot, the shipped image never shows a system with nothing wrong
+(host tests cover that case). Every V0.11 row is implemented and verified on
+the development branch; the release comes next.

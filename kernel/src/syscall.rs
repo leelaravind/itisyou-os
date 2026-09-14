@@ -1485,10 +1485,6 @@ fn sys_gui_present(win: u64) -> u64 {
     0
 }
 
-/// gui_event(win, buf, len): the next event for a window the caller owns, as
-/// an 8-byte record (V0.10, syscall 41). The buffer is checked before an
-/// event is taken, so none is lost to a bad pointer. With no event the caller
-/// waits (R4) and resumes with `ERR_AGAIN` for its wrapper to ask again.
 /// sys_view(buf, len) (V0.11): build the approved view, copy all of it or
 /// none of it, and only then remember it as served to this process (the
 /// provenance a proposal must cite).
@@ -1510,6 +1506,10 @@ fn sys_view(buf: u64, len: u64) -> u64 {
     }
 }
 
+/// gui_event(win, buf, len): the next event for a window the caller owns, as
+/// an 8-byte record (V0.10, syscall 41). The buffer is checked before an
+/// event is taken, so none is lost to a bad pointer. With no event the caller
+/// waits (R4) and resumes with `ERR_AGAIN` for its wrapper to ask again.
 fn sys_gui_event(win: u64, buf: u64, len: u64) -> u64 {
     use kernel_core::wm::RECORD_LEN;
     if len < RECORD_LEN as u64 {
