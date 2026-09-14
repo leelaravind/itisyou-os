@@ -12,10 +12,12 @@
 //! most that, and exactly what `/etc/init.conf` names.
 
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use kernel_core::caps::{CAP_FS_READ, CAP_IPC, CAP_SERVICE, CAP_SPAWN};
+use kernel_core::caps::{CAP_FS_READ, CAP_IPC, CAP_IPC_CHANNELS_ALL, CAP_SERVICE, CAP_SPAWN};
 
 pub const INIT_PATH: &str = "/sbin/init";
-pub const INIT_CAPS: u64 = CAP_SPAWN | CAP_IPC | CAP_FS_READ | CAP_SERVICE;
+/// Every IPC channel (V1.0, ADR-0025): init delegates each service exactly
+/// the channels its `caps=` names, so it must hold them all.
+pub const INIT_CAPS: u64 = CAP_SPAWN | CAP_IPC | CAP_IPC_CHANNELS_ALL | CAP_FS_READ | CAP_SERVICE;
 pub const INIT_SANDBOX: &str = "/etc";
 
 static READY: AtomicBool = AtomicBool::new(false);

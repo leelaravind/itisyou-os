@@ -12,7 +12,11 @@
 use crate::sync::Mutex;
 use crate::{proc, user};
 use alloc::vec::Vec;
-use kernel_core::caps::{CAP_IPC, CAP_SPAWN};
+use kernel_core::caps::{cap_ipc_channel, CAP_IPC, CAP_SPAWN};
+
+/// IPC on channels 0-1 only, the echo service's (V1.0, ADR-0025: an IPC
+/// capability names its channels).
+const ECHO_IPC: u64 = CAP_IPC | cap_ipc_channel(0) | cap_ipc_channel(1);
 use kernel_core::service::{self, on_exit, startup_order, ServiceState};
 use kernel_core::svcreport::ServiceName;
 
@@ -38,14 +42,14 @@ pub static REGISTRY: &[ServiceDef] = &[
         name: "echod",
         path: "/bin/echo-svc",
         deps: &[],
-        caps: CAP_IPC,
+        caps: ECHO_IPC,
         long_running: false,
     },
     ServiceDef {
         name: "client",
         path: "/bin/svc-client",
         deps: &["echod"],
-        caps: CAP_IPC,
+        caps: ECHO_IPC,
         long_running: false,
     },
     ServiceDef {

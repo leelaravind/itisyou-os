@@ -97,10 +97,14 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
   after 30 s.
 - IPC: bounded kernel message channels (8 channels since V0.11 - 6 and 7
   are `/bin/inferd`'s - ≤256 B, ≤8 queued), non-blocking, addressed by
-  integer id. Channels carry no sender identity and are not scoped: any
-  holder of the IPC capability can read or write any channel, so a reply is
-  a claim (inferd's clients check a nonce; the kernel recomputes what it
-  relies on). No shared-memory or synchronous rendezvous IPC.
+  integer id. Since V1.0 an IPC capability names the channels it reaches
+  (ADR-0025): plain `ipc` and every default set reach channels 0–5, and the
+  inference channels 6–7 only by a grant naming them (`ipc:6-7`). v0.11.0
+  and earlier scoped nothing: any holder of the IPC capability reached every
+  channel. Channels still carry no sender identity, so among the processes
+  that hold a channel a message is a claim (inferd's clients check a nonce;
+  the kernel recomputes what it relies on). A grant is one contiguous range
+  of channels. No shared-memory or synchronous rendezvous IPC.
 - The kernel heap is a fixed **32 MiB** range; no growth. Physical memory above
   4 GiB is ignored by the frame allocator (`ignored_high_frames`).
 - Syscalls run with interrupts masked (`SFMASK` clears IF); blocking waits inside
@@ -224,12 +228,14 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
   service in the view (on the shipped image, flapd), so `ai-retry-bios` files
   the proposal for flakyd through its test probe, not through the agent.
 - **What inferd answers is an unauthenticated claim.** IPC carries no sender
-  identity (see *Kernel, processes, scheduling*), and every program `run`
-  from the console without a caps list holds the IPC capability, so any such
-  process can take inferd's requests off channel 6 — inferd then never sees
-  them, and the taker reads the 16 features the requester derived from its
-  view, which the taker was never granted — or answer on channel 7. The
-  nonce a client sends only lets an honest
+  identity (see *Kernel, processes, scheduling*). In v0.11.0 every program
+  `run` from the console without a caps list held the IPC capability for
+  every channel, so any such process could take inferd's requests off
+  channel 6 — reading the 16 features the requester derived from its view —
+  or answer on channel 7. Since V1.0 (ADR-0025) only a process granted
+  `ipc:6-7` by name reaches those channels — inferd, and whatever the
+  operator starts with that grant — so the residual is limited to processes
+  holding that grant. The nonce a client sends only lets an honest
   client discard stale and foreign replies; it authenticates nothing. A
   reply read by the wrong client is discarded, not put back, so clients
   asking at the same time can lose each other's answers and time out

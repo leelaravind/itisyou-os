@@ -187,6 +187,26 @@ pub fn rights_from_bits(bits: u64) -> [u32; CapabilityKind::COUNT] {
     out
 }
 
+/// The scope a process's handle of `kind` is minted or delegated with, from
+/// its capability bits (V1.0, ADR-0025). `None`: no handle of that kind at
+/// all, although the bits map to rights for it.
+///
+/// Only the Service kind is scoped from the bits: its USE right is IPC, and a
+/// channel is its sub-resource, so the handle's scope is the channel range
+/// the bits grant ([`crate::caps::ipc_channels`]) — or none, which grants no
+/// IPC. A holder of `CAP_SERVICE` (the supervisor's ADMIN right, checked for
+/// the whole class) gets the unscoped handle.
+pub fn scope_from_bits(kind: CapabilityKind, bits: u64) -> Option<ResourceScope> {
+    use crate::caps::{ipc_channels, CAP_SERVICE};
+    match kind {
+        CapabilityKind::Service if bits & CAP_SERVICE != 0 => Some(ResourceScope::ANY),
+        CapabilityKind::Service => {
+            ipc_channels(bits).map(|(lo, hi)| ResourceScope { start: lo, end: hi })
+        }
+        _ => Some(ResourceScope::ANY),
+    }
+}
+
 /// A compact resource scope.  `start..=end` is interpreted by the consumer
 /// (path id, device id, port range, or service id); the table only enforces
 /// that delegated scopes cannot expand.
@@ -421,6 +441,49 @@ impl<const N: usize> Default for CapabilityTable<N> {
 mod tests {
     use super::*;
     const FS: ResourceScope = ResourceScope { start: 10, end: 20 };
+
+    #[test]
+    fn ipc_handles_are_scoped_to_their_channels() {
+        use crate::caps::{parse, CAP_LEGACY_FULL, CAP_SERVICE};
+        let one = |lo, hi| ResourceScope { start: lo, end: hi };
+        let service = CapabilityKind::Service;
+        assert_eq!(
+            scope_from_bits(service, parse("ipc:6-7").unwrap()),
+            Some(one(6, 7))
+        );
+        assert_eq!(scope_from_bits(service, CAP_LEGACY_FULL), Some(one(0, 5)));
+        // The supervisor's ADMIN right is checked for the whole class.
+        assert_eq!(
+            scope_from_bits(service, parse("ipc:6-7").unwrap() | CAP_SERVICE),
+            Some(ResourceScope::ANY)
+        );
+        // IPC with no usable channel range: no handle.
+        assert_eq!(scope_from_bits(service, crate::caps::CAP_IPC), None);
+        // Other kinds are not scoped by the bits.
+        assert_eq!(
+            scope_from_bits(CapabilityKind::Filesystem, CAP_LEGACY_FULL),
+            Some(ResourceScope::ANY)
+        );
+        // Enforcement: a handle for 6-7 reaches 6 and 7 and nothing else, and
+        // a child cannot be given a channel outside it.
+        let mut t = CapabilityTable::<8>::new();
+        let h = t
+            .grant(1, service, one(6, 7), rights::USE, None, true)
+            .unwrap();
+        assert_eq!(t.check(h, 1, service, one(6, 6), rights::USE, 0), Ok(()));
+        assert_eq!(t.check(h, 1, service, one(7, 7), rights::USE, 0), Ok(()));
+        for ch in [0, 2, 5] {
+            assert_eq!(
+                t.check(h, 1, service, one(ch, ch), rights::USE, 0),
+                Err(CapabilityError::ScopeDenied)
+            );
+        }
+        assert!(t.delegate(h, 1, 2, one(6, 7), rights::USE, 0).is_ok());
+        assert_eq!(
+            t.delegate(h, 1, 3, one(0, 5), rights::USE, 0),
+            Err(CapabilityError::ScopeDenied)
+        );
+    }
 
     #[test]
     fn forged_and_stale_handles_are_rejected() {

@@ -15,8 +15,8 @@
 //! generation, the owning pid, the kind, the scope and the expiry on use.
 
 use kernel_core::capability::{
-    rights_from_bits, CapabilityError, CapabilityHandle, CapabilityKind, CapabilityTable,
-    ResourceScope,
+    rights_from_bits, scope_from_bits, CapabilityError, CapabilityHandle, CapabilityKind,
+    CapabilityTable, ResourceScope,
 };
 
 use crate::sync::Mutex;
@@ -53,7 +53,12 @@ pub fn handles_for(pid: u64, bits: u64) -> HandleSet {
         let Some(kind) = CapabilityKind::from_index(index) else {
             continue;
         };
-        if let Ok(handle) = table.grant(pid, kind, ResourceScope::ANY, right_bits, None, true) {
+        // V1.0 (ADR-0025): the IPC handle is scoped to the channels the bits
+        // name; bits naming no usable range mint no IPC handle at all.
+        let Some(scope) = scope_from_bits(kind, bits) else {
+            continue;
+        };
+        if let Ok(handle) = table.grant(pid, kind, scope, right_bits, None, true) {
             set[index] = handle;
         }
     }
@@ -84,9 +89,14 @@ pub fn delegate_to_child(
         if parent == CapabilityHandle::INVALID {
             continue;
         }
-        if let Ok(handle) =
-            table.delegate(parent, parent_pid, child_pid, ResourceScope::ANY, want, now)
-        {
+        // The child's scope comes from its own (already intersected) bits;
+        // the table refuses it unless it lies inside the parent's (V1.0).
+        let Some(scope) = CapabilityKind::from_index(index)
+            .and_then(|kind| scope_from_bits(kind, requested_bits))
+        else {
+            continue;
+        };
+        if let Ok(handle) = table.delegate(parent, parent_pid, child_pid, scope, want, now) {
             set[index] = handle;
         }
     }

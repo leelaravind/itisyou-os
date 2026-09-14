@@ -427,6 +427,19 @@ extern "C" fn _start() -> ! {
             }
         },
         Some(b"direct") => direct(),
+        // V1.0 (ADR-0025): the inference channels are out of reach unless
+        // the grant names them - try to take a request and to answer one.
+        Some(b"ipc-steal") => {
+            let mut buf = [0u8; 80];
+            let recv = ulib::msg_recv(kernel_core::infer::REQUEST_CHANNEL, &mut buf);
+            let send = ulib::msg_send(kernel_core::infer::REPLY_CHANNEL, b"not-inferd");
+            let word = |r| if r == ERR_PERM { "denied" } else { "reached" };
+            write("AIPROBE-IPC request_channel=");
+            write(word(recv));
+            write(" reply_channel=");
+            write(word(send));
+            write("\n");
+        }
         // V0.11 (OUT11-001): terminal control sequences in program output
         // are shown, never performed; a right-to-left override (which would
         // display the reversed text after it as a kernel marker) likewise.
