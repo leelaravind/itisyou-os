@@ -1,9 +1,9 @@
 {
-  "version": "0.11.0-dev",
+  "version": "0.11.0",
   "maturity": "pre-alpha",
   "architecture": "x86_64",
   "environment": "QEMU",
-  "milestone": "V0.11 — AI-Native System Layer (in development)",
+  "milestone": "V0.11 — AI-Native System Layer",
   "commit": null,
   "lastVerifiedAt": null,
   "verification": "in-development",

@@ -199,7 +199,7 @@ dependencies = [
 
 [[package]]
 name = "image-builder"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "bootloader",
@@ -207,7 +207,7 @@ dependencies = [
 
 [[package]]
 name = "itisyou-kernel"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "bootloader_api",
  "kernel-core",
@@ -238,11 +238,11 @@ dependencies = [
 
 [[package]]
 name = "kernel-core"
-version = "0.11.0-dev"
+version = "0.11.0"
 
 [[package]]
 name = "keytool"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "kernel-core",
 ]
@@ -340,7 +340,7 @@ dependencies = [
 
 [[package]]
 name = "qemu-runner"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "kernel-core",
  "serde",
@@ -561,7 +561,7 @@ dependencies = [
 
 [[package]]
 name = "ulib"
-version = "0.11.0-dev"
+version = "0.11.0"
 
 [[package]]
 name = "unicode-ident"
@@ -571,7 +571,7 @@ checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
 
 [[package]]
 name = "user-agent"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "kernel-core",
  "ulib",
@@ -579,7 +579,7 @@ dependencies = [
 
 [[package]]
 name = "user-ai-probe"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "kernel-core",
  "ulib",
@@ -587,147 +587,147 @@ dependencies = [
 
 [[package]]
 name = "user-args-probe"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-burn"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-cap-child"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-cap-handle-probe"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-cap-parent"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-child"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-crashy-svc"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-echo-svc"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-flags-probe"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-flakyd"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-flapd"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-fs-probe"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-fs-user-persist"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-fs-write-denied"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-fs-writer"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-gp-test"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-gui-demo"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-gui-echo"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-harden-probe"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-hello-app"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-inferd"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "kernel-core",
  "ulib",
@@ -735,70 +735,70 @@ dependencies = [
 
 [[package]]
 name = "user-init"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-line-probe"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-lsdev"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-net-denied"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-net-probe"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-parent"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-pf-test"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-proc-probe"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-sandbox-probe"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-sh"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "kernel-core",
  "ulib",
@@ -806,35 +806,35 @@ dependencies = [
 
 [[package]]
 name = "user-spin-finite"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-spin-forever"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-stack-guard-probe"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-svc-client"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-sysinit"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "kernel-core",
  "ulib",
@@ -842,35 +842,35 @@ dependencies = [
 
 [[package]]
 name = "user-tcp-probe"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-tcp-server-probe"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-tick-client"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-tickd"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
 
 [[package]]
 name = "user-uaccess-probe"
-version = "0.11.0-dev"
+version = "0.11.0"
 dependencies = [
  "ulib",
 ]
