@@ -26,6 +26,16 @@ struct Channel {
 
 static CHANNELS_STATE: Mutex<[Option<Channel>; CHANNELS]> = Mutex::new([const { None }; CHANNELS]);
 
+/// Messages queued on every channel (V1.0 leak accounting).
+pub fn queued() -> usize {
+    CHANNELS_STATE
+        .lock()
+        .iter()
+        .flatten()
+        .map(|c| c.queue.len())
+        .sum()
+}
+
 pub fn init() {
     let mut guard = CHANNELS_STATE.lock();
     for slot in guard.iter_mut() {

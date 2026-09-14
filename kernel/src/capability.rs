@@ -142,6 +142,11 @@ pub fn revoke_owner(pid: u64) -> usize {
     TABLE.lock().revoke_owner(pid)
 }
 
+/// Live handles in the table (V1.0 leak accounting).
+pub fn count_live() -> usize {
+    TABLE.lock().live()
+}
+
 /// Live handles owned by `pid` — teardown evidence for tests and the shell.
 pub fn count_owned(pid: u64) -> usize {
     TABLE.lock().count_owned(pid)

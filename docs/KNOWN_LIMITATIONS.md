@@ -105,6 +105,12 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
   that hold a channel a message is a claim (inferd's clients check a nonce;
   the kernel recomputes what it relies on). A grant is one contiguous range
   of channels. No shared-memory or synchronous rendezvous IPC.
+- **A page-table frame leaked with store operations** in every release from
+  V0.4 to v0.11.0 (found by V1.0's soak leg, fixed in V1.0): each operation on
+  the persistent store re-opens the NVMe controller, and every open mapped its
+  registers at a fresh virtual address, so about one physical frame was lost
+  per 256 store operations - about 16 MiB per million - until reboot.
+  Since V1.0 the same registers keep one mapping (V1-REL-003).
 - The kernel heap is a fixed **32 MiB** range; no growth. Physical memory above
   4 GiB is ignored by the frame allocator (`ignored_high_frames`).
 - Syscalls run with interrupts masked (`SFMASK` clears IF); blocking waits inside

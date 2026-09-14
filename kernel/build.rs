@@ -64,6 +64,7 @@ fn main() {
         "inferd",
         "agent",
         "flakyd",
+        "soak",
     ] {
         println!(
             "cargo::rerun-if-changed={}",
@@ -201,6 +202,8 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
             "user-agent",
             "-p",
             "user-flakyd",
+            "-p",
+            "user-soak",
         ])
         .arg("--target-dir")
         .arg(&target_dir)
@@ -269,6 +272,7 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
         ("user-inferd", "bin/inferd"),
         ("user-agent", "bin/agent"),
         ("user-flakyd", "bin/flakyd"),
+        ("user-soak", "bin/soak"),
     ];
     entries.push(("bin/".to_string(), Vec::new(), true));
     entries.push(("sbin/".to_string(), Vec::new(), true));

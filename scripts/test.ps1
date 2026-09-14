@@ -1878,6 +1878,44 @@ Write-Output '=== QEMU V1.0: IPC channels scoped by the grant (BIOS) ==='
     '--forbid', 'RING3-PANIC',
     '--timeout-secs', '180', '--label', 'ipc-scope-bios')
 
+Write-Output '=== QEMU V1.0: long use leaves nothing behind (BIOS) ==='
+# V1-REL-003. After a warm-up that fills every bounded ring, queue and table
+# once, `leakcheck mark` records what the kernel holds; 250 more process
+# lifecycles with file writes, deletes and IPC round trips (`/bin/soak`),
+# agent diagnoses and pings follow, and `leakcheck` must find every counter
+# exactly where it was: free frames, heap (less the audit trail's own
+# strings, which spell out ever-growing numbers), processes, capability
+# handles, queued IPC messages, sockets, TCP connections, output buffers.
+$soakDisk = Join-Path $env:ITISYOU_SCRATCH 'itisyou-soak-test.img'
+Remove-Item $soakDisk -ErrorAction SilentlyContinue
+[System.IO.File]::WriteAllBytes($soakDisk, (New-Object byte[] 8192))
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $soakDisk, '--net-user',
+    '--expect', 'B210',
+    '--send', 'run /bin/soak spawn,ipc:2-3,fs_write /data -- 30',
+    '--send', 'run /bin/agent sys_view,ipc:6-7,fs_read /etc/ai -- diagnose',
+    '--send', 'ping 10.0.2.2 1',
+    '--send', 'leakcheck mark',
+    '--send', 'run /bin/soak spawn,ipc:2-3,fs_write /data -- 250',
+    '--send', 'run /bin/agent sys_view,ipc:6-7,fs_read /etc/ai -- diagnose',
+    '--send', 'run /bin/agent sys_view,ipc:6-7,fs_read /etc/ai -- diagnose',
+    '--send', 'ping 10.0.2.2 1',
+    '--send', 'ping 10.0.2.2 1',
+    '--send', 'leakcheck',
+    '--send', 'shutdown',
+    '--require', 'SOAK-OK iterations=30 lifecycles=30',
+    '--require', 'SOAK-OK iterations=250 lifecycles=250',
+    '--require', '[ITISYOU:LEAK] mark frames_free=',
+    '--require-order', '[ITISYOU:LEAK] mark frames_free=',
+    '--require-order', 'SOAK-OK iterations=250',
+    '--require-order', '[ITISYOU:LEAK] check frames=0 heap=0 processes=0 handles=0 ipc_queued=0 sockets=0 tcp=0 out_slots=0 result=clean',
+    '--forbid', 'result=leak',
+    '--forbid', 'SOAK-FAILED',
+    '--forbid', 'AGENT-INFER-TIMEOUT',
+    '--forbid', 'RING3-PANIC',
+    '--timeout-secs', '600', '--label', 'soak-bios')
+Remove-Item $soakDisk -ErrorAction SilentlyContinue
+
 if ($anyFailed) { Write-Output 'TEST: FAILED'; exit 1 }
 Write-Output 'TEST: OK'
 exit 0

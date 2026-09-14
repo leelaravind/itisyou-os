@@ -805,6 +805,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "user-soak"
+version = "0.11.0"
+dependencies = [
+ "ulib",
+]
+
+[[package]]
 name = "user-spin-finite"
 version = "0.11.0"
 dependencies = [

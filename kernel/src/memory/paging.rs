@@ -204,9 +204,21 @@ pub fn is_unmapped(addr: VirtAddr) -> bool {
     translate(addr).is_none()
 }
 
+/// MMIO ranges mapped so far: (physical base, pages, virtual base).
+///
+/// V1.0 (found by the soak leg, V1-REL-003): a driver that initializes again
+/// maps the same registers again - the NVMe store is opened afresh for
+/// every store operation - and each call took a fresh stretch of the bump
+/// window, so its page tables grew by a frame every few hundred file
+/// operations and the window would eventually run out. A range already
+/// mapped is now handed back instead. Device registers have one mapping,
+/// uncacheable, whoever asks.
+static MMIO_MAPS: Mutex<[Option<(u64, u64, u64)>; 32]> = Mutex::new([None; 32]);
+
 /// Map a physical MMIO range into kernel virtual space, uncacheable, at a
 /// dedicated MMIO window base. Returns the kernel virtual address of `phys`.
-/// Used by device drivers (e.g. NVMe BAR0). Not for RAM.
+/// Used by device drivers (e.g. NVMe BAR0). Not for RAM. A range inside one
+/// already mapped returns that mapping.
 pub fn map_mmio(phys: u64, size: u64) -> Result<u64, PagingError> {
     use core::sync::atomic::{AtomicU64, Ordering};
     // Bump-allocated MMIO virtual window well clear of kernel/phys-map/user.
@@ -216,7 +228,18 @@ pub fn map_mmio(phys: u64, size: u64) -> Result<u64, PagingError> {
     let phys_base = phys & !0xFFF;
     let pages = (size + page_off).div_ceil(4096);
     let span = pages * 4096;
+    let mut maps = MMIO_MAPS.lock();
+    if let Some((base, _, virt)) = maps
+        .iter()
+        .flatten()
+        .find(|&&(base, n, _)| phys_base >= base && phys_base + span <= base + n * 4096)
+    {
+        return Ok(virt + (phys_base - base) + page_off);
+    }
     let virt_base = NEXT_MMIO_VIRT.fetch_add(span, Ordering::SeqCst);
+    // `maps` stays locked across the mapping (lock order: MMIO_MAPS, then
+    // MAPPER, and nothing takes them the other way), and the range is
+    // recorded only once every page is mapped.
 
     let flags = PageTableFlags::PRESENT
         | PageTableFlags::WRITABLE
@@ -236,6 +259,9 @@ pub fn map_mmio(phys: u64, size: u64) -> Result<u64, PagingError> {
                 .map_err(PagingError::MapTo)?
                 .flush();
         }
+    }
+    if let Some(slot) = maps.iter_mut().find(|m| m.is_none()) {
+        *slot = Some((phys_base, pages, virt_base));
     }
     Ok(virt_base + page_off)
 }

@@ -1352,6 +1352,35 @@ jobs:
             --forbid "AIPROBE-FAILED" --forbid "AIPROBE-INFER-TIMEOUT" --forbid "RING3-PANIC" \
             --timeout-secs 240 --label ipc-scope-bios
 
+      - name: QEMU V1.0 long use leaves nothing behind (BIOS)
+        run: |
+          # V1-REL-003: after a warm-up, 250 process lifecycles with file
+          # writes, deletes and IPC, agent diagnoses and pings; leakcheck
+          # must find every kernel counter exactly where it was.
+          rm -f artifacts/soak-test.img
+          mkdir -p artifacts
+          head -c 8192 /dev/zero > artifacts/soak-test.img
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
+            --nvme-persist artifacts/soak-test.img --net-user --expect B210 \
+            --send "run /bin/soak spawn,ipc:2-3,fs_write /data -- 30" \
+            --send "run /bin/agent sys_view,ipc:6-7,fs_read /etc/ai -- diagnose" \
+            --send "ping 10.0.2.2 1" --send "leakcheck mark" \
+            --send "run /bin/soak spawn,ipc:2-3,fs_write /data -- 250" \
+            --send "run /bin/agent sys_view,ipc:6-7,fs_read /etc/ai -- diagnose" \
+            --send "run /bin/agent sys_view,ipc:6-7,fs_read /etc/ai -- diagnose" \
+            --send "ping 10.0.2.2 1" --send "ping 10.0.2.2 1" \
+            --send "leakcheck" --send "shutdown" \
+            --require "SOAK-OK iterations=30 lifecycles=30" \
+            --require "SOAK-OK iterations=250 lifecycles=250" \
+            --require "[ITISYOU:LEAK] mark frames_free=" \
+            --require-order "[ITISYOU:LEAK] mark frames_free=" \
+            --require-order "SOAK-OK iterations=250" \
+            --require-order "[ITISYOU:LEAK] check frames=0 heap=0 processes=0 handles=0 ipc_queued=0 sockets=0 tcp=0 out_slots=0 result=clean" \
+            --forbid "result=leak" --forbid "SOAK-FAILED" \
+            --forbid "AGENT-INFER-TIMEOUT" --forbid "RING3-PANIC" \
+            --timeout-secs 900 --label soak-bios
+          rm -f artifacts/soak-test.img
+
       - name: Upload QEMU evidence
         if: always()
         uses: actions/upload-artifact@v4

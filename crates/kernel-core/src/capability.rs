@@ -412,6 +412,11 @@ impl<const N: usize> CapabilityTable<N> {
     }
 
     /// Number of live entries owned by `owner` (teardown/leak evidence).
+    /// Live handles in the whole table (leak accounting, V1.0).
+    pub fn live(&self) -> usize {
+        self.entries.iter().filter(|e| e.is_some()).count()
+    }
+
     pub fn count_owned(&self, owner: u64) -> usize {
         self.entries
             .iter()

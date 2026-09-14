@@ -30,6 +30,7 @@ pub mod initd;
 pub mod input;
 pub mod interrupts;
 pub mod ipc;
+pub mod leakcheck;
 pub mod memory;
 pub mod net;
 pub mod platform;

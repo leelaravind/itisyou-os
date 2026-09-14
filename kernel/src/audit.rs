@@ -152,6 +152,36 @@ fn push(action: &'static str, cap: u64, ok: bool, detail: Option<String>) {
     ring.push_back(record);
 }
 
+/// Heap bytes the audit ring and the stored-trail window hold (V1.0 leak
+/// accounting): both are bounded, but a record spells out numbers that grow
+/// with the clock, so their footprint creeps without any leak.
+pub fn heap_bytes() -> usize {
+    // What the kernel heap (`linked_list_allocator`) charges for an
+    // allocation of `n` bytes: at least 16, rounded up to 8; nothing for 0.
+    let charged = |n: usize| {
+        if n == 0 {
+            0
+        } else {
+            n.max(16).next_multiple_of(8)
+        }
+    };
+    let ring = RING.lock();
+    let ring_bytes = charged(ring.capacity() * core::mem::size_of::<Record>())
+        + ring
+            .iter()
+            .map(|r| r.detail.as_ref().map_or(0, |d| charged(d.capacity())))
+            .sum::<usize>();
+    drop(ring);
+    let chain = CHAIN.lock();
+    ring_bytes
+        + charged(chain.window.capacity() * core::mem::size_of::<String>())
+        + chain
+            .window
+            .iter()
+            .map(|s| charged(s.capacity()))
+            .sum::<usize>()
+}
+
 /// Outcome of reading the persisted trail at boot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecoverStatus {

@@ -58,6 +58,11 @@ impl core::fmt::Display for Escaped<'_> {
     }
 }
 
+/// Per-process line buffers in use (V1.0 leak accounting).
+pub fn slots_in_use() -> usize {
+    OUT.lock().iter().filter(|s| s.used).count()
+}
+
 /// Append `bytes` written by `pid`; complete lines go out immediately.
 pub fn write(pid: u64, bytes: &[u8]) {
     let mut slots = OUT.lock();

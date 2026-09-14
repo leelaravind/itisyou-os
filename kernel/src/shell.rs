@@ -129,6 +129,8 @@ fn execute(line: &str) {
         "busy" => cmd_busy(args),
         "pkg" => cmd_pkg(args),
         "audit" => cmd_audit(args),
+        // V1.0 (V1-REL-003): resource accounting for the soak leg.
+        "leakcheck" => crate::leakcheck::console(args),
         // V0.11 (ADR-0024): the operator decides on an agent's proposals here,
         // and only here - the kernel console reads no input while a Ring 3
         // shell holds it.
