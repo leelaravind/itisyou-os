@@ -5,14 +5,23 @@
 https://github.com/leelaravind/itisyou-os (private)
 **Tags:** `v0.1.0` … `v0.10.0` (all on green-CI commits).
 
-**V1.0 BUILD — read first.** V1.0 (Experimental Personal OS, criteria in
-`docs/V1_ACCEPTANCE.md`) is being built on branch `v1.0/ipc`, pushed to
-`origin/v1.0/ipc` and checked out in the worktree `E:\claude-tmp\wt-v1-ipc`
-(HEAD `b99024b`). It is built on top of the unreleased V0.11 work, so the
-release sequence is **v0.11.0 first, then v1.0.0** — both blocked on the
-same external gate: the repository is private and CI runs only on `main`
-and PRs, so a release needs the owner to open a short public CI window (or
-fix GitHub billing). A feature-branch push is free and does not run CI.
+**V1.0 RELEASED — read first.** ITISYOU OS **v1.0.0 is released** (tag
+`v1.0.0` on `e2bae80`, pushed to `origin`), locally verified, on branch
+`v1.0/ipc`. The owner chose to **publish without GitHub CI** (the repo is
+private with no Actions minutes): the release is verified by the full local
+QEMU matrix (74 legs), two full-clean-build bit-for-bit reproducibility
+(bios `9dbe74b0`, uefi `64bb08cf`), and UEFI+BIOS boot-tests of the exact
+bytes. It is **live on https://os.itisyou.app/download** with SHA-256 — the
+served bytes were re-downloaded and hash-verified byte-exact. The V0.11 AI
+layer was folded into v1.0.0 (never tagged on its own). The CI-dependent
+acceptance rows (V1-REL-001/002, V1-REP-004) are recorded **BLOCKED** on the
+CI window, none security-relevant; when the owner opens a public CI window,
+stamp the CI run id + the CI-built (Linux) SHA-256 (which differs from the
+Windows-built bytes: path separators in panic locations). Release commit
+`5593e50`, stamped in `b1087c2`/`e2bae80`. Built on Windows 11 + WSL
+(nightly-2026-08-01). Deploy path: `wrangler deploy --env production`
+(authenticated to the owner's Cloudflare account); downloads staged +
+SHA-verified by `website/scripts/downloads.mjs`.
 
 V1.0 acceptance progress (`docs/REQUIREMENTS.md` § V1.0, each with a QEMU
 leg and a mutation control unless noted):
