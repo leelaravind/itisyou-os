@@ -19,6 +19,7 @@ pub mod elf;
 pub mod font;
 pub mod infer;
 pub mod initconf;
+pub mod initctl;
 pub mod itfs;
 pub mod linebuf;
 pub mod linedisc;

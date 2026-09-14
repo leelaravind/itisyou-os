@@ -150,6 +150,20 @@ pub const SYS_GUI_EVENT: u64 = 41;
 pub const SYS_SYS_VIEW: u64 = 42;
 /// V0.11: file a proposal (`kernel_core::policy` record; `CAP_PROPOSE`).
 pub const SYS_PROPOSE: u64 = 43;
+/// V0.11: the kernel -> init mailbox (`kernel_core::initctl`); init only.
+pub const SYS_INIT_CTL: u64 = 44;
+
+/// Fetch the kernel's pending command for init into `buf` (24 bytes):
+/// its length, `ERR_AGAIN` when there is none, `ERR_PERM` for anyone but
+/// the live init.
+pub fn init_ctl_fetch(buf: &mut [u8]) -> u64 {
+    raw_syscall(SYS_INIT_CTL, 0, buf.as_mut_ptr() as u64, buf.len() as u64)
+}
+
+/// Acknowledge the fetched command (a 16-byte `kernel_core::initctl::Ack`).
+pub fn init_ctl_ack(ack: &[u8]) -> u64 {
+    raw_syscall(SYS_INIT_CTL, 1, ack.as_ptr() as u64, ack.len() as u64)
+}
 
 /// File a proposal: its id, or `ERR_INVAL` (malformed record), `ERR_AGAIN`
 /// (table full, or one already pending), `ERR_PERM` (refused - the kernel

@@ -136,6 +136,9 @@ pub const SYS_SYS_VIEW: u64 = 42;
 /// propose(record, len) (V0.11, ADR-0024): file a proposal for the console to
 /// approve. SystemAdministration USE (`propose`).
 pub const SYS_PROPOSE: u64 = 43;
+/// init_ctl(op, buf, len) (V0.11): the kernel -> init mailbox; only the live
+/// init (Service ADMIN, and `initd::is_init`).
+pub const SYS_INIT_CTL: u64 = 44;
 
 pub const ERR_NOSYS: u64 = u64::MAX;
 pub const ERR_FAULT: u64 = u64::MAX - 1;
@@ -479,6 +482,10 @@ extern "C" fn syscall_dispatch(a1: u64, a2: u64, a3: u64, nr: u64) -> u64 {
                 Err(e) => e,
             }
         }
+        SYS_INIT_CTL => match require_any(CapabilityKind::Service, rights::ADMIN, "init_ctl") {
+            Ok(()) => crate::initd::sys_init_ctl(a1, a2, a3),
+            Err(e) => e,
+        },
         SYS_SVC_REPORT => match require_any(CapabilityKind::Service, rights::ADMIN, "svc_report") {
             Ok(()) => crate::services::sys_svc_report(a1, a2),
             Err(e) => e,

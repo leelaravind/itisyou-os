@@ -24,14 +24,16 @@
 #![no_main]
 
 use kernel_core::initconf::{self, Config, Service, MAX_FILE, MAX_SERVICES};
+use kernel_core::initctl::{Ack, Command, Op, COMMAND_LEN};
 use kernel_core::procstatus::{self, Status};
 use kernel_core::progargs::MAX_BLOCK;
 use kernel_core::service::ServiceState;
 use kernel_core::supervise;
 use kernel_core::svcreport::{self, Event, Report, ServiceName};
 use ulib::{
-    args, exit, fs_read, sleep_ticks, spawn_args, spawn_caps, split_args, svc_report, wait_nohang,
-    write, write_u64, ERR_2BIG, ERR_AGAIN, ERR_NOENT, ERR_PERM,
+    args, exit, fs_read, init_ctl_ack, init_ctl_fetch, sleep_ticks, spawn_args, spawn_caps,
+    split_args, svc_report, wait_nohang, write, write_u64, ERR_2BIG, ERR_AGAIN, ERR_NOENT,
+    ERR_PERM,
 };
 
 const DEFAULT_CONFIG: &str = "/etc/init.conf";
@@ -140,6 +142,9 @@ struct Slot {
     restarts: u32,
     ended: bool,
     failed: bool,
+    /// Stopped on the kernel's request (V0.11): `pid` is still running
+    /// until the kernel kills it, and it is reaped without a restart.
+    stopping: bool,
 }
 
 const IDLE_SLOT: Slot = Slot {
@@ -147,6 +152,7 @@ const IDLE_SLOT: Slot = Slot {
     restarts: 0,
     ended: false,
     failed: false,
+    stopping: false,
 };
 
 fn spawn_error(name: &str, err: u64) {
@@ -236,6 +242,11 @@ fn run(path: &str, once: bool) -> ! {
     }
 
     loop {
+        // V0.11: the kernel's command first (pid-1 mode only), so a stop it
+        // posts is handled before this loop can restart the service again.
+        if !once {
+            handle_mail(&cfg, &mut slots);
+        }
         let mut status = 0u64;
         let r = wait_nohang(0, &mut status);
         if r == ERR_AGAIN {
@@ -251,7 +262,19 @@ fn run(path: &str, once: bool) -> ! {
             continue;
         }
         let pid = r;
-        match (0..cfg.len).find(|&i| slots[i].pid == pid && !slots[i].ended) {
+        match (0..cfg.len).find(|&i| slots[i].pid == pid && (!slots[i].ended || slots[i].stopping))
+        {
+            Some(idx) if slots[idx].stopping => {
+                // Stopped on the kernel's request: collected, never restarted.
+                slots[idx].stopping = false;
+                write("INIT-STOPPED name=");
+                write(cfg.get(idx).map_or("?", |s| s.name));
+                write(" pid=");
+                write_u64(pid);
+                write(" status=");
+                status_name(status);
+                write("\n");
+            }
             Some(idx) => {
                 let Some(svc) = cfg.get(idx) else { continue };
                 ended(svc, &mut slots[idx], status);
@@ -275,6 +298,66 @@ fn run(path: &str, once: bool) -> ! {
     exit(if failed { 3 } else { 0 })
 }
 
+/// The kernel's command, if one is waiting (V0.11, ACT11-002): `retry` a
+/// Failed service with its restart count reset, or `stop` supervising one.
+/// Init acknowledges with the pid concerned; for `stop` that is the instance
+/// still running, which the kernel kills (init has no authority to).
+fn handle_mail(cfg: &Config, slots: &mut [Slot; MAX_SERVICES]) {
+    let mut buf = [0u8; COMMAND_LEN];
+    let n = init_ctl_fetch(&mut buf);
+    if is_err(n) || n as usize != COMMAND_LEN {
+        return;
+    }
+    let Ok(cmd) = Command::decode(&buf) else {
+        return;
+    };
+    let idx = (0..cfg.len).find(|&i| cfg.get(i).is_some_and(|s| s.name == cmd.name_str()));
+    let (ok, pid) = match (cmd.op, idx.and_then(|i| cfg.get(i).map(|s| (i, s)))) {
+        (Op::Retry, Some((i, svc))) if slots[i].ended && slots[i].failed => {
+            let pid = start(svc);
+            if is_err(pid) {
+                spawn_error(svc.name, pid);
+                (false, 0)
+            } else {
+                slots[i] = Slot { pid, ..IDLE_SLOT };
+                write("INIT-RETRY name=");
+                write(svc.name);
+                write(" pid=");
+                write_u64(pid);
+                write("\n");
+                report(Event::Start, svc.name, svc.long_running(), false, 0, pid);
+                (true, pid)
+            }
+        }
+        (Op::Stop, Some((i, svc))) => {
+            let live = if slots[i].ended { 0 } else { slots[i].pid };
+            slots[i].ended = true;
+            slots[i].failed = true;
+            slots[i].stopping = live != 0;
+            write("INIT-STOP name=");
+            write(svc.name);
+            write(" pid=");
+            write_u64(live);
+            write("\n");
+            report(
+                Event::Failed,
+                svc.name,
+                svc.long_running(),
+                false,
+                slots[i].restarts,
+                0,
+            );
+            (true, live)
+        }
+        _ => (false, 0),
+    };
+    let ack = Ack {
+        seq: cmd.seq,
+        ok,
+        pid,
+    };
+    init_ctl_ack(&ack.encode());
+}
 /// With no config there is nothing to supervise, but orphans still arrive.
 fn collect_orphans() {
     let mut status = 0u64;

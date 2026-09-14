@@ -482,7 +482,7 @@ jobs:
             --send "run /bin/tick-client" \
             --send "shutdown" \
             --require "service tickd /bin/tickd caps=ipc restart=always" \
-            --require "INIT-CONFIG-OK path=/etc/init.conf services=3 order=tickd,flapd,inferd" \
+            --require "INIT-CONFIG-OK path=/etc/init.conf services=4 order=tickd,flapd,inferd,flakyd" \
             --require "INIT-CONFIG-ERROR path=/etc/init-tests/cycle.conf line=0 reason=cycle" \
             --require "INIT-CONFIG-ERROR path=/etc/init-tests/badcap.conf line=2 reason=unknown_capability" \
             --require "INIT-CONFIG-ERROR path=/etc/init.conf line=0 reason=read_denied" \
@@ -501,13 +501,14 @@ jobs:
             --forbid "INIT-USAGE" \
             --forbid "INIT-REPORT-REFUSED" \
             --require '[ITISYOU:INIT] start pid=1 path=/sbin/init caps=0x413 sandbox=/etc' \
-            --require 'INIT-CONFIG path=/etc/init.conf services=3 order=tickd,flapd,inferd' \
+            --require 'INIT-CONFIG path=/etc/init.conf services=4 order=tickd,flapd,inferd,flakyd' \
             --require 'pid=1 action=spawn cap=0x2 result=ok' \
             --require 'pid=1 action=spawn cap=0x0 result=ok' \
             --require 'bg_start name=tickd pid=2 caps=0x2 long_running=true supervisor=1' \
             --require 'bg_start name=flapd pid=3 caps=0x0 long_running=true supervisor=1' \
             --require 'bg_start name=inferd pid=4 caps=0x12 long_running=true supervisor=1' \
-            --require '[ITISYOU:INIT] ready pid=1 services=3' \
+            --require 'bg_start name=flakyd pid=5 caps=0x0 long_running=true supervisor=1' \
+            --require '[ITISYOU:INIT] ready pid=1 services=4' \
             --require '[ITISYOU:INIT] settled ready=true' \
             --require '  pid=1 ppid=0 path=/sbin/init state=' \
             --require '  pid=2 ppid=1 path=/bin/tickd state=runnable' \
@@ -1225,6 +1226,59 @@ jobs:
             --forbid "AGENT-PROPOSAL-REFUSED" \
             --forbid "RING3-PANIC" \
             --timeout-secs 300 --label ai-act-bios
+
+      - name: QEMU V0.11 retry-service through init, verified and rolled back (BIOS)
+        run: |
+          # ACT11-002 (ADR-0024): the init mailbox (syscall 44, init only);
+          # flakyd retried and verified; flapd retried, tripped, stopped by
+          # init and killed by the kernel - row failed, restarts=1.
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
+            --expect B210 \
+            --send "@pause 1500" \
+            --send "busy 3000" \
+            --send "run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose retry-flakyd" \
+            --send "approve 1" \
+            --send "run /bin/agent sys_view,propose,ipc,fs_read /etc/ai -- propose" \
+            --send "approve 2" \
+            --send "run /bin/ai-probe service - -- initctl" \
+            --send "svc" \
+            --send "proposals" \
+            --send "shutdown" \
+            --require "bg_failed name=flakyd restarts=3 supervisor=1" \
+            --require "AIPROBE-PROPOSE-FILED mode=retry-flakyd id=1" \
+            --require "[ITISYOU:AI] proposal_approved id=1 by=console" \
+            --require "[ITISYOU:INIT] mailbox post seq=1 op=retry name=flakyd" \
+            --require "INIT-RETRY name=flakyd pid=" \
+            --require "[ITISYOU:INIT] mailbox ack seq=1 ok=true pid=" \
+            --require "[ITISYOU:AI] action_executed id=1 action=retry-service target=flakyd pid=" \
+            --require "FLAKYD-UP" \
+            --require "[ITISYOU:AI] action_verified id=1 result=pass target=flakyd window_ms=3000 tripped=false running_same_pid=true" \
+            --require "AGENT-PROPOSAL filed id=2 action=retry-service target=flapd" \
+            --require "[ITISYOU:AI] action_executed id=2 action=retry-service target=flapd pid=" \
+            --require "INIT-RETRY name=flapd pid=" \
+            --require "op=stop name=flapd" \
+            --require "INIT-STOP name=flapd pid=" \
+            --require "[ITISYOU:AI] action_verified id=2 result=fail target=flapd" \
+            --require "tripped=true" \
+            --require "[ITISYOU:AI] action_rolled_back id=2 action=retry-service target=flapd stop_ack=true" \
+            --require "row=failed restarts=1" \
+            --require "AIPROBE-INITCTL-REFUSED err=perm" \
+            --require "init_ctl refused pid=" \
+            --require "reason=not_init" \
+            --require "flakyd  Running" \
+            --require "flapd  Failed { restarts: 1 }" \
+            --require "[ITISYOU:AI] proposal id=1 state=verified" \
+            --require "[ITISYOU:AI] proposal id=2 state=rolled_back" \
+            --require "action=action_rolled_back cap=0x0 result=ok" \
+            --forbid "action_verified id=1 result=fail" \
+            --forbid "action_verified id=2 result=pass" \
+            --forbid "INIT-REAPED-ORPHAN" \
+            --forbid "svc_report refused pid=1" \
+            --forbid "AIPROBE-INITCTL-REACHED" \
+            --forbid "action_failed" \
+            --forbid "AGENT-PROPOSAL-REFUSED" \
+            --forbid "RING3-PANIC" \
+            --timeout-secs 360 --label ai-retry-bios
 
       - name: Upload QEMU evidence
         if: always()

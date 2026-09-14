@@ -49,6 +49,7 @@ members = [
     "user/ai-probe",
     "user/inferd",
     "user/agent",
+    "user/flakyd",
 ]
 # The kernel must NEVER share a cargo invocation with host packages: cargo
 # resolves features once per invocation across all compile targets, so a

@@ -366,6 +366,11 @@ fn propose(mode: &[u8]) {
             let v = view_digest();
             file(mode, &record(RETRY, PAUSED, b"flapd", &model, &v), true);
         }
+        b"retry-flakyd" => {
+            // A valid proposal for the fixture that recovers when retried.
+            let v = view_digest();
+            file(mode, &record(RETRY, FAILED, b"flakyd", &model, &v), false);
+        }
         b"flood" => {
             let v = view_digest();
             let r = record(RETRY, FAILED, b"flapd", &model, &v);
@@ -422,6 +427,16 @@ extern "C" fn _start() -> ! {
             }
         },
         Some(b"direct") => direct(),
+        // V0.11 (S10): the kernel -> init mailbox is init's alone.
+        Some(b"initctl") => {
+            let mut buf = [0u8; 24];
+            let r = ulib::init_ctl_fetch(&mut buf);
+            if r == ERR_PERM {
+                write("AIPROBE-INITCTL-REFUSED err=perm\n");
+            } else {
+                write("AIPROBE-INITCTL-REACHED\n");
+            }
+        }
         _ => {
             write("AIPROBE-FAILED step=mode\n");
             exit(2)

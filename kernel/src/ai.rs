@@ -435,10 +435,6 @@ pub fn console_approve(id: u64) {
         );
         return;
     }
-    if r.action == Action::RetryService && !RETRY_AVAILABLE {
-        crate::serial_println!("approve: id={id} refused reason=action_unavailable");
-        return;
-    }
     if PROPOSALS.lock().transition(id, Event::Approve).is_err() {
         crate::serial_println!("approve: id={id} refused reason=already_decided");
         return;
@@ -466,14 +462,11 @@ pub fn console_approve(id: u64) {
     );
     let passed = match r.action {
         Action::ResumeScheduler => execute_resume(id, &detail),
-        Action::RetryService => false,
+        Action::RetryService => execute_retry(id, &r, &detail),
     };
     let event = if passed { Event::Pass } else { Event::Fail };
     let _ = PROPOSALS.lock().transition(id, event);
 }
-
-/// Whether retry-service can execute yet (S10 lands the init mailbox).
-const RETRY_AVAILABLE: bool = false;
 
 /// resume-scheduler: turn background slices back on, then require that
 /// other processes actually progress at busy points during the window -
@@ -522,4 +515,183 @@ fn execute_resume(id: u64, detail: &str) -> bool {
         );
     }
     passed
+}
+
+// --- retry-service (S10, ACT11-002) -------------------------------------------
+
+/// How long the kernel waits for init to acknowledge a command.
+const ACK_TIMEOUT_MS: u64 = 3000;
+
+/// A retried service under verification: a restart, failure or completion
+/// reported for it inside the window fails the check, and the kernel posts
+/// `stop` to init at that moment - before init's report returns - so the
+/// rollback happens before init can restart it again.
+#[derive(Clone, Copy)]
+struct Watch {
+    name: [u8; kernel_core::policy::NAME_LEN],
+    tripped: bool,
+    stop_seq: Option<u32>,
+}
+
+static WATCH: crate::sync::Mutex<Option<Watch>> = crate::sync::Mutex::new(None);
+
+/// From `svc_report` (init is the only reporter it is called for): trip the
+/// watch on a restart, failure or completion of the watched service.
+pub fn on_service_event(name: &str, event: kernel_core::svcreport::Event) {
+    use kernel_core::svcreport::Event;
+    if !matches!(event, Event::Restart | Event::Failed | Event::Done) {
+        return;
+    }
+    let mut guard = WATCH.lock();
+    let Some(w) = guard.as_mut() else {
+        return;
+    };
+    let end = w.name.iter().position(|&b| b == 0).unwrap_or(w.name.len());
+    if w.tripped || &w.name[..end] != name.as_bytes() {
+        return;
+    }
+    w.tripped = true;
+    w.stop_seq = crate::initd::post(kernel_core::initctl::Op::Stop, name);
+}
+
+/// Run busy-point slices (so init and the services progress) until `f`
+/// returns `Some` or `ms` pass.
+fn slices_until<T>(ms: u64, mut f: impl FnMut() -> Option<T>) -> Option<T> {
+    let end = crate::interrupts::tsc() + crate::interrupts::cycles_for_ms(ms);
+    loop {
+        if let Some(v) = f() {
+            return Some(v);
+        }
+        if crate::interrupts::tsc() >= end {
+            return None;
+        }
+        crate::sched::safe_point();
+        core::hint::spin_loop();
+    }
+}
+
+/// Wait for init's acknowledgement of `seq`; withdraw the command if none.
+fn wait_ack(seq: u32) -> Option<kernel_core::initctl::Ack> {
+    let ack = slices_until(ACK_TIMEOUT_MS, || crate::initd::take_ack(seq));
+    if ack.is_none() {
+        crate::initd::withdraw(seq);
+    }
+    ack
+}
+
+fn row_state(name: &str) -> Option<(kernel_core::service::ServiceState, u64, u32)> {
+    crate::services::with_status(|rows| {
+        rows.iter()
+            .find(|r| r.name.as_str() == name)
+            .map(|r| (r.state, r.pid, r.restarts))
+    })
+}
+
+/// retry-service: ask init (the service's supervisor) to start it again,
+/// verify over the window that it neither restarts nor fails and that its row
+/// is Running with the instance init reported, and on failure have init stop
+/// it and kill the instance init names. Nothing is started behind init's back.
+fn execute_retry(id: u64, r: &Record, detail: &str) -> bool {
+    use kernel_core::initctl::Op;
+    let name = r.target_str();
+    // Armed BEFORE init is asked, so no report about the new instance can
+    // arrive unwatched; the Start report of the retry itself does not trip it.
+    let mut watch_name = [0u8; kernel_core::policy::NAME_LEN];
+    watch_name.copy_from_slice(&r.target);
+    *WATCH.lock() = Some(Watch {
+        name: watch_name,
+        tripped: false,
+        stop_seq: None,
+    });
+    let Some(seq) = crate::initd::post(Op::Retry, name) else {
+        *WATCH.lock() = None;
+        crate::serial_println!("[ITISYOU:AI] action_failed id={id} reason=mailbox_busy");
+        crate::audit::denied_reason("action_executed", 0, "mailbox_busy");
+        return false;
+    };
+    let ack = match wait_ack(seq) {
+        Some(a) if a.ok => a,
+        other => {
+            *WATCH.lock() = None;
+            let reason = if other.is_some() {
+                "init_refused"
+            } else {
+                "init_unresponsive"
+            };
+            crate::serial_println!(
+                "[ITISYOU:AI] action_failed id={id} action=retry-service target={name} reason={reason}"
+            );
+            crate::audit::denied_reason("action_executed", 0, reason);
+            crate::serial_println!(
+                "[ITISYOU:AI] action_rolled_back id={id} action=retry-service target={name} undo=nothing_started"
+            );
+            return false;
+        }
+    };
+    crate::serial_println!(
+        "[ITISYOU:AI] action_executed id={id} action=retry-service target={name} pid={} approved_by=console",
+        ack.pid
+    );
+    crate::audit::allowed(
+        "action_executed",
+        0,
+        Some(alloc::string::String::from(detail)),
+    );
+    let window_ms = Action::RetryService.verify_ticks() * 10;
+    // Watch the whole window, or until init reports the retried service
+    // failing (which trips the watch and posts the stop).
+    let _ = slices_until(window_ms, || {
+        WATCH.lock().as_ref().and_then(|w| w.tripped.then_some(()))
+    });
+    let watch = WATCH.lock().take();
+    let tripped = watch.is_some_and(|w| w.tripped);
+    let running_same = matches!(
+        row_state(name),
+        Some((kernel_core::service::ServiceState::Running, pid, _)) if pid == ack.pid
+    );
+    let passed = !tripped && running_same;
+    crate::serial_println!(
+        "[ITISYOU:AI] action_verified id={id} result={} target={name} window_ms={window_ms} tripped={tripped} running_same_pid={running_same}",
+        if passed { "pass" } else { "fail" }
+    );
+    crate::audit::allowed(
+        "action_verified",
+        0,
+        Some(alloc::format!(
+            "id={id} result={} target={name}",
+            if passed { "pass" } else { "fail" }
+        )),
+    );
+    if passed {
+        return true;
+    }
+    // Rollback: init stops supervising it; the kernel kills what init names.
+    let stop_seq = watch
+        .and_then(|w| w.stop_seq)
+        .or_else(|| crate::initd::post(Op::Stop, name));
+    let stopped = stop_seq.and_then(wait_ack);
+    let killed = match stopped {
+        Some(a) if a.ok && a.pid != 0 => {
+            let _ = crate::proc::kill(a.pid);
+            a.pid
+        }
+        _ => 0,
+    };
+    let (state, _, restarts) =
+        row_state(name).unwrap_or((kernel_core::service::ServiceState::Stopped, 0, 0));
+    crate::serial_println!(
+        "[ITISYOU:AI] action_rolled_back id={id} action=retry-service target={name} stop_ack={} killed_pid={killed} row={} restarts={restarts}",
+        stopped.is_some_and(|a| a.ok),
+        if matches!(state, kernel_core::service::ServiceState::Failed { .. }) {
+            "failed"
+        } else {
+            "other"
+        }
+    );
+    crate::audit::allowed(
+        "action_rolled_back",
+        0,
+        Some(alloc::format!("id={id} target={name} killed_pid={killed}")),
+    );
+    false
 }

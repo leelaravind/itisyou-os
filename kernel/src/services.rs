@@ -434,5 +434,10 @@ pub fn sys_svc_report(req_ptr: u64, len: u64) -> u64 {
         0
     };
     set_state_owned(name, state, row_pid, k, caller);
+    // V0.11: a retried service under verification fails on a restart,
+    // failure or completion its supervisor reports (ACT11-002).
+    if crate::initd::is_init(caller) {
+        crate::ai::on_service_event(n, report.event);
+    }
     0
 }

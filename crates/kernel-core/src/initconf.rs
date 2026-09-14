@@ -542,7 +542,7 @@ mod tests {
     #[test]
     fn shipped_init_conf_is_v08_background_plus_inferd() {
         let config = parse(SHIPPED).unwrap();
-        assert_eq!(config.len, 3);
+        assert_eq!(config.len, 4);
         let got: Vec<(&str, &str, u64, Restart)> = config
             .services()
             .map(|s| (s.name, s.path, s.caps, s.restart))
@@ -556,6 +556,7 @@ mod tests {
                 ("tickd", "/bin/tickd", 0x2, Restart::Always),
                 ("flapd", "/bin/flapd", 0x0, Restart::Always),
                 ("inferd", "/bin/inferd", 0x12, Restart::Always),
+                ("flakyd", "/bin/flakyd", 0x0, Restart::Always),
             ]
         );
         assert_eq!(CAP_IPC, 0x2);
@@ -563,7 +564,7 @@ mod tests {
         assert!(config
             .services()
             .all(|s| s.n_after == 0 && s.args.is_empty()));
-        assert_eq!(order_of(SHIPPED), [0, 1, 2]);
+        assert_eq!(order_of(SHIPPED), [0, 1, 2, 3]);
         // Also valid when handed over as raw bytes, as init reads it.
         assert_eq!(parse_bytes(SHIPPED.as_bytes()).unwrap(), config);
     }
