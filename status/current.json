@@ -4,7 +4,7 @@
   "architecture": "x86_64",
   "environment": "QEMU",
   "milestone": "V1.0 — Experimental Personal OS (VM-verified)",
-  "commit": null,
+  "commit": "5593e5020670b983d34f5447c5103b19fc638f16",
   "lastVerifiedAt": "2026-09-14T10:05:36Z",
   "verification": "verified",
   "modules": [
