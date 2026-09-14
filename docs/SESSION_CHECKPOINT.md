@@ -1,9 +1,46 @@
 # Session checkpoint — resumable state
 
-**Timestamp:** 2026-09-14 Europe/London (session 4, V0.11 closure)
-**Repository:** `E:\Project\itisyou-os` · branch `main` · remote
+**Timestamp:** 2026-09-14 Europe/London (session 5, V1.0 build)
+**Repository:** `E:\Project\itisyou-os` · remote
 https://github.com/leelaravind/itisyou-os (private)
 **Tags:** `v0.1.0` … `v0.10.0` (all on green-CI commits).
+
+**V1.0 BUILD — read first.** V1.0 (Experimental Personal OS, criteria in
+`docs/V1_ACCEPTANCE.md`) is being built on branch `v1.0/ipc`, pushed to
+`origin/v1.0/ipc` and checked out in the worktree `E:\claude-tmp\wt-v1-ipc`
+(HEAD `b99024b`). It is built on top of the unreleased V0.11 work, so the
+release sequence is **v0.11.0 first, then v1.0.0** — both blocked on the
+same external gate: the repository is private and CI runs only on `main`
+and PRs, so a release needs the owner to open a short public CI window (or
+fix GitHub billing). A feature-branch push is free and does not run CI.
+
+V1.0 acceptance progress (`docs/REQUIREMENTS.md` § V1.0, each with a QEMU
+leg and a mutation control unless noted):
+
+- V1-REL-003 soak / leak accounting (found the per-store MMIO frame leak);
+- V1-REL-004 Ring 3 syscall fuzzer (`/bin/sysfuzz`, three capability
+  configs × 100k calls) — found PROC1-001, `wait(0)` slept forever;
+- V1-REL-005 decoder mutation fuzzer (48 targets);
+- V1-REL-006 CI parity (`scripts/check-ci-parity.py`, 72 legs);
+- V1-SEC-005 unsafe inventory; V1-SEC-006 IPC channel scoping (ADR-0025);
+- V1-SEC-002 whole-attack-surface review — 13-agent workflow
+  `wf_bb439a1a-29a`, 37 findings (3 high, 15 medium, 19 low); all 3 highs
+  and 16 findings fixed with legs and controls, 9 mediums recorded accepted
+  in `docs/KNOWN_LIMITATIONS.md`. Full table: `docs/V1_SECURITY_REVIEW.md`.
+  Fix IDs SEC1-001..005, NET1-001..004, FS1-001, USB1-001..003.
+
+Last full local gate on `b99024b` (host loaded by another VM): all ~72 QEMU
+legs pass except `net-ipv6-responder-bios` and `ai-retry-bios`, which flaked
+under load and **pass in isolation** (`run-legs.ps1`, LEGS-OK) — the two
+most timing-sensitive legs, on code paths this branch did not change.
+Mechanical checks green (ci-parity 72, unsafe-inventory 196 sites, secret
+scan 388 files clean). Mutation controls in `E:\claude-tmp\itisyou-audit\v1\`.
+
+The V1.0 release-time criteria (V1-REL-001/002 whole matrix green ×3 + CI,
+V1-REP-* reproducibility/tag, V1-SEC-007/BOOT/ENV/DD website+download) can
+only be verified by the release run and stay open until the CI window opens.
+
+---
 
 **V0.11 CLOSURE — read first.** V0.11 (AI-Native System Layer, ADR-0024)
 is implemented on branch `v0.11/work`, which is pushed and checked out in
