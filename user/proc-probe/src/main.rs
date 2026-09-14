@@ -367,6 +367,28 @@ extern "C" fn _start() -> ! {
             }
             write("PROCPROBE-GUI-QUOTA-OK windows=4\n");
         }
+        Some(b"gui-pixels") => {
+            // V1.0 (GUI1-001): a Ring 3 owner's windows are bounded by a
+            // pixel quota (half the compositor budget), not just a window
+            // count, so one program cannot take the whole budget. Two
+            // 1024x512 windows (524288 px each) reach the quota exactly; the
+            // third is refused with ERR_AGAIN, before the 4-window cap.
+            let mut made = 0u64;
+            for _ in 0..4 {
+                let w = ulib::gui_create(1024, 512, 20, 40, "px");
+                if is_err(w) {
+                    if w != ERR_AGAIN {
+                        fail("gui-pixels-err");
+                    }
+                    break;
+                }
+                made += 1;
+            }
+            if made != 2 {
+                fail("gui-pixels-count");
+            }
+            write("PROCPROBE-GUI-PIXELS-OK windows=2\n");
+        }
         Some(b"console-read") => {
             let mut line = [0u8; 16];
             expect(

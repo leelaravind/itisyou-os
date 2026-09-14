@@ -232,8 +232,10 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
   requests to broadcast (NET1-002); the SYN-RECEIVED→LISTEN reset built an
   8 KB TCB on the syscall stack (NET1-003); an unbounded NIC drain froze the
   CPU under a frame flood (NET1-004); read-only `fs_read`/`fs_list` could
-  format a blank or unmountable disk (FS1-001); and xHCI/MMIO device inputs
-  were bounded (USB1-001/002/003).
+  format a blank or unmountable disk (FS1-001); one Gui program could take the
+  whole compositor budget, now bounded by a per-owner pixel quota that leaves
+  the desktop and other programs their share (GUI1-001); and xHCI/MMIO device
+  inputs were bounded (USB1-001/002/003).
 - **Availability limits a capability holder or a hostile disk can impose
   (V1-SEC-002, accepted for an experimental single-user VM: each needs an
   authority the operator granted or a disk edited outside the OS, none
@@ -258,10 +260,6 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
     later processes launch with a reduced or empty handle set (fail-closed,
     but a denial of authority to everything started afterward). There is no
     per-tree handle quota or process limit.
-  - A program with the Gui capability can **take the whole compositor budget**
-    (2 M pixels, or all 16 window slots), so no other process — nor the
-    kernel's own `desktop` — can open a window; `desktop` then fails closed.
-    There is no per-owner pixel quota or reserved slot.
   - A remote peer can **pin TCP slots and ports until reboot**: a connection
     left in FIN-WAIT-2, or with unsent data behind a zero window, is never
     reclaimed, and its local port stays unusable. Eight such connections

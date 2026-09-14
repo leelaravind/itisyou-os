@@ -117,6 +117,24 @@ Remove-Item $deskShot -ErrorAction SilentlyContinue
     '--require', 'DESKTOP-INPUT-VERIFIED',
     '--timeout-secs', '150', '--label', 'desktop-input-bios')
 
+Write-Output '=== QEMU window quotas: per-owner count and pixels (BIOS) ==='
+# V0.10 and V1.0 GUI1-001 (the V1-SEC-002 review): a Gui program's windows are
+# bounded two ways so one program cannot take the whole compositor and leave
+# nothing for the desktop or other apps. First by count: four windows, then
+# ERR_AGAIN. Then by backing pixels: two 1024x512 windows reach the per-owner
+# quota (half the budget) exactly and the third is refused, before the count
+# cap - so a single program cannot consume the whole 2 M-pixel budget with two
+# max-size windows, as it could before V1.0.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B210',
+    '--send', 'run /bin/proc-probe gui -- gui-quota',
+    '--send', 'run /bin/proc-probe gui -- gui-pixels',
+    '--send', 'shutdown',
+    '--require', 'PROCPROBE-GUI-QUOTA-OK windows=4',
+    '--require', 'PROCPROBE-GUI-PIXELS-OK windows=2',
+    '--forbid', 'PROCPROBE-FAILED',
+    '--timeout-secs', '150', '--label', 'gui-quota-bios')
+
 Write-Output '=== QEMU device model + AC97 audio (BIOS) ==='
 # Attach an AC97 audio controller whose output is captured to a WAV via QEMU's
 # `wav` backend. The OS binds the ac97 driver (B190 device model), the `beep`

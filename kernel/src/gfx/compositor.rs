@@ -68,6 +68,16 @@ const MAX_WIN_DIM: usize = 1024;
 pub const MAX_WINDOWS_PER_OWNER: usize = 4;
 /// All windows' backing buffers together, in pixels (8 MiB of the heap).
 const MAX_TOTAL_PIXELS: usize = 2 * 1024 * 1024;
+/// Backing pixels one Ring 3 owner's windows may hold together (V1.0,
+/// GUI1-001, the V1-SEC-002 review): the per-window count cap alone let one
+/// program take the whole budget (two 1024×1024 windows), so no other
+/// process — nor the kernel's own `desktop` — could open a window. Half the
+/// budget, so at least one other program (and the desktop) always fits; the
+/// kernel (pid 0) is not limited.
+pub const MAX_PIXELS_PER_OWNER: usize = MAX_TOTAL_PIXELS / 2;
+/// Budget kept for the kernel's own windows (the desktop), which Ring 3
+/// owners cannot consume — so `desktop` can always open its window.
+const KERNEL_PIXEL_RESERVE: usize = 256 * 1024;
 
 pub fn init() {
     let (cx, cy) = gfx::info()
@@ -107,7 +117,22 @@ pub fn create_window(
         return Err(WinError::TooMany);
     }
     let used: usize = c.windows.iter().map(|w| w.w * w.h).sum();
-    if used + w * h > MAX_TOTAL_PIXELS {
+    // A Ring 3 owner is bounded by its own pixel quota and leaves the
+    // kernel's reserve untouched (GUI1-001); the kernel itself only has the
+    // global budget.
+    if pid != 0 {
+        let owned: usize = c
+            .windows
+            .iter()
+            .filter(|win| win.owner_pid == pid)
+            .map(|win| win.w * win.h)
+            .sum();
+        if owned + w * h > MAX_PIXELS_PER_OWNER
+            || used + w * h > MAX_TOTAL_PIXELS - KERNEL_PIXEL_RESERVE
+        {
+            return Err(WinError::NoMemory);
+        }
+    } else if used + w * h > MAX_TOTAL_PIXELS {
         return Err(WinError::NoMemory);
     }
     let mut buffer = Vec::new();

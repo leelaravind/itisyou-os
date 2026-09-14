@@ -21,15 +21,15 @@ register cleanup) that no per-subsystem review owned.
 
 **Result.** 37 distinct findings survived refutation: **3 high, 15 medium, 19
 low** (the critic's `cpu-1` and `cpu-3` are the same defects as `proc-1` and
-`sc-1`). Every high is **fixed**. Of the mediums, 6 are fixed and 9 are
+`sc-1`). Every high is **fixed**. Of the mediums, 7 are fixed and 8 are
 accepted and recorded in `docs/KNOWN_LIMITATIONS.md` (each an availability
 limit a capability holder or a hostile disk can impose on a single-user VM —
-none crosses a privilege boundary or corrupts kernel memory). 16 findings in
+none crosses a privilege boundary or corrupts kernel memory). 17 findings in
 all are fixed, each with a QEMU leg and a mutation control (the fix disabled,
 the leg shown failing, the fix restored): see `scripts/test.ps1` legs
-`fault-contain-{bios,uefi}`, `pkg-store-hostile-bios`, the `sysfuzz-*` legs,
-and the net/fs/platform legs, and `E:\claude-tmp\itisyou-audit\v1\sec002\` for
-the mutation controls. The one refuted finding (`pkg-4`) is kept in the table
+`fault-contain-{bios,uefi}`, `pkg-store-hostile-bios`, `gui-quota-bios`, the
+`sysfuzz-*` legs, and the net/fs/platform legs, and
+`E:\claude-tmp\itisyou-audit\v1\sec002\` for the mutation controls. The one refuted finding (`pkg-4`) is kept in the table
 with the refuter's reasoning.
 
 Fix IDs used in code and commits: SEC1-001 (CPU exception containment),
@@ -37,7 +37,8 @@ SEC1-002 (user FPU off), SEC1-003 (syscall register scrub), SEC1-004 (package
 name binding at launch), SEC1-005 (strict store names + checked next version),
 NET1-001 (non-recursive ICMP responder), NET1-002 (broadcast/multicast source
 and echo drop), NET1-003 (in-place TCB reset), NET1-004 (bounded NIC drain),
-FS1-001 (read-only syscalls never format), USB1-001/002/003 (xHCI and MMIO
+GUI1-001 (per-owner window pixel quota), FS1-001 (read-only syscalls never
+format), USB1-001/002/003 (xHCI and MMIO
 bounds).
 
 ## Findings
@@ -61,7 +62,7 @@ left for a hardening pass.
 | fs-1 | fs | medium | confirmed | fixed | `kernel/src/lib.rs:321` | Read-only fs_read/fs_list can format the persistent store (READ right causes a destructive write); the 'never format a corrupt disk' rule is also ineffective |
 | fs-2 | fs | medium | confirmed | accepted | `kernel/src/syscall.rs:1146` | One program can take all 12 ITFS directory slots with names the console cannot type: package install/update and (if the trail is absent) audit persistence blocked across reboots with no in-OS recovery |
 | fs-3 | fs | medium | confirmed | fixed | `kernel/src/platform.rs:257` | Hostile disk: a package-store name with version u32::MAX panics the kernel on the next pkg install/stage (u32 overflow in next-version computation) |
-| gui-1 | gui | medium | confirmed | accepted | `kernel/src/gfx/compositor.rs:110` | One Gui program can take the whole compositor pixel budget (or every window slot), so every other process is refused a window and the kernel's own `desktop` exits the VM |
+| gui-1 | gui | medium | confirmed | fixed | `kernel/src/gfx/compositor.rs:110` | One Gui program can take the whole compositor pixel budget (or every window slot), so every other process is refused a window and the kernel's own `desktop` exits the VM |
 | usb-1 | input-devices | medium | confirmed | fixed | `kernel/src/device/xhci.rs:401` | xHCI scratchpad pointer array written past its single 4 KiB DMA frame when the controller asks for more than 512 buffers |
 | audit-flood-1 | input-devices | medium | confirmed | accepted | `kernel/src/console.rs:123` | Any program with no capabilities can flood audited denials (console_read not_owner) and push other processes' records out of the audit ring and the saved-trail window |
 | tcp-1 | net-tcp-ipv6 | medium | confirmed | accepted | `kernel/src/net/tcp.rs:373` | Half-closed and orphaned TCP connections are never reclaimed: a remote peer pins connection slots and service ports until reboot |
