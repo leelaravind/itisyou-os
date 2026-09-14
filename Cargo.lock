@@ -840,6 +840,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "user-sysfuzz"
+version = "0.11.0"
+dependencies = [
+ "ulib",
+]
+
+[[package]]
 name = "user-sysinit"
 version = "0.11.0"
 dependencies = [

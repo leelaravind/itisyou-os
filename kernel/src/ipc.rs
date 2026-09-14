@@ -39,8 +39,12 @@ pub fn queued() -> usize {
 pub fn init() {
     let mut guard = CHANNELS_STATE.lock();
     for slot in guard.iter_mut() {
+        // The whole bounded queue up front (V1.0): a queue grown on demand
+        // keeps its larger buffer after it drains, so what the kernel holds
+        // would depend on the most messages a channel ever queued - which
+        // the syscall fuzzer's leak check read as heap left behind.
         *slot = Some(Channel {
-            queue: VecDeque::new(),
+            queue: VecDeque::with_capacity(QUEUE_MAX),
         });
     }
 }

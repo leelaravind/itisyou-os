@@ -9,6 +9,8 @@
 //!   child must be refused (`ERR_NOENT`), not block and not collect it;
 //! * `nohang` — `wait_nohang`: no children, a running child (`ERR_AGAIN`),
 //!   collecting it, and collecting "any child";
+//! * `wait-any` — `wait(0)` blocks until a running child ends and returns
+//!   its status (V1.0, PROC1-001: it used to sleep forever);
 //! * `sleep` — `sleep(50)` lasts at least 50 ticks; `sleep(6001)` is refused;
 //! * `orphan` — spawn an orphan and exit at once;
 //! * `orphan-child` — (spawned by `orphan`) sleep 20 ticks, report, exit 0;
@@ -135,6 +137,29 @@ fn nohang() {
     write("\n");
     if st != CHILD_STATUS {
         fail("any-status");
+    }
+}
+
+/// `wait(0)` blocks until ANY child ends (PROC1-001, found by the syscall
+/// fuzzer: the wake-up matched the pid alone, so this slept forever). The
+/// child cannot have ended when the wait starts - it has not run yet, and it
+/// yields three times before it exits - so this is the blocking path.
+fn wait_any() {
+    let c = spawn("/bin/child");
+    if is_err(c) {
+        fail("wait-any-spawn");
+    }
+    let st = wait(0);
+    write("PROCPROBE-WAIT-ANY status=");
+    write_u64(st);
+    write("\n");
+    if st != CHILD_STATUS {
+        fail("wait-any-status");
+    }
+    // Delivered means collected: no child is left.
+    let mut status = 0u64;
+    if wait_nohang(0, &mut status) != ERR_NOENT {
+        fail("wait-any-collected");
     }
 }
 
@@ -296,6 +321,7 @@ extern "C" fn _start() -> ! {
         Some(b"all") => {
             sibling();
             nohang();
+            wait_any();
             sleep_check();
             orphan();
         }
@@ -304,6 +330,7 @@ extern "C" fn _start() -> ! {
             None => fail("foreign-usage"),
         },
         Some(b"nohang") => nohang(),
+        Some(b"wait-any") => wait_any(),
         Some(b"sleep") => sleep_check(),
         Some(b"orphan") => orphan(),
         Some(b"gui-foreign") => match it.next().and_then(parse_u64) {
@@ -365,7 +392,7 @@ extern "C" fn _start() -> ! {
             exit(0)
         }
         _ => {
-            write("PROCPROBE-USAGE all|foreign <pid>|nohang|sleep|orphan|svc-report|svc-basic|svc-denied\n");
+            write("PROCPROBE-USAGE all|foreign <pid>|nohang|wait-any|sleep|orphan|svc-report|svc-basic|svc-denied\n");
             exit(2)
         }
     }

@@ -489,14 +489,18 @@ pub fn live_count() -> usize {
     guard.as_ref().map(|t| t.slots.len()).unwrap_or(0)
 }
 
-/// Wake any process blocked in wait() on `child`, delivering `status`, and
-/// reap the child slot.
+/// Wake the parent if it is blocked in wait() on `child` or on any child
+/// (`proctree::wakes`, PROC1-001), delivering `status`, and reap the child
+/// slot.
 fn wake_waiters(table: &mut Table, child: u64, status: u64) {
+    let Some(parent) = table.slots.get(&child).map(|s| s.parent) else {
+        return;
+    };
     let waiters: Vec<u64> = table
         .slots
         .iter()
         .filter_map(|(&pid, s)| match s.state {
-            ProcState::Blocked { on } if on == child => Some(pid),
+            ProcState::Blocked { on } if proctree::wakes(on, pid, child, parent) => Some(pid),
             _ => None,
         })
         .collect();

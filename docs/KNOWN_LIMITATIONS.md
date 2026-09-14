@@ -103,8 +103,20 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
   and earlier scoped nothing: any holder of the IPC capability reached every
   channel. Channels still carry no sender identity, so among the processes
   that hold a channel a message is a claim (inferd's clients check a nonce;
-  the kernel recomputes what it relies on). A grant is one contiguous range
-  of channels. No shared-memory or synchronous rendezvous IPC.
+  the kernel recomputes what it relies on). A message outlives its sender:
+  what a program leaves queued stays until someone takes it, so the next
+  client of that channel can read it as an answer (`tick-client` rejects
+  what it cannot read as a reply - `TICKC-BAD-REPLY` - but an 8-byte message
+  would pass; the V1.0 fuzz legs drain the channels before their checks). A
+  grant is one contiguous range of channels. No shared-memory or synchronous
+  rendezvous IPC.
+- **`wait(0)` never returned while the caller's children were running** in
+  v0.10.0 and v0.11.0 (found by V1.0's syscall fuzzer, fixed in V1.0 -
+  PROC1-001): the wake-up on a child's exit matched the waiter's pid alone,
+  so a parent blocked for "any child" slept forever, and a console `run` of
+  it never returned. It needs the Process capability and hangs only the
+  caller and whoever waits for it; `wait(<pid>)` and `wait_nohang` were
+  unaffected.
 - **A page-table frame leaked with store operations** in every release from
   V0.4 to v0.11.0 (found by V1.0's soak leg, fixed in V1.0): each operation on
   the persistent store re-opens the NVMe controller, and every open mapped its

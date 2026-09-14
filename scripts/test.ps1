@@ -1167,6 +1167,8 @@ Write-Output '=== QEMU process model: parent-only wait, wait_nohang, sleep, orph
     '--require', 'PROCPROBE-NOHANG-AGAIN-OK',
     '--require', 'PROCPROBE-NOHANG-REAPED status=7',
     '--require', 'PROCPROBE-ANY-REAPED status=7',
+    # V1.0 PROC1-001: wait(0) on a running child blocks and is woken.
+    '--require', 'PROCPROBE-WAIT-ANY status=7',
     '--require', 'PROCPROBE-SLEEP-OK requested=50',
     '--require', 'PROCPROBE-SLEEP-BOUND-OK',
     '--require', 'PROCPROBE-ORPHAN-SPAWNED',
@@ -1915,6 +1917,166 @@ Remove-Item $soakDisk -ErrorAction SilentlyContinue
     '--forbid', 'RING3-PANIC',
     '--timeout-secs', '600', '--label', 'soak-bios')
 Remove-Item $soakDisk -ErrorAction SilentlyContinue
+
+# V1-REL-004: no Ring 3 syscall sequence crashes or hangs the kernel. In each
+# of three capability configurations /bin/sysfuzz issues 4 x 25 000 seeded
+# pseudo-random syscalls - every number and a few past the last, arguments
+# drawn from the shapes that find bugs (see user/sysfuzz) - and must count
+# every call it made. The kernel must not panic (the runner fails a run on
+# the panic marker) or hang: `run` waits for the fuzzer, so a syscall that
+# never returns means the next SYSFUZZ-OK never comes and the leg times out
+# (a run takes 25-45 s; tickd keeps the serial line busy, so a silence
+# watchdog would not see it - PROC1-001, the `wait(0)` hang this leg found,
+# was caught this way). Then the sanity pass: the IPC channels are drained
+# - a message outlives its sender by design, and the fuzzer's would be read
+# by the next client as an answer - and `leakcheck` must find the kernel holding exactly
+# what it held after the first run; `ps` shows only init, tickd and inferd;
+# init still supervises; programs run, including the agent's diagnosis
+# through inferd; and the audit trail saves and verifies. The seed of every
+# run is in the leg.
+Write-Output '=== QEMU V1.0: syscall fuzzer, no capabilities (BIOS) ==='
+$fuzzDisk = Join-Path $env:ITISYOU_SCRATCH 'itisyou-fuzz-test.img'
+Remove-Item $fuzzDisk -ErrorAction SilentlyContinue
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $fuzzDisk,
+    '--expect', 'B210',
+    '--send', 'run /bin/sysfuzz - -- 1001 25000',
+    '--send', 'busy 500',
+    '--send', 'run /bin/sysfuzz ipc:0-7 - -- drain',
+    '--send', 'leakcheck mark',
+    '--send', 'run /bin/sysfuzz - -- 1002 25000',
+    '--send', 'run /bin/sysfuzz - -- 1003 25000',
+    '--send', 'run /bin/sysfuzz - -- 1004 25000',
+    '--send', 'busy 500',
+    '--send', 'run /bin/sysfuzz ipc:0-7 - -- drain',
+    '--send', 'leakcheck',
+    '--send', 'ps',
+    '--send', 'svc',
+    '--send', 'run /bin/child',
+    '--send', 'run /bin/tick-client',
+    '--send', 'run /bin/agent sys_view,ipc:6-7,fs_read /etc/ai -- diagnose',
+    '--send', 'audit save',
+    '--send', 'audit verify',
+    '--send', 'shutdown',
+    '--require-order', 'SYSFUZZ-OK seed=1001 calls=25000 ',
+    '--require-order', '[ITISYOU:LEAK] mark frames_free=',
+    '--require-order', 'SYSFUZZ-OK seed=1002 calls=25000 ',
+    '--require-order', 'SYSFUZZ-OK seed=1003 calls=25000 ',
+    '--require-order', 'SYSFUZZ-OK seed=1004 calls=25000 ',
+    '--require-order', '[ITISYOU:LEAK] check frames=0 heap=0 processes=0 handles=0 ipc_queued=0 sockets=0 tcp=0 out_slots=0 result=clean',
+    '--require-order', 'ps: processes=3',
+    '--require-order', 'svc: started=3 done=2 failed=1',
+    '--require-order', 'run: /bin/child: Exit(7)',
+    '--require-order', 'TICKC-OK passes=',
+    '--require-order', 'AGENT-DIAGNOSIS conditions=',
+    '--require-order', 'trail_saved records=',
+    '--require-order', 'trail_checked status=verified reason=none',
+    '--require', 'tickd  Running',
+    '--require', 'inferd  Running',
+    '--forbid', 'SYSFUZZ-FAILED',
+    '--forbid', 'run: /bin/sysfuzz: Fault',
+    '--forbid', 'result=leak',
+    '--forbid', 'AGENT-INFER-TIMEOUT',
+    '--forbid', 'RING3-PANIC',
+    '--timeout-secs', '600', '--label', 'sysfuzz-none-bios')
+Remove-Item $fuzzDisk -ErrorAction SilentlyContinue
+
+Write-Output '=== QEMU V1.0: syscall fuzzer, the console default set in a sandbox (BIOS) ==='
+# The capabilities `run` gives by default, spelled out, confined to /data.
+$fuzzDisk = Join-Path $env:ITISYOU_SCRATCH 'itisyou-fuzz-test.img'
+Remove-Item $fuzzDisk -ErrorAction SilentlyContinue
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $fuzzDisk,
+    '--expect', 'B210',
+    '--send', 'run /bin/sysfuzz spawn,ipc,gui,dev,fs_read,audio,sys_admin,fs_write,network,proc_control /data -- 2001 25000',
+    '--send', 'busy 500',
+    '--send', 'run /bin/sysfuzz ipc:0-7 - -- drain',
+    '--send', 'leakcheck mark',
+    '--send', 'run /bin/sysfuzz spawn,ipc,gui,dev,fs_read,audio,sys_admin,fs_write,network,proc_control /data -- 2002 25000',
+    '--send', 'run /bin/sysfuzz spawn,ipc,gui,dev,fs_read,audio,sys_admin,fs_write,network,proc_control /data -- 2003 25000',
+    '--send', 'run /bin/sysfuzz spawn,ipc,gui,dev,fs_read,audio,sys_admin,fs_write,network,proc_control /data -- 2004 25000',
+    '--send', 'busy 500',
+    '--send', 'run /bin/sysfuzz ipc:0-7 - -- drain',
+    '--send', 'leakcheck',
+    '--send', 'ps',
+    '--send', 'svc',
+    '--send', 'run /bin/child',
+    '--send', 'run /bin/tick-client',
+    '--send', 'run /bin/agent sys_view,ipc:6-7,fs_read /etc/ai -- diagnose',
+    '--send', 'audit save',
+    '--send', 'audit verify',
+    '--send', 'shutdown',
+    '--require-order', 'SYSFUZZ-OK seed=2001 calls=25000 ',
+    '--require-order', '[ITISYOU:LEAK] mark frames_free=',
+    '--require-order', 'SYSFUZZ-OK seed=2002 calls=25000 ',
+    '--require-order', 'SYSFUZZ-OK seed=2003 calls=25000 ',
+    '--require-order', 'SYSFUZZ-OK seed=2004 calls=25000 ',
+    '--require-order', '[ITISYOU:LEAK] check frames=0 heap=0 processes=0 handles=0 ipc_queued=0 sockets=0 tcp=0 out_slots=0 result=clean',
+    '--require-order', 'ps: processes=3',
+    '--require-order', 'svc: started=3 done=2 failed=1',
+    '--require-order', 'run: /bin/child: Exit(7)',
+    '--require-order', 'TICKC-OK passes=',
+    '--require-order', 'AGENT-DIAGNOSIS conditions=',
+    '--require-order', 'trail_saved records=',
+    '--require-order', 'trail_checked status=verified reason=none',
+    '--require', 'tickd  Running',
+    '--require', 'inferd  Running',
+    '--forbid', 'SYSFUZZ-FAILED',
+    '--forbid', 'run: /bin/sysfuzz: Fault',
+    '--forbid', 'result=leak',
+    '--forbid', 'AGENT-INFER-TIMEOUT',
+    '--forbid', 'RING3-PANIC',
+    '--timeout-secs', '600', '--label', 'sysfuzz-default-bios')
+Remove-Item $fuzzDisk -ErrorAction SilentlyContinue
+
+Write-Output '=== QEMU V1.0: syscall fuzzer, the agent capability set (BIOS) ==='
+# The most the console grants the agent (ADR-0025): the system view,
+# proposals, the inference channels and reading /etc/ai.
+$fuzzDisk = Join-Path $env:ITISYOU_SCRATCH 'itisyou-fuzz-test.img'
+Remove-Item $fuzzDisk -ErrorAction SilentlyContinue
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $fuzzDisk,
+    '--expect', 'B210',
+    '--send', 'run /bin/sysfuzz sys_view,propose,ipc:6-7,fs_read /etc/ai -- 3001 25000',
+    '--send', 'busy 500',
+    '--send', 'run /bin/sysfuzz ipc:0-7 - -- drain',
+    '--send', 'leakcheck mark',
+    '--send', 'run /bin/sysfuzz sys_view,propose,ipc:6-7,fs_read /etc/ai -- 3002 25000',
+    '--send', 'run /bin/sysfuzz sys_view,propose,ipc:6-7,fs_read /etc/ai -- 3003 25000',
+    '--send', 'run /bin/sysfuzz sys_view,propose,ipc:6-7,fs_read /etc/ai -- 3004 25000',
+    '--send', 'busy 500',
+    '--send', 'run /bin/sysfuzz ipc:0-7 - -- drain',
+    '--send', 'leakcheck',
+    '--send', 'ps',
+    '--send', 'svc',
+    '--send', 'run /bin/child',
+    '--send', 'run /bin/tick-client',
+    '--send', 'run /bin/agent sys_view,ipc:6-7,fs_read /etc/ai -- diagnose',
+    '--send', 'audit save',
+    '--send', 'audit verify',
+    '--send', 'shutdown',
+    '--require-order', 'SYSFUZZ-OK seed=3001 calls=25000 ',
+    '--require-order', '[ITISYOU:LEAK] mark frames_free=',
+    '--require-order', 'SYSFUZZ-OK seed=3002 calls=25000 ',
+    '--require-order', 'SYSFUZZ-OK seed=3003 calls=25000 ',
+    '--require-order', 'SYSFUZZ-OK seed=3004 calls=25000 ',
+    '--require-order', '[ITISYOU:LEAK] check frames=0 heap=0 processes=0 handles=0 ipc_queued=0 sockets=0 tcp=0 out_slots=0 result=clean',
+    '--require-order', 'ps: processes=3',
+    '--require-order', 'svc: started=3 done=2 failed=1',
+    '--require-order', 'run: /bin/child: Exit(7)',
+    '--require-order', 'TICKC-OK passes=',
+    '--require-order', 'AGENT-DIAGNOSIS conditions=',
+    '--require-order', 'trail_saved records=',
+    '--require-order', 'trail_checked status=verified reason=none',
+    '--require', 'tickd  Running',
+    '--require', 'inferd  Running',
+    '--forbid', 'SYSFUZZ-FAILED',
+    '--forbid', 'run: /bin/sysfuzz: Fault',
+    '--forbid', 'result=leak',
+    '--forbid', 'AGENT-INFER-TIMEOUT',
+    '--forbid', 'RING3-PANIC',
+    '--timeout-secs', '600', '--label', 'sysfuzz-agent-bios')
+Remove-Item $fuzzDisk -ErrorAction SilentlyContinue
 
 if ($anyFailed) { Write-Output 'TEST: FAILED'; exit 1 }
 Write-Output 'TEST: OK'
