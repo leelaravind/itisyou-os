@@ -51,8 +51,8 @@ const cellStatus = (id: string) => status.modules.find((m) => m.id === id)?.stat
       <p class="text-body-base text-meta-bright max-w-2xl">
         What exists now and the boundaries later milestones build inside. Anything marked
         <StatusTag status="planned" /> or <StatusTag status="concept" /> is design intent, not implemented
-        functionality; <StatusTag status="in-development" /> marks V0.11 work that is verified on the development branch
-        but not yet released.
+        functionality; <StatusTag status="verified" /> is machine-checked in QEMU and released. The V0.11 AI-native
+        layer shipped in v1.0.0.
       </p>
     </header>
 
@@ -123,13 +123,13 @@ const cellStatus = (id: string) => status.modules.find((m) => m.id === id)?.stat
           <h2 id="layer-policy" class="font-sans text-headline-md text-ink mb-2">Policy / Capability Engine</h2>
           <p class="text-meta-bright text-xs mb-3">
             The capability engine is verified and released since V0.7: every privileged syscall revalidates a
-            capability handle. On the V0.11 development branch — verified in QEMU, not yet released — an AI agent sits
+            capability handle. In v1.0.0, an AI agent sits
             above it with no authority to act: it reads an approved view and files proposals; the kernel checks each
             against its own facts, only the console approves, and the kernel executes, verifies and rolls back.
           </p>
           <div class="flex items-center gap-3">
-            <StatusTag status="in-development" />
-            <span class="font-mono text-[10px] text-muted uppercase tracking-widest">No AI in the released v0.10.0 image</span>
+            <StatusTag status="verified" />
+            <span class="font-mono text-[10px] text-muted uppercase tracking-widest">Shipped in v1.0.0; released images before it have no AI</span>
           </div>
         </section>
         <section class="panel panel-hover p-6 flex-1" aria-labelledby="layer-user">
@@ -144,7 +144,7 @@ const cellStatus = (id: string) => status.modules.find((m) => m.id === id)?.stat
             program — v0.9.0 checked only that they were mapped), no user mapping of kernel pages, faults contained to the
             process. Since V0.3–V0.4, concurrent, preemptively scheduled processes, each in its own address space; since
             V0.10 a process tree, background slices at audited safe points, /sbin/init as pid 1, a Ring 3 shell and desktop
-            apps with routed input. On the V0.11 development branch (not released) the inference service inferd and the
+            apps with routed input. In v1.0.0, the inference service inferd and the
             diagnostic agent run here too, as ordinary Ring 3 programs.
           </p>
           <StatusTag status={cellStatus('ring3')} />
@@ -197,13 +197,14 @@ const cellStatus = (id: string) => status.modules.find((m) => m.id === id)?.stat
 
     <!-- ============ Planned next boundaries ============ -->
     <section class="mb-8 panel p-gutter" aria-labelledby="next-title">
-      <h2 id="next-title" class="font-sans text-headline-md text-ink mb-4">Boundaries in development</h2>
+      <h2 id="next-title" class="font-sans text-headline-md text-ink mb-4">The AI-native layer (shipped in v1.0.0)</h2>
       <p class="text-body-base text-meta-bright mb-4 max-w-3xl">
-        V0.10 is released as v0.10.0. V0.11 — AI-Native System Layer — is in development: each piece below is
-        implemented and verified on the development branch with host tests, a QEMU leg and a negative control, and none
-        of it is released. The model runs in Ring 3; the kernel only checks what the agent claims, and its two actions
-        run in kernel code after the console approves. After V0.11, V1.0 is declared only when acceptance criteria
-        written in advance are passed.
+        The V0.11 AI-Native System Layer ships in v1.0.0 (it was never tagged on its own): each piece below is
+        implemented and verified with host tests, a QEMU leg and a negative control. The model runs in Ring 3; the
+        kernel only checks what the agent claims, and its two actions run in kernel code after the console approves.
+        V1.0 is declared against acceptance criteria written in advance (docs/V1_ACCEPTANCE.md) — reliability,
+        security, recovery, update and boot safety, supported environment — and is verified locally (GitHub CI pending;
+        see /download).
       </p>
       <ul class="flex flex-wrap items-center gap-x-3 gap-y-2 font-mono text-mono-data list-none">
         {

@@ -19,9 +19,9 @@ const caps = [
   ['audio', 'reserved — no userspace audio syscall yet'],
   ['sys_admin', 'reserved — userspace service/package control'],
   ['proc_control', 'reserved — process teardown and control beyond spawning and waiting (the process kind’s CONTROL right: ending an existing process). No syscall checks it yet: Ring 3 has no kill, and kill is a kernel-console command'],
-  ['service','the supervisor report to the kernel’s service table (svc_report, V0.10); on the V0.11 development branch also init’s kernel mailbox (init_ctl), which in addition requires the caller to be the live /sbin/init'],
-  ['sys_view', 'the approved read-only system view (sys_view) — V0.11, development branch, not released. Console-granted only: in no default set, never delegated to a child, refused in /etc/init.conf'],
-  ['propose', 'filing a proposal for the console to approve or deny (propose) — V0.11, development branch, not released. Console-granted only, like sys_view; a proposal grants nothing by itself'],
+  ['service','the supervisor report to the kernel’s service table (svc_report, V0.10); in v1.0.0 also init’s kernel mailbox (init_ctl), which in addition requires the caller to be the live /sbin/init'],
+  ['sys_view', 'the approved read-only system view (sys_view) — V0.11, shipped in v1.0.0. Console-granted only: in no default set, never delegated to a child, refused in /etc/init.conf'],
+  ['propose', 'filing a proposal for the console to approve or deny (propose) — V0.11, shipped in v1.0.0. Console-granted only, like sys_view; a proposal grants nothing by itself'],
 ];
 
 const evidence = [
@@ -112,7 +112,7 @@ const evidence = [
           the caller must hold a live capability handle of the right kind, rights and scope, or it gets
           <span class="font-mono text-mono-data">ERR_PERM</span> and the refusal lands in the audit trail, enforced in the
           kernel’s syscall layer. Delegation only narrows: <span class="font-mono text-mono-data">spawn</span> inherits
-          the parent's set exactly (on the V0.11 development branch, minus the two console-only capabilities), and
+          the parent's set exactly (in v1.0.0, minus the two console-only capabilities), and
           <span class="font-mono text-mono-data">spawn_caps</span> grants <em>parent ∩ requested</em>. A child can
           never hold what its parent lacked.
         </p>
@@ -252,7 +252,7 @@ const evidence = [
           AI component.
         </p>
         <p class="text-body-base text-meta-bright max-w-3xl">
-          On the V0.11 development branch — verified in QEMU, not yet released — the first agent works exactly this
+          In v1.0.0, the first agent works exactly this
           way. It holds the view and the right to propose, both console-granted only, plus IPC and reads under
           <span class="font-mono text-mono-data">/etc/ai</span>; its own attempts at
           <span class="font-mono text-mono-data">svc_report</span>, <span class="font-mono text-mono-data">fs_write</span>

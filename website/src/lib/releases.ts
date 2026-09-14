@@ -45,6 +45,26 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    tag: 'v1.0.0',
+    commit: 'PENDING',
+    date: '2026-09-14',
+    milestone: 'V1.0 — Experimental Personal OS (VM-verified)',
+    ciRun: 'none — local build (GitHub CI pending)',
+    summary:
+      'ITISYOU OS V1.0 — an experimental personal operating system for virtual machines, on top of everything through V0.10 and the V0.11 AI-native layer. The AI layer: a read-only system view, a diagnostic model trained at build time from synthetic scenarios and pinned by digest, a Ring 3 inference service, and a diagnostic agent that can only file proposals the kernel re-checks against its own facts and the console approves, with kernel execution, verification and rollback. V1.0 itself is reliability and security: IPC authority scoped to the channels a grant names; a Ring 3 syscall fuzzer (300,000 random syscalls across three capability sets, no crash or hang) and a decoder mutation fuzzer (48 untrusted-byte decoders, a million inputs each) that found and fixed real panics; long-use leak accounting; and a whole-attack-surface adversarial review — 37 findings, each verified by an independent refuter — that fixed every high-severity defect and 18 findings in all: unhandled CPU exceptions a Ring 3 program could turn into a kernel panic, a package launched outside its signing key’s scope, an ICMP responder a remote ping flood could recurse into the stack guard, and more; the remaining seven mediums are documented availability limits a capability holder or a hostile disk can impose on a single-user VM. Physical hardware is explicitly unsupported. VERIFICATION: built locally (pinned nightly-2026-08-01) and verified by the full local QEMU matrix, two-clean-build bit-for-bit reproducibility and UEFI+BIOS boot-tests; GitHub CI could not run (the repository is private with no Actions minutes), so this release is locally verified with CI to follow — see /download.',
+    download: '/download',
+    contents:
+      'Everything through V0.10 (TCP from Ring 3, DHCP, IPv6 foundations, the I/O APIC cutover, ACPI power-off, an offline-root package-signing hierarchy, audit anchoring, a userspace init and process tree, the desktop) plus the V0.11 AI-native layer (system view, pinned diagnostic model, inferd, the proposal→approve→execute→verify→rollback path) plus V1.0: IPC channel scoping (ADR-0025), the seeded Ring 3 syscall fuzzer, the kernel-core decoder mutation fuzzer, long-use leak accounting, contained CPU exceptions with the user FPU off, and the whole-attack-surface review’s fixes (SEC1/NET1/FS1/USB1/GUI1/CAP1). The images are raw disk images — GPT + EFI system partition for UEFI, MBR for BIOS — that boot in QEMU as documented.',
+    limitations: [
+      'Verified locally, not by GitHub CI: the repository is private with no Actions minutes, so there is no CI run id and no independent second-host CI build for this release. It is verified by the full local QEMU matrix (74 legs), two-clean-build reproducibility on the build host, boot-tests, and the adversarial review. CI evidence will be added when the CI window opens.',
+      'Experimental and VM-only: physical hardware is explicitly unsupported and untested. Tested in QEMU (x86_64, SeaBIOS and OVMF); no other environment is claimed.',
+      'The kernel is not preemptible: background programs run in bounded slices at audited points, and wait while a syscall or a storage/irq/xhciwait command runs.',
+      'Seven medium findings from the V1.0 review are accepted, not fixed: availability limits a capability holder or a hostile disk can impose on this single-user VM (audit-window rotation, store/TCP-slot exhaustion, a scheduler stall) — each fails closed and is operator-recoverable; see docs/KNOWN_LIMITATIONS.md.',
+      'The AI diagnostic model is trained on synthetic scenarios: its accuracy equals a one-rule baseline, so it shows the designed cases are separable, not that it diagnoses real machines. Three conditions, two reversible actions, all console-approved.',
+      'One CPU; software rendering only; no suspend/resume; the boot image itself is not authenticated.',
+    ],
+  },
+  {
     tag: 'v0.10.0',
     commit: 'c936bc7',
     date: '2026-09-13',
@@ -52,7 +72,7 @@ export const RELEASES: Release[] = [
     ciRun: '34782271250',
     summary:
       'A userspace system on top of V0.9. Background programs keep running while the console is busy: bounded slices at audited safe points, with the kernel still non-preemptible. A process tree: only a parent collects its child, wait_nohang, sleep, orphans handed on, ps and kill. /sbin/init as pid 1 starts and supervises the services named in /etc/init.conf, reports them to a kernel-checked service table, and is restarted by the kernel if it dies. Program arguments, a Ring 3 shell that borrows the console’s input, filesystem space reclamation, and Ring 3 applications on the live desktop with click-to-focus and keys routed to the focused window. Fixed on the way: a denial of service in every earlier release (the kernel wrote through user pages the program could not write), guard pages for the syscall and kernel-task stacks, a mouse-packet framing bug, an interrupt-unsafe input queue, and a gui_present that checked existence instead of ownership. UEFI and BIOS boot images built by the release CI run on Linux, published with SHA-256.',
-    download: '/download',
+    download: '/download#v0.10.0',
     contents:
       'V0.10 — Userspace System, on top of everything in V0.9 (TCP from Ring 3, DHCP, IPv6 foundations, the I/O APIC cutover, ACPI power-off, an offline-root package-signing hierarchy, audit anchoring): always-on co-scheduling at audited safe points (sched reports what the background got); a process tree with parent-only wait, wait_nohang, sleep, orphans, ps and kill; /sbin/init as pid 1 from /etc/init.conf, restarted by the kernel; a kernel-checked supervisor report (svc_report); program arguments; a Ring 3 shell (rsh at the console); ITFS space reclamation; Ring 3 desktop apps (desktop /bin/gui-echo) with click-to-focus and routed input; line-atomic Ring 3 output with the kernel’s marker prefix rewritten (not unforgeable after all: see the limitations); DF/AC cleared on every kernel entry; guard pages under the RSP0, double-fault, syscall and kernel-task stacks; user buffers the kernel writes must be writable by the program.',
     limitations: [
@@ -65,6 +85,25 @@ export const RELEASES: Release[] = [
       'Found after the release (SEC11-001, AUDIT11-002): a program holding fs_write can rewrite the audit trail or delete a package’s commit marker through the filesystem syscalls, and a file name with a line break in it makes the kernel print a line that reads as a kernel marker. Also found after the release, by the V0.11 adversarial review (OUT11-002, SEC11-002, AUDIT11-003): a program can still print a genuine kernel marker line by splitting the prefix across the kernel’s 256-byte output chunks; ps prints the path a program passed to spawn, so a line break and a marker in it print as a kernel line; and a crafted multi-megabyte audit trail on the disk panics boot recovery. All fixed on the V0.11 branch.',
       'One CPU; software rendering only; no suspend/resume.',
     ],
+    archive: {
+      builtBy: 'GitHub Actions run 34782271250 (ubuntu-24.04, pinned nightly-2026-08-01), commit c936bc78379bbeb379f4f3b90186242c3aee4fb7',
+      files: [
+        {
+          file: 'itisyou-os-0.10.0-x86_64-uefi.img',
+          firmware: 'UEFI (OVMF)',
+          bytes: 5308416,
+          sha256: 'f98f5cbe89dc295699f75231bc71766eb6c129a60baa41d028f5ac0f315da792',
+        },
+        {
+          file: 'itisyou-os-0.10.0-x86_64-bios.img',
+          firmware: 'BIOS (SeaBIOS)',
+          bytes: 5735424,
+          sha256: 'd8416a58f367d835a6755662d8d9322b0ba042d7362179030f0a0ea24f44f098',
+        },
+      ],
+      notice:
+        'v0.10.0 was the CI-built, reproducible release before v1.0.0. Superseded by v1.0.0, which fixes (among others) SEC10-era and V0.11-branch defects it carried; kept downloadable, unchanged, for reference.',
+    },
   },
   {
     tag: 'v0.9.0',

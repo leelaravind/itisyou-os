@@ -18,7 +18,7 @@ const layers = [
   {
     code: 'L5',
     name: 'AI layer',
-    note: 'intelligence, never authority — V0.11, verified on the development branch, not released: a pinned model in Ring 3, an agent that only proposes',
+    note: 'intelligence, never authority — shipped in v1.0.0: a pinned model in Ring 3, an agent that only proposes',
     tag: 'in-development',
     tagLabel: 'In Development',
     accent: false,
@@ -26,7 +26,7 @@ const layers = [
   {
     code: 'L4',
     name: 'Privileged services / capability engine',
-    note: 'capability handles enforced at every syscall, /sbin/init supervising services from its config, signed packages (V0.7–V0.10); V0.11 (not released) adds kernel-checked proposals and console-only approval on top',
+    note: 'capability handles enforced at every syscall, /sbin/init supervising services from its config, signed packages (V0.7–V0.10); V0.11, shipped in v1.0.0, adds kernel-checked proposals and console-only approval on top',
     tag: 'verified',
     tagLabel: 'Verified',
     accent: false,
@@ -67,7 +67,7 @@ const layers = [
 
 const roadmapTeaser = MILESTONES.map((m) => ({ id: m.id, name: m.name, status: m.status, current: m.current }));
 const latestJournal = JOURNAL.slice(0, 2);
-/** The milestone in development, if any — verified work that is not yet released. */
+/** The milestone in development, if any — the current release. */
 const building = MILESTONES.find((m) => m.current && m.status !== 'verified');
 const latestRelease = RELEASES[0];
 ---
@@ -137,7 +137,7 @@ const latestRelease = RELEASES[0];
         </ol>
         <p class="font-mono text-[11px] text-muted mt-4">
           Verified layers are machine-checked in QEMU and released. The AI layer is V0.11 work, verified on the
-          development branch but in no release yet. See
+          development branch and shipped in v1.0.0. See
           <a href="/architecture" class="underline underline-offset-2 hover:text-ink">/architecture</a>.
         </p>
       </figure>
@@ -267,10 +267,9 @@ const latestRelease = RELEASES[0];
           </ol>
         </div>
         <p class="font-mono text-mono-data text-muted mt-4">
-          The released v0.10.0 image contains no AI component. On the V0.11 development branch — verified in QEMU, not
-          yet released — the first agent runs this pipeline for two actions: it reads an approved view and files a
-          proposal, the kernel checks it against its own facts, only the console approves, and the kernel executes,
-          verifies and rolls back. See <a href="/security" class="underline underline-offset-2 hover:text-ink">the security model</a>.
+          Released images before v1.0.0 contain no AI component. v1.0.0 ships the AI-native layer: the first agent runs
+          this pipeline for two actions — it reads an approved view and files a proposal, the kernel checks it against
+          its own facts, only the console approves, and the kernel executes, verifies and rolls back. See <a href="/security" class="underline underline-offset-2 hover:text-ink">the security model</a>.
         </p>
       </div>
     </section>

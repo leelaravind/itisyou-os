@@ -139,7 +139,7 @@ jobs:
             --send "echo shell-echo-check" --send definitely-not-a-command \
             --send "run /bin/init" --send "run /bin/broken" --send panic-test \
             --send shutdown \
-            --require "itisyou-os 0.11.0" \
+            --require "itisyou-os 1.0.0" \
             --require "physical: usable_frames=" --require "heap: used=" \
             --require "etc/" --require "shell-echo-check" \
             --require "unknown command: definitely-not-a-command" \

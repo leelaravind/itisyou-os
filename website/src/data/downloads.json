@@ -1,40 +1,40 @@
 {
-  "tag": "v0.10.0",
-  "version": "0.10.0",
+  "tag": "v1.0.0",
+  "version": "1.0.0",
   "published": true,
-  "commit": "c936bc78379bbeb379f4f3b90186242c3aee4fb7",
-  "builtBy": "GitHub Actions run 34782271250 (ubuntu-24.04, pinned nightly-2026-08-01)",
-  "builtAt": "2026-09-13T20:58:16Z",
-  "reproducibility": "Bit-for-bit reproducible from source: the same CI run built every image twice more from two clean checkouts in two different directories, with no shared cache, and got identical digests (job \"Reproducible boot images\"). image-builder removes the sources of non-determinism found in v0.8.1 — random GPT GUIDs, and the link time and CodeView GUID the linker stamps into the embedded UEFI loader. A Windows host builds different bytes, because Rust embeds the build host's source paths in panic locations; the published files are the Linux CI build.",
-  "notice": "v0.9.0 and v0.8.1 remain available at /downloads/v0.9.0/ and /downloads/v0.8.1/, each with its own SHA256SUMS.txt. v0.9.0 has a denial of service fixed here (SEC10-001): any program could panic its kernel through cap_list. Found after this release, in v0.10.0 and every release since v0.8.0, and fixed on the V0.11 branch: a saved audit trail reads as TAMPERED once a later boot has saved it (AUDIT11-001); a program holding fs_write can rewrite the audit trail or a package's commit marker (SEC11-001); a file name with a line break in it makes the kernel print a forged marker line (AUDIT11-002); a crafted multi-megabyte audit trail on the disk panics boot recovery (AUDIT11-003). In v0.10.0 only, found by the V0.11 adversarial review and fixed on the V0.11 branch: a program can still print a genuine kernel marker line by splitting the prefix across the kernel's 256-byte output chunks (OUT11-002), and ps prints the path a program passed to spawn, line breaks and markers included (SEC11-002).",
+  "commit": "PENDING",
+  "builtBy": "Local build on Windows 11 (x86_64), pinned nightly-2026-08-01. GitHub Actions was unavailable (the repository is private with no Actions minutes), so these are locally-built bytes, not a CI build. The build is deterministic: two full-clean builds on the same host (cargo clean of target/ and target-user/ between them) produced these exact digests. A Linux build (as CI produces) yields different bytes \u2014 Rust embeds the source path in panic locations, and the path separators differ (kernel\\src on Windows, kernel/src on Linux) \u2014 so the CI-built SHA-256 will differ and will be added when the CI window opens.",
+  "builtAt": "2026-09-14T10:05:36Z",
+  "reproducibility": "Reproducible on the build host: two full-clean builds (target/ and target-user/ both removed between them, no shared cache for the kernel or the user programs) produced identical digests for every image. image-builder removes the non-determinism sources found in v0.8.1 (random GPT GUIDs; the link time and CodeView GUID in the embedded UEFI loader) and the user-program archive is a deterministic ustar. This release is Windows-built and reproducible on Windows; a Linux/CI build produces different bytes (path separators in panic-location strings) and is pending the CI window.",
+  "notice": "v1.0.0 supersedes v0.10.0. It carries the V0.11 AI-native layer (never tagged on its own) and V1.0's reliability and security work: IPC channel scoping, a Ring 3 syscall fuzzer and a decoder mutation fuzzer, long-use leak accounting, contained CPU exceptions, and a whole-attack-surface adversarial review that fixed every high-severity defect and 18 findings in all. Seven medium findings are documented, accepted, fail-closed availability limits a capability holder or a hostile disk can impose on this single-user VM (see docs/KNOWN_LIMITATIONS.md). VERIFICATION: this release is verified locally, not by GitHub CI \u2014 the full local QEMU matrix (74 legs), two-clean-build reproducibility, and UEFI+BIOS boot-tests of these exact bytes; there is no CI run id yet. Earlier releases stay downloadable at /downloads/v0.10.0/, /downloads/v0.9.0/ and /downloads/v0.8.1/, each with its own SHA256SUMS.txt.",
   "bootTests": [
     {
-      "label": "QEMU matrix (40 CI steps; 50 legs in the local gate)",
-      "firmware": "BIOS (SeaBIOS) and UEFI (OVMF 2024.02)",
-      "qemu": "QEMU 8.2.2 (Ubuntu package)",
-      "host": "GitHub Actions ubuntu-24.04",
-      "result": "Passed — run 34782271250 (all four jobs green), on these exact images; the run’s reproducibility job rebuilt both images from two clean checkouts and got these exact digests"
-    },
-    {
-      "label": "Release boot test (downloaded CI bytes)",
+      "label": "Release boot test (these exact images)",
       "firmware": "UEFI (OVMF, QEMU-bundled edk2) and BIOS (SeaBIOS)",
       "qemu": "QEMU 11.1.0",
       "host": "Windows 11 (x86_64)",
-      "result": "Passed — UEFI + BIOS console boot reporting itisyou-os 0.10.0 with /sbin/init as pid 1, two-boot persistence on an NVMe data disk, ping over QEMU user-mode networking; images unchanged afterwards"
+      "result": "Passed \u2014 UEFI + BIOS console boot reporting itisyou-os 1.0.0 with /sbin/init as pid 1 and the pinned diagnostic model, two-boot persistence on an NVMe data disk, and ping over QEMU user-mode networking; the images are unchanged afterwards."
+    },
+    {
+      "label": "Full local QEMU matrix (74 legs) + host tests, clippy, secret scan",
+      "firmware": "BIOS (SeaBIOS) and UEFI (OVMF)",
+      "qemu": "QEMU 11.1.0",
+      "host": "Windows 11 (x86_64)",
+      "result": "Passed \u2014 scripts/verify.ps1 on the release commit; the two most timing-sensitive legs flake only under concurrent host load and pass in isolation. GitHub CI (the independent second-host run) is pending the CI window."
     }
   ],
   "files": [
     {
-      "file": "itisyou-os-0.10.0-x86_64-uefi.img",
+      "file": "itisyou-os-1.0.0-x86_64-uefi.img",
       "firmware": "UEFI (OVMF)",
-      "bytes": 5308416,
-      "sha256": "f98f5cbe89dc295699f75231bc71766eb6c129a60baa41d028f5ac0f315da792"
+      "bytes": 6356992,
+      "sha256": "64bb08cf5298b37d2bd4fb43fb2b016a3854e6477c2462867a6bf35032cc2ba3"
     },
     {
-      "file": "itisyou-os-0.10.0-x86_64-bios.img",
+      "file": "itisyou-os-1.0.0-x86_64-bios.img",
       "firmware": "BIOS (SeaBIOS)",
-      "bytes": 5735424,
-      "sha256": "d8416a58f367d835a6755662d8d9322b0ba042d7362179030f0a0ea24f44f098"
+      "bytes": 6784000,
+      "sha256": "9dbe74b0fd5497adaab69e084b6dcd5194a5fb6089762943d9d338df3e104f33"
     }
   ]
 }

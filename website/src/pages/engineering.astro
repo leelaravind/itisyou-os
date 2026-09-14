@@ -10,7 +10,7 @@ const description =
 
 /**
  * V0.11 rows mirrored from docs/REQUIREMENTS.md (§ V0.11, in development —
- * verified on the development branch, not released). Matrix states map onto
+ * shipped in v1.0.0). Matrix states map onto
  * the site vocabulary: IMPLEMENTED+VERIFIED -> verified, IN PROGRESS -> in-development.
  */
 const traceability = [
@@ -144,9 +144,10 @@ const pyramid = [
       </div>
       <p class="font-mono text-mono-data text-muted mt-4">
         A requirement is never deleted because it is difficult. Statuses collapse to implemented+verified / blocked /
-        not-applicable at reporting time. The V0.11 rows above are IMPLEMENTED+VERIFIED on the development branch, each
-        with a negative control; they are not in a release until v0.11.0 is tagged. The V0.10 rows are all terminal at
-        the v0.10.0 release.
+        not-applicable at reporting time. The V0.11 and V1.0 rows are IMPLEMENTED+VERIFIED, each with a negative
+        control, and ship in v1.0.0; the only BLOCKED rows are the GitHub-CI publication steps (V1-REL-001/002,
+        V1-REP-004), none security-relevant, pending the CI window. The V0.10 rows are all terminal at the v0.10.0
+        release.
       </p>
     </section>
 

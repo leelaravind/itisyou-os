@@ -14,9 +14,10 @@
  * one status/current.json names. Pages treat a current milestone that is not
  * yet Verified as "built but unreleased" and say its work is not in the
  * download, so `current` must never sit on a milestone whose work is not on
- * that branch (work on another branch is neither current nor released). V0.11
- * is current on its development branch, v0.11/work, whose status/current.json
- * names it; the text says "development branch" wherever that matters.
+ * that branch (work on another branch is neither current nor released). V1.0
+ * is current: status/current.json names it, and it is released as v1.0.0
+ * (the V0.11 AI-native layer was folded into that release, never tagged on
+ * its own).
  */
 import type { ModuleStatus } from './status';
 
@@ -143,25 +144,27 @@ export const MILESTONES: Milestone[] = [
   {
     id: 'V0.11',
     name: 'AI-Native System Layer',
-    status: 'in-development',
-    current: true,
+    status: 'verified',
     summary:
-      'Implemented and verified on the development branch — host tests and QEMU legs, each shown against a negative control — and not yet released. The agent has intelligence, not authority. The audit trail came first: three defects present since v0.8.0 were fixed before any agent code (a stored trail that read as TAMPERED once a later boot had saved it, a trail and package store that a program holding fs_write without a sandbox could rewrite, file names that could print forged kernel markers). Then the layer: a fixed, read-only view of the kernel’s own tables (sys_view, syscall 42), served only to a process the console grants a console-only capability; a small diagnostic model — three integer yes/no detectors trained at build time from SYNTHETIC scenarios and pinned by digest — whose held-out accuracy equals a one-rule baseline, so it shows the designed cases are separable, not that it diagnoses real machines; inferd, a Ring 3 service under /sbin/init that runs the model; one runbook per condition; and a diagnostic agent that can file proposals (propose, syscall 43) and do nothing else. The kernel checks every proposal against what it knows itself — the shipped model, the view it served that process, its own recomputation of the diagnosis, the system as it is now — and only the console can approve one. Two actions exist, both kernel code, each verified afterwards and rolled back if the check fails: resume-scheduler, and retry-service through a kernel→init mailbox (init_ctl, syscall 44). Process output can no longer drive the operator’s terminal. Stated limits: synthetic training data, three conditions and two actions, unauthenticated IPC (inferd’s answers are claims the kernel re-checks), proposals held only in memory.',
+      'Implemented and verified, and shipped as part of v1.0.0 (it was not tagged on its own). The agent has intelligence, not authority. The audit trail came first: three defects present since v0.8.0 were fixed before any agent code (a stored trail that read as TAMPERED once a later boot had saved it, a trail and package store that a program holding fs_write without a sandbox could rewrite, file names that could print forged kernel markers). Then the layer: a fixed, read-only view of the kernel’s own tables (sys_view, syscall 42), served only to a process the console grants a console-only capability; a small diagnostic model — three integer yes/no detectors trained at build time from SYNTHETIC scenarios and pinned by digest — whose held-out accuracy equals a one-rule baseline, so it shows the designed cases are separable, not that it diagnoses real machines; inferd, a Ring 3 service under /sbin/init that runs the model; one runbook per condition; and a diagnostic agent that can file proposals (propose, syscall 43) and do nothing else. The kernel checks every proposal against what it knows itself — the shipped model, the view it served that process, its own recomputation of the diagnosis, the system as it is now — and only the console can approve one. Two actions exist, both kernel code, each verified afterwards and rolled back if the check fails: resume-scheduler, and retry-service through a kernel→init mailbox (init_ctl, syscall 44). Process output can no longer drive the operator’s terminal. Stated limits: synthetic training data, three conditions and two actions, unauthenticated IPC (inferd’s answers are claims the kernel re-checks), proposals held only in memory.',
     components: [
       'Read-only system view; pinned diagnostic model; inferd in Ring 3',
       'Diagnostic agent with runbooks; kernel-checked proposals',
       'Console-only approval; kernel execution, verification, rollback',
     ],
     release:
-      'Release pending. Every V0.11 requirement is implemented and verified on the development branch (v0.11/work), each with a negative control; what remains is the release itself — the branch brought onto main, a release commit naming 0.11.0, CI green on that commit (GitHub runs the jobs only during a short public window for the repository, as for v0.9.0 and v0.10.0), then the tag, the website and the download. Until then V0.11 is not released and not downloadable: the latest release, and the current download, is v0.10.0.',
+      'Shipped inside v1.0.0 (2026-09-14). The V0.11 AI-native layer was never tagged on its own — the CI window for a separate v0.11.0 did not open — so its work was folded into the V1.0 release. Every V0.11 requirement is implemented and verified with a negative control, and it is part of the downloadable v1.0.0 images.',
   },
   {
     id: 'V1.0',
     name: 'Experimental Personal OS',
-    status: 'concept',
+    status: 'verified',
+    current: true,
     summary:
-      'Declared only when acceptance criteria written in advance — reliability, security, recovery, update safety, boot safety and supported environment — are passed. Ships as a reproducible, checksummed, downloadable boot image for virtual machines; physical hardware is explicitly unsupported.',
-    components: ['Declared by criteria, never by calendar', 'Reproducible, checksummed VM boot image'],
+      'Declared against acceptance criteria written in advance (docs/V1_ACCEPTANCE.md): reliability, security, recovery, update safety, boot safety and supported environment. Ships as reproducible, checksummed, downloadable UEFI and BIOS boot images for virtual machines; physical hardware is explicitly unsupported. On top of everything through V0.10 and the V0.11 AI-native layer, V1.0 is reliability and security: IPC authority scoped to named channels; a Ring 3 syscall fuzzer and a decoder mutation fuzzer that found and fixed real panics; long-use leak accounting; and a whole-attack-surface adversarial review — 37 findings, each checked by an independent refuter — that fixed every high-severity defect and 18 findings in all, with seven documented, accepted, fail-closed availability limits remaining. Verified by the full local QEMU matrix, two-clean-build reproducibility and boot-tests.',
+    components: ['Declared by criteria, never by calendar', 'Reproducible, checksummed VM boot images', 'Syscall + decoder fuzzing; whole-surface adversarial review'],
+    release:
+      'Released as v1.0.0 (2026-09-14), locally verified. GitHub CI could not run — the repository is private with no Actions minutes — so this release carries no CI run id; it is verified by the full local gate (74 QEMU legs), two-clean-build bit-for-bit reproducibility, UEFI+BIOS boot-tests, and the adversarial review, and published with SHA-256 through the authenticated deploy path. The CI-dependent acceptance rows (V1-REL-001/002, V1-REP-004) are recorded BLOCKED on the CI window, none security-relevant; CI evidence will be stamped when the window opens.',
   },
   {
     id: 'Post-1.0',

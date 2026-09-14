@@ -27,6 +27,19 @@ export interface JournalEntry {
 export const JOURNAL: JournalEntry[] = [
   {
     date: '2026-09-14',
+    time: '10:00',
+    session: 'Session 5 — V1.0',
+    title: 'ITISYOU OS V1.0 — released, locally verified (GitHub CI pending)',
+    what:
+      'V1.0 declared against the acceptance criteria written in advance (docs/V1_ACCEPTANCE.md), and published as reproducible, checksummed UEFI and BIOS boot images for virtual machines — the V0.11 AI-native layer folded in (it was never tagged on its own). V1.0 itself is reliability and security: IPC authority scoped to the channels a grant names (ADR-0025); a seeded Ring 3 syscall fuzzer (300,000 random syscalls across no-capabilities, the console default set, and the agent set — no crash or hang) that found a wait(0) that slept forever; a decoder mutation fuzzer over 48 untrusted-byte parsers (a million inputs each) that found real overflow panics; long-use leak accounting that found a page-table frame leaked on every store operation since V0.4; contained CPU exceptions with the user FPU off; and a whole-attack-surface adversarial review.',
+    detail:
+      'The review: twelve area reviewers over the whole kernel attack surface, every finding checked by an independent refuter, plus a completeness critic for the cross-cutting CPU state no area owned. 37 findings survived — 3 high, 15 medium, 19 low. All three highs are fixed: unhandled CPU exceptions a Ring 3 program could turn into a kernel panic (one div-by-zero from a no-capabilities program); a package launched under another app’s name, escaping the signing key’s scope; and an IPv4 ICMP responder a remote ping flood could recurse into the syscall stack’s guard page. Eighteen findings fixed in all, each with a QEMU leg and a mutation control that shows the check failing when reverted; the remaining seven mediums are documented, accepted, fail-closed availability limits a capability holder or a hostile disk can impose on a single-user VM. VERIFICATION: GitHub CI could not run — the repository is private with no Actions minutes — so this release is verified by the full local gate (74 QEMU legs, host tests, clippy, secret scan), two full-clean-build bit-for-bit reproducibility on the build host, and UEFI+BIOS boot-tests of the exact release bytes; it carries no CI run id, and the CI-dependent acceptance rows (V1-REL-001/002, V1-REP-004) are recorded BLOCKED on the CI window, none security-relevant. Built on Windows 11 with the pinned nightly-2026-08-01; a Linux/CI build produces different bytes (host-specific content in panic locations), so the CI-built SHA-256 will differ and be stamped when the window opens.',
+    evidence:
+      'release-boot-test.ps1 OK — itisyou-os 1.0.0, init pid 1, pinned model, two-boot NVMe persistence, ping · two full-clean builds → identical digests · fault-contain-{bios,uefi} · sysfuzz-{none,default,agent}-bios · gui-quota-bios · cap-exhaust-bios · pkg-store-hostile-bios · docs/V1_SECURITY_REVIEW.md (37 findings) · check-consistency OK version=1.0.0 verification=verified · SHA256SUMS.txt on /download',
+    status: 'implemented',
+  },
+  {
+    date: '2026-09-14',
     time: '02:30',
     session: 'Session 5 — V0.11',
     title: 'The V0.11 adversarial review: two ways v0.10.0 still let a program forge kernel evidence',
@@ -42,9 +55,9 @@ export const JOURNAL: JournalEntry[] = [
     date: '2026-09-14',
     time: '01:30',
     session: 'Session 5 — V0.11',
-    title: 'V0.11: an agent with intelligence and no authority — verified on the development branch, not released',
+    title: 'V0.11: an agent with intelligence and no authority — verified, and later shipped in v1.0.0',
     what:
-      'Every V0.11 requirement is implemented and verified on the development branch, each shown against a negative control: a read-only view of the kernel’s own tables, served only to a process the console grants it (sys_view, syscall 42); a small diagnostic model trained at build time and pinned by digest; inferd, a Ring 3 service that runs it; one runbook per condition; a diagnostic agent that can file proposals (syscall 43) and act on nothing; kernel checks on every proposal; approval only at the console; and two actions — resume-scheduler, and retry-service through a kernel→init mailbox (syscall 44) — each executed in kernel code, verified afterwards and rolled back if the check fails. Process output can no longer drive the operator’s terminal (OUT11-001). v0.11.0 is not released: the latest release, and the download, stay v0.10.0.',
+      'Every V0.11 requirement is implemented and verified on the development branch, each shown against a negative control: a read-only view of the kernel’s own tables, served only to a process the console grants it (sys_view, syscall 42); a small diagnostic model trained at build time and pinned by digest; inferd, a Ring 3 service that runs it; one runbook per condition; a diagnostic agent that can file proposals (syscall 43) and act on nothing; kernel checks on every proposal; approval only at the console; and two actions — resume-scheduler, and retry-service through a kernel→init mailbox (syscall 44) — each executed in kernel code, verified afterwards and rolled back if the check fails. Process output can no longer drive the operator’s terminal (OUT11-001). At this point v0.11.0 had not been tagged; it was later folded into v1.0.0 rather than released on its own.',
     detail:
       'What is weak is written down beside it. The training data is synthetic, generated from hand-written ranges, and the held-out accuracy equals a one-rule baseline: the scenarios define each condition by essentially one feature, so the number shows the designed cases are separable, not that the model diagnoses a real machine. It knows three conditions and can propose two actions. IPC carries no sender identity, so inferd’s answers are claims: a malicious IPC holder can mislead a diagnosis, but the kernel recomputes the condition from the view it served and refuses a mismatch, so it cannot get an unjustified proposal filed. Proposals live only in memory. Building the retry path found two ordering bugs in the new code — posting the rollback’s stop erased the retry’s acknowledgement, and the watch was armed only after the command was posted — both fixed before the step was claimed.',
     evidence:
