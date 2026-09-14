@@ -214,6 +214,87 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
   the bootloader-provided boot/console stack has a guard page
   has not been verified.
 - No hardware root of trust, no Secure Boot chain, no measured boot.
+- **V1.0 whole-attack-surface review (V1-SEC-002).** A multi-agent review of
+  every syscall, the ELF loader, the VFS and ITFS, packages and the trust
+  hierarchy, the network stack, input and device parsing, ACPI, the AI layer
+  and the audit trail, each finding checked by an independent refuter
+  (`docs/V1_SECURITY_REVIEW.md` has the full table). Three high-severity
+  defects were found and **fixed** in V1.0, each with a leg and a mutation
+  control: unhandled CPU exceptions from Ring 3 panicking the kernel
+  (SEC1-001), a package launched under another app's name escaping the
+  signing key's scope (SEC1-004), and an IPv4 ICMP responder recursing
+  through a blocking ARP resolve into the syscall stack's guard page
+  (NET1-001). Also fixed: user FPU/SIMD state was a cross-process channel
+  (SEC1-002, FPU now off for programs); `sysret` returned kernel scratch
+  registers (SEC1-003); a store version of 4294967295 overflow-panicked the
+  next install and lenient store-name parsing let a hostile disk name an app
+  `..` (SEC1-005); TCP answered broadcast/multicast sources and echo
+  requests to broadcast (NET1-002); the SYN-RECEIVED→LISTEN reset built an
+  8 KB TCB on the syscall stack (NET1-003); an unbounded NIC drain froze the
+  CPU under a frame flood (NET1-004); read-only `fs_read`/`fs_list` could
+  format a blank or unmountable disk (FS1-001); and xHCI/MMIO device inputs
+  were bounded (USB1-001/002/003).
+- **Availability limits a capability holder or a hostile disk can impose
+  (V1-SEC-002, accepted for an experimental single-user VM: each needs an
+  authority the operator granted or a disk edited outside the OS, none
+  crosses a privilege boundary or corrupts kernel memory, all fail closed,
+  and the operator can see and end the cause with `ps`/`kill`/`store rm`).**
+  - A program can **rotate the audit window on demand**: any process, even
+    with no capabilities, can emit 128+ audited denials (e.g. `console_read`
+    while it does not own the console, or any gated call with no handle) and
+    push earlier records out of the 128-record stored trail and the
+    64-record ring before the operator's next `audit save`. Every evicted
+    record was already printed on the serial console — the declared evidence
+    channel — and the chain head still covers it, so this hides records from
+    the on-disk trail, not from the live log. A robust fix (coalescing or
+    per-pid denial budgeting without breaking the append-only hash chain) is
+    future work.
+  - A program with `fs_write` can **fill the 12-slot store directory** (or
+    its space) so the kernel-owned audit trail cannot be saved and no package
+    can install, until the operator removes the files. Nothing reserves a
+    slot for kernel-owned names.
+  - A program with the Process capability can **exhaust the 256-entry
+    capability table** by spawning long-lived children; once it is full,
+    later processes launch with a reduced or empty handle set (fail-closed,
+    but a denial of authority to everything started afterward). There is no
+    per-tree handle quota or process limit.
+  - A program with the Gui capability can **take the whole compositor budget**
+    (2 M pixels, or all 16 window slots), so no other process — nor the
+    kernel's own `desktop` — can open a window; `desktop` then fails closed.
+    There is no per-owner pixel quota or reserved slot.
+  - A remote peer can **pin TCP slots and ports until reboot**: a connection
+    left in FIN-WAIT-2, or with unsent data behind a zero window, is never
+    reclaimed, and its local port stays unusable. Eight such connections
+    exhaust the 8-slot table. (ADR-0020's "reclaimed at the next poll" holds
+    only for connections that reach `Closed`.)
+  - A background program that writes partial output can **stall the
+    cooperative busy-point scheduler** during a kernel command, which can
+    make the AI retry-service verification report `result=pass` without the
+    service having run (or make an approval fail). It needs a spawn-holding
+    program running during an operator approval; the AI layer is experimental
+    and every action is operator-approved.
+- **IPC channels 0–5 are a shared cooperative namespace**: a program granted
+  a channel can fill its 8-message queue or leave an oversized (up to 256 B)
+  message at the head that a reader with a smaller buffer cannot dequeue,
+  disrupting other users of that channel (e.g. tickd on 2–3). The inference
+  channels 6–7 are reachable by an explicit `ipc:6-7` grant (ADR-0025) —
+  **and, as the V1.0 review noted, by a holder of the Service ADMIN
+  capability, whose handle is unscoped by design (ADR-0025 §5)**: `service`
+  is console-only (not in the legacy set, not grantable to a package, and no
+  shipped service requests it), so this exception stays with whoever the
+  operator explicitly trusts with supervision. Two further IPC gaps the
+  review found, both low and both fail-closed: `cap_restrict` cannot narrow a
+  channel-scoped IPC handle (it always answers `scope_denied`), so IPC
+  authority can be revoked whole but not time-limited or reduced; and a caps
+  list mixing `service` with a partial channel range widens to every channel
+  with no parse-time warning.
+- **Device-register robustness (V1-SEC-002, lows, QEMU's models are
+  well-behaved):** several drivers would misbehave only on hostile or
+  malfunctioning *emulated* hardware not present in the supported QEMU
+  configuration — UHCI/AC97 I/O-port addition, an xHCI event ring with no
+  deadline, and NVMe `LBADS`/`DSTRD` fields — noted in
+  `docs/V1_SECURITY_REVIEW.md` and left for a hardening pass, since the
+  supported environment is QEMU's own devices.
 
 ## AI layer (V0.11 — in development, not released)
 

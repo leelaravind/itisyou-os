@@ -183,3 +183,41 @@ constructed situations diagnosed exactly, nothing more general
 with the shipped model and applies now, not that acting is wise; the
 operator's approval is that judgement, and whoever can type at the serial
 console is the operator.
+
+## V1.0 additions — the whole surface reviewed against this model
+
+For V1.0 the whole attack surface was reviewed against this document by a
+multi-agent adversarial pass, every finding checked by an independent
+refuter (criterion V1-SEC-002; method, full table and dispositions in
+`docs/V1_SECURITY_REVIEW.md`). It confirmed 37 defects — 3 high, 15 medium,
+19 low. The highs were all denial-of-service or trust-scope breaks reachable
+without crossing a privilege boundary, now fixed:
+
+- Any Ring 3 program, with no capabilities, could panic the kernel with one
+  instruction: a divide by zero, a single step or a non-canonical stack push
+  raised a CPU exception whose vector had no IDT gate, which escalated to a
+  double fault. Every vector now contains a Ring-3 fault (SEC1-001); this
+  closes a hole in the crash-isolation assumption (`user fault ≠ kernel
+  panic`) that had only ever been exercised for `#GP` and `#PF`.
+- A hostile disk (an in-scope attacker) could run a package signed for a
+  `hello-*` name under another app's name, so the signing key's scope did not
+  apply at launch (SEC1-004), and could name an app `..` (sandbox `/apps/..`
+  → `/`) or a version that overflow-panicked the next install (SEC1-005).
+- A hostile network peer could panic the kernel: an ICMP echo responder that
+  resolved ARP inside the receive poll recursed into the syscall stack's
+  guard page (NET1-001), and could freeze it with a frame flood held under a
+  masked-interrupt drain (NET1-004).
+
+Two cross-cutting CPU-state gaps the per-subsystem reviews did not own were
+also closed: x87/SSE registers were never switched between processes — a
+storage channel no capability gated, now removed by disabling the FPU for
+programs (SEC1-002) — and `sysret` returned the kernel's scratch registers to
+Ring 3 (SEC1-003). The accepted mediums are all availability limits a
+capability holder or a hostile disk can impose on this single-user VM, listed
+with their reasons in `docs/KNOWN_LIMITATIONS.md`; none corrupts kernel memory
+or crosses a privilege boundary. Two residuals sharpen rows above: a holder of
+the console-only Service ADMIN capability reaches the inference channels
+whatever its `ipc:` range (its handle is unscoped by design, ADR-0025 §5), and
+the audit window can be rotated on demand by any program flooding denials —
+the evicted records survive on the serial console, the declared evidence
+channel, and under the chain head.
