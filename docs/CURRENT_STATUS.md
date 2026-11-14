@@ -12,14 +12,14 @@ at release; not re-checked on 2026-11-14) — UEFI
 (`website/src/data/downloads.json`). V0.11 was folded into v1.0.0 and never
 tagged on its own.
 
-**Where the code is.** `main` is still at v0.10.0 (`510dd5e`). V0.11 and
-V1.0 are on `v1.0/ipc` (37 commits ahead of `main`, `main` is its ancestor,
-so the merge is a fast-forward). Branch `claude/gifted-cori-vzs71o` is
-`v1.0/ipc` plus the 2026-11-14 work: documentation,
-`scripts/run-ci-local.py`, the workflow changes and one kernel fix. **That
-branch is no longer the v1.0.0 code** — it still reports `itisyou-os 1.0.0`
-and must be given the next version before anything is released from it; the
-published v1.0.0 images are unchanged.
+**Where the code is.** `main` has it all since 2026-11-14: the owner merged
+pull request #3 (merge commit `4e337d2`), which brought V0.11, the released
+v1.0.0 (tag `v1.0.0` → `702119e`) and the 2026-11-14 work — documentation,
+`scripts/run-ci-local.py`, the workflow changes and one kernel fix. **`main`
+is therefore no longer the v1.0.0 code**: it still reports
+`itisyou-os 1.0.0` and must be given the next version before anything is
+released from it; the published v1.0.0 images are unchanged. The branches
+`v0.10/integration`, `v0.11/work` and `v1.0/ipc` are contained in `main`.
 
 **Open, in the order they block each other:**
 
@@ -34,14 +34,19 @@ published v1.0.0 images are unchanged.
    unchanged). Result: **58 of 58 QEMU steps**, 556 host tests, lint, the
    website job and the two-clean-builds reproducibility job pass.
    The repository was then made public and pull request #3 ran the
-   workflow on GitHub: run `43651248948`, all four jobs green.
+   workflow on GitHub: run `43651248948`, all four jobs green. After the
+   merge, two more runs of the same tree are green too — `43653136859`
+   (the pull request's last head, `4a08a99`) and `43653887781` (`main` at
+   the merge commit `4e337d2`): three consecutive green runs.
 2. **V1-REL-001, V1-REL-002 and V1-REP-004 are still BLOCKED.** They ask
    for CI on the release commit, three consecutive clean runs, and the
    `v1.0.0` tag on a green-CI commit. The one GitHub run is on a commit
    after v1.0.0 with a kernel change; the tagged commit itself cannot be
    green (its workflow has the three defects above). The owner decides what
-   to stamp: in practice the next version, released from this branch.
-3. **`main` has not been given v1.0.0.**
+   to stamp: in practice the next version, released from `main`.
+3. **The next version.** `main` carries a kernel fix after v1.0.0 under
+   the version string 1.0.0; nothing may be released from it until it is
+   renamed (for example 1.0.1) and that version's rows are stamped.
 4. **The commit hashes cited in the documents do not exist on `origin`**
    (`docs/COMMIT_HASHES.md`).
 5. Draft PR #1 (`w0-01-freeze-normative-inputs`) is a separate, owner-gated

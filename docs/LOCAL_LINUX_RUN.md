@@ -1,7 +1,7 @@
 # Local Linux run of the CI workflow — 2026-11-14
 
-**Runs 1 to 3 below are not GitHub Actions runs** (the one GitHub run that
-followed them has its own section near the end). It is the `run:` steps of
+**Runs 1 to 3 below are not GitHub Actions runs** (the GitHub runs that
+followed them have their own section near the end). It is the `run:` steps of
 `.github/workflows/ci.yml`, executed unchanged and in order by
 `scripts/run-ci-local.py` on one Linux machine. It changes the state of no
 requirement: V1-REL-001, V1-REL-002 and V1-REP-004 need a GitHub CI run and
@@ -94,7 +94,7 @@ itisyou-kernel-bios.img            6784000  0ceeff44726f65c97ec0a7f2ce2a46938a37
 itisyou-kernel-uefi.img            6356992  980c1920d38f1126c4d7216e9f47dedb01ca06aa762fee599dede44d42824e95
 ```
 
-## The GitHub Actions run that followed
+## The GitHub Actions runs that followed
 
 After run 3 the owner made the repository public and asked for a pull
 request, so the workflow ran on GitHub for the first time since v0.10.0.
@@ -109,8 +109,21 @@ This section is the only part of this file that is a GitHub run.
 | Website check + build | success |
 | Secret scan (Gitleaks) | success |
 
-It is one run, on a pull-request head that is not the v1.0.0 release commit
-and carries a kernel change after it. It therefore does not by itself
+The owner merged pull request #3 at 23:34 UTC (merge commit `4e337d2` on
+`main`). Two more runs of the same tree followed:
+
+| Run | Trigger | Head | Result |
+|---|---|---|---|
+| `43651248948` | pull request #3 | `d810a32` | all four jobs success (kernel job 19 min 53 s, QEMU built from scratch) |
+| `43653136859` | pull request #3, after a documentation commit | `4a08a99` | all four jobs success (kernel job 15 min 40 s, QEMU restored from the cache) |
+| `43653887781` | push to `main`: the merge of pull request #3 | `4e337d2` | all four jobs success (kernel job 24 min 13 s; `main` has its own cache scope, so QEMU was built again) |
+
+Three consecutive green runs. The three heads differ only in documentation
+and the merge commit: the kernel, user programs, harness and workflow are
+the same in all three.
+
+These are runs on commits that are not the v1.0.0 release commit and carry
+a kernel change after it. They therefore do not by themselves
 satisfy V1-REL-001 (the matrix on the release commit), V1-REL-002 (three
 consecutive clean runs) or V1-REP-004 (the tag on a green-CI commit); those
 rows stay BLOCKED until the owner decides which commit and version to stamp.
@@ -152,13 +165,12 @@ one that built it.
   against the kernel fix: their scripts are not in the repository. The
   host test covers the decision for those inputs; the kernel path was
   exercised only by `ai-retry-bios`.
-- The workflow's QEMU cache has only been written, not yet restored: the
-  one GitHub run built QEMU from scratch.
 - Only QEMU 8.2.2 and 11.1.0 were run. "From 9.1.0" is read from QEMU's
   sources.
 - The version was not changed: the branch's kernel differs from v1.0.0 and
   still reports `itisyou-os 1.0.0`.
-- Nothing was deployed, tagged, merged or pushed to `main`.
+- Nothing was deployed or tagged. The merge to `main` was the owner's, through
+  pull request #3; the agent pushed only to its own branch.
 
 ## Reproduce
 

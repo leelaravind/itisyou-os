@@ -529,10 +529,11 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
   the owner chose to keep the assertion and change the emulator: the
   workflow now builds a pinned QEMU 11.1.0 (`scripts/ci-install-qemu.sh`),
   the version the Windows gate uses. With all three, a local Linux run
-  passes 58 of 58 and the first GitHub run since v0.10.0 is green
-  (`43651248948`, pull request #3, all four jobs). That is one run on a
-  commit after v1.0.0, so V1-REL-001, V1-REL-002 and V1-REP-004 are still
-  BLOCKED.
+  passes 58 of 58 and the first GitHub runs since v0.10.0 are green: three
+  in a row (`43651248948`, `43653136859`, `43653887781`; pull request #3
+  and its merge to `main`, all four jobs each). They are runs on commits
+  after v1.0.0, so V1-REL-001, V1-REL-002 and V1-REP-004 are still BLOCKED
+  for v1.0.0 itself.
 - **Image digests depend on the build host, not only on the source.** Two
   clean builds agree on one host, but the same tree built on GitHub's
   runner and on another Linux host gives different digests for every image
