@@ -1,6 +1,6 @@
 # ITISYOU OS
 
-**Experimental / pre-alpha. Not a product. Do not install on real hardware.**
+**Experimental. Not a product. Virtual machines only — do not install on real hardware.**
 
 ITISYOU OS is a long-term research and engineering project exploring what a
 personal operating system could look like if designed today around explicit
@@ -12,17 +12,23 @@ It is an independently bootable x86_64 operating system written in Rust
 (`no_std`), developed and verified exclusively inside QEMU. It is not a Linux
 distribution and contains no Linux kernel code at runtime.
 
-The latest release is **V0.8 — Networking, Authenticity & Hardening**
-(`v0.8.1`, a release-integrity closeout of `v0.8.0`): Ring 3 processes in
-per-process address spaces with preemptive scheduling, capability handles
-enforced at the syscall boundary, a persistent crash-consistent filesystem on
-NVMe, a compositor and desktop with PS/2 and USB (UHCI and xHCI) input, AC97
-audio, an IPv4 network stack (ARP/ICMP/UDP/DNS) with capability-scoped
-sockets, Ed25519-signed packages with atomic update and rollback, a
-hash-chained persistent audit trail, and SMEP/SMAP/UMIP hardening. What is
-*not* there yet — TCP, DHCP, IPv6, a userspace init, physical hardware — is
-listed in [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) and
-sequenced in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+The latest release is **V1.0 — Experimental Personal OS** (`v1.0.0`,
+VM-verified): Ring 3 processes in per-process address spaces with a
+userspace `init` as pid 1, a Ring 3 shell and always-on scheduling;
+capability handles enforced at the syscall boundary; a persistent
+crash-consistent filesystem on NVMe; a compositor and desktop with PS/2 and
+USB (UHCI and xHCI) input and Ring 3 applications; AC97 audio; an IPv4/IPv6
+network stack (ARP, ICMP, UDP, DNS, DHCP, TCP) with capability-scoped
+sockets; Ed25519-signed packages under an offline-root key hierarchy, with
+atomic update and rollback; a hash-chained persistent audit trail; a
+diagnostic agent in Ring 3 that can only *propose* actions the console must
+approve (intelligence, not authority); and SMEP/SMAP/UMIP hardening. V1.0
+was accepted against criteria written down beforehand
+([`docs/V1_ACCEPTANCE.md`](docs/V1_ACCEPTANCE.md)); the three rows that need
+a GitHub-hosted CI run are recorded BLOCKED, not passed. What is *not*
+there — SMP, physical hardware, Wi-Fi, a language model — is listed in
+[`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) and sequenced in
+[`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Current reality
 
