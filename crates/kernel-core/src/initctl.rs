@@ -161,9 +161,70 @@ impl Ack {
     }
 }
 
+/// What the kernel does with the pid init's `stop` acknowledgement names
+/// when it rolls a retry back (ACT11-002).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RollbackKill {
+    /// A live instance of the service: the kernel kills it.
+    Kill,
+    /// An instance of the service that has already ended by itself. There is
+    /// nothing left to kill, and nothing was refused.
+    Gone,
+    /// Anything the kernel cannot confirm as an instance: a process that is
+    /// not a child of the live init running the service's program, or a pid
+    /// that is not in the table. init holds no kill authority and must not
+    /// gain any through the mailbox; refused and audited as a denial.
+    Refuse,
+}
+
+/// Decide the rollback kill from what the process table says about the pid.
+///
+/// `present`: the pid is in the table. `terminal`: it has ended (exited,
+/// faulted or was killed). `instance`: it is a child of the live init running
+/// the program `/etc/init.conf` names for the service.
+///
+/// A service that exits by itself (`flapd` always does) can end between
+/// init's acknowledgement and the kernel acting on it. It is still in the
+/// table, still init's child and still that program, so the kernel can
+/// confirm what it was: that is `Gone`. Before, it was reported and audited
+/// as a refused kill (`not_an_instance`) on about every other run. Nothing
+/// the kernel cannot confirm is treated as gone.
+pub const fn rollback_kill(present: bool, terminal: bool, instance: bool) -> RollbackKill {
+    if !present || !instance {
+        RollbackKill::Refuse
+    } else if terminal {
+        RollbackKill::Gone
+    } else {
+        RollbackKill::Kill
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rollback_kills_only_a_live_instance_and_refuses_what_it_cannot_confirm() {
+        // (present, terminal, instance)
+        assert_eq!(rollback_kill(true, false, true), RollbackKill::Kill);
+        // A confirmed instance that ended by itself: nothing to kill.
+        assert_eq!(rollback_kill(true, true, true), RollbackKill::Gone);
+        // Not an instance: refused whether it is live or has ended.
+        assert_eq!(rollback_kill(true, false, false), RollbackKill::Refuse);
+        assert_eq!(rollback_kill(true, true, false), RollbackKill::Refuse);
+        // Not in the table: nothing confirms what it was, so refused.
+        assert_eq!(rollback_kill(false, false, false), RollbackKill::Refuse);
+        assert_eq!(rollback_kill(false, true, true), RollbackKill::Refuse);
+        for present in [false, true] {
+            for terminal in [false, true] {
+                for instance in [false, true] {
+                    let d = rollback_kill(present, terminal, instance);
+                    assert_eq!(d == RollbackKill::Kill, present && !terminal && instance);
+                    assert_eq!(d == RollbackKill::Gone, present && terminal && instance);
+                }
+            }
+        }
+    }
 
     #[test]
     fn records_round_trip() {

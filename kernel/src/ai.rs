@@ -608,22 +608,23 @@ fn init_conf_path(name: &str) -> Option<alloc::string::String> {
         })
 }
 
-/// Is `pid` a live instance of service `name`: a child of the live init
-/// running the program `/etc/init.conf` names for it? init's stop
-/// acknowledgement names the instance to end, and the kernel kills on that
-/// word only a process that passes this - init holds no kill authority, so
-/// it must not gain any over the rest of the system through the mailbox.
-fn is_instance_of(pid: u64, name: &str) -> bool {
-    let Some(path) = init_conf_path(name) else {
-        return false;
-    };
-    let mut found = false;
+/// What to do with the pid init's stop acknowledgement names
+/// (`kernel_core::initctl::rollback_kill`): kill it only if it is a live
+/// child of the live init running the program `/etc/init.conf` names for the
+/// service - init holds no kill authority, so it must not gain any over the
+/// rest of the system through the mailbox. Such a child that has already
+/// ended is gone, not refused; anything else is refused.
+fn rollback_kill_decision(pid: u64, name: &str) -> kernel_core::initctl::RollbackKill {
+    let path = init_conf_path(name);
+    let (mut present, mut terminal, mut instance) = (false, false, false);
     crate::proc::for_each(|p, parent, ppath, state| {
-        if p == pid && crate::initd::is_init(parent) && ppath == path && !state.is_terminal() {
-            found = true;
+        if p == pid {
+            present = true;
+            terminal = state.is_terminal();
+            instance = crate::initd::is_init(parent) && path.as_deref().is_some_and(|x| x == ppath);
         }
     });
-    found
+    kernel_core::initctl::rollback_kill(present, terminal, instance)
 }
 
 fn row_state(name: &str) -> Option<(kernel_core::service::ServiceState, u64, u32)> {
@@ -727,9 +728,10 @@ fn execute_retry(id: u64, r: &Record, detail: &str) -> bool {
 }
 
 /// Undo a retry: init stops supervising the service, and the kernel kills the
-/// instance init names - if it is one (`is_instance_of`). Always `false`.
+/// instance init names - if it is a live one (`rollback_kill_decision`).
+/// Always `false`.
 fn rollback_retry(id: u64, name: &str, watch: Option<Watch>) -> bool {
-    use kernel_core::initctl::Op;
+    use kernel_core::initctl::{Op, RollbackKill};
     let stop_seq = watch
         .and_then(|w| w.stop_seq)
         .or_else(|| crate::initd::post(Op::Stop, name));
@@ -738,11 +740,24 @@ fn rollback_retry(id: u64, name: &str, watch: Option<Watch>) -> bool {
         _ => None,
     };
     let killed = match stopped {
-        Some(a) if a.ok && a.pid != 0 => {
-            if is_instance_of(a.pid, name) {
+        Some(a) if a.ok && a.pid != 0 => match rollback_kill_decision(a.pid, name) {
+            RollbackKill::Kill => {
                 let _ = crate::proc::kill(a.pid);
                 a.pid
-            } else {
+            }
+            RollbackKill::Gone => {
+                crate::serial_println!(
+                    "[ITISYOU:AI] rollback_instance_gone id={id} target={name} pid={}",
+                    a.pid
+                );
+                crate::audit::allowed(
+                    "rollback_instance_gone",
+                    0,
+                    Some(alloc::format!("id={id} target={name} pid={}", a.pid)),
+                );
+                0
+            }
+            RollbackKill::Refuse => {
                 crate::serial_println!(
                     "[ITISYOU:AI] rollback_kill_refused id={id} target={name} pid={} reason=not_an_instance",
                     a.pid
@@ -750,7 +765,7 @@ fn rollback_retry(id: u64, name: &str, watch: Option<Watch>) -> bool {
                 crate::audit::denied_reason("rollback_kill", 0, "not_an_instance");
                 0
             }
-        }
+        },
         _ => 0,
     };
     let (state, _, restarts) =
