@@ -1,0 +1,6 @@
+service_failed: a supervised service used up its restarts and stopped
+meaning: /sbin/init restarted the service the number of times its policy allows (3), and it failed again each time; the kernel's service table now shows it Failed and nothing restarts it
+likely causes: the program exits on every start (a bug, a missing input, or by design - flapd in the test image exits on purpose); a dependency it needs is down
+action: retry-service <name> - ask init to start it once more, with its restart count reset
+risk: low - init starts the same program with the same capabilities it already had
+reversible: yes - if it fails again inside the verification window, init stops it and the row goes back to Failed

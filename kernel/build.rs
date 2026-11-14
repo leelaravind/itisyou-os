@@ -60,6 +60,12 @@ fn main() {
         "sysinit",
         "sh",
         "gui-echo",
+        "ai-probe",
+        "inferd",
+        "agent",
+        "flakyd",
+        "soak",
+        "sysfuzz",
     ] {
         println!(
             "cargo::rerun-if-changed={}",
@@ -82,6 +88,7 @@ fn main() {
     ));
     build_user_programs(&workspace, &mut entries);
     add_trust_material(&workspace, &mut entries);
+    add_ai_material(&workspace, &out_dir, &mut entries);
     entries.sort_by(|a, b| a.0.cmp(&b.0));
     entries.dedup_by(|a, b| a.0 == b.0);
 
@@ -188,6 +195,20 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
             "user-sh",
             "-p",
             "user-gui-echo",
+            "-p",
+            "user-ai-probe",
+            "-p",
+            "user-inferd",
+            "-p",
+            "user-agent",
+            "-p",
+            "user-flakyd",
+            "-p",
+            "user-soak",
+            "-p",
+            "user-sysfuzz",
+            "-p",
+            "user-fault-probe",
         ])
         .arg("--target-dir")
         .arg(&target_dir)
@@ -252,6 +273,13 @@ fn build_user_programs(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, boo
         ("user-sysinit", "sbin/init"),
         ("user-sh", "bin/sh"),
         ("user-gui-echo", "bin/gui-echo"),
+        ("user-ai-probe", "bin/ai-probe"),
+        ("user-inferd", "bin/inferd"),
+        ("user-agent", "bin/agent"),
+        ("user-flakyd", "bin/flakyd"),
+        ("user-soak", "bin/soak"),
+        ("user-sysfuzz", "bin/sysfuzz"),
+        ("user-fault-probe", "bin/fault-probe"),
     ];
     entries.push(("bin/".to_string(), Vec::new(), true));
     entries.push(("sbin/".to_string(), Vec::new(), true));
@@ -445,6 +473,94 @@ fn add_trust_material(workspace: &Path, entries: &mut Vec<(String, Vec<u8>, bool
             kernel_core::ed25519::public_key(seed),
             "keys/certs/{file} does not certify the fixture seed build.rs signs with"
         );
+    }
+}
+
+/// Train the diagnostic model (V0.11, MODEL11-001, ADR-0024) and ship it.
+///
+/// The image contains what the repository trains: `ai/scenarios.txt` goes
+/// through the same host-tested generator and trainer as the kernel-core
+/// tests, the bytes must match the pin `ai/diag.model.sha256` (a stale pin
+/// fails the build, naming both digests), and the digest is compiled into
+/// the kernel (`OUT_DIR/model_sha256.bin`) as the provenance anchor the
+/// kernel checks proposals against. Hostile variants of the real file go to
+/// `/etc/ai/fixtures/` so the refusal of each is exercised inside the OS.
+fn add_ai_material(workspace: &Path, out_dir: &Path, entries: &mut Vec<(String, Vec<u8>, bool)>) {
+    use kernel_core::model;
+    use kernel_core::scenario;
+    let ai = workspace.join("ai");
+    let scenarios_path = ai.join("scenarios.txt");
+    let pin_path = ai.join("diag.model.sha256");
+    println!("cargo:rerun-if-changed={}", scenarios_path.display());
+    println!("cargo:rerun-if-changed={}", pin_path.display());
+    let text = fs::read_to_string(&scenarios_path).expect("reading ai/scenarios.txt");
+    let mut scenarios = [scenario::Scenario::EMPTY; scenario::MAX_SCENARIOS];
+    let n = scenario::parse(&text, &mut scenarios)
+        .unwrap_or_else(|e| panic!("ai/scenarios.txt line {}: {}", e.line, e.reason.name()));
+    let mut train = vec![scenario::Example::ZERO; model::MAX_EXAMPLES];
+    let mut test = vec![scenario::Example::ZERO; model::MAX_EXAMPLES];
+    let (m, _, _) =
+        model::train_from_scenarios(&scenarios[..n], &model::SHIPPED, &mut train, &mut test);
+    let bytes = model::encode(&m);
+    let digest = kernel_core::sha256::digest(&bytes);
+    let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+    let pin = fs::read_to_string(&pin_path).expect("reading ai/diag.model.sha256");
+    assert_eq!(
+        hex,
+        pin.trim(),
+        "ai/diag.model.sha256 is stale: ai/scenarios.txt now trains {hex} (update the pin on purpose)"
+    );
+    fs::write(out_dir.join("model_sha256.bin"), digest).expect("writing model_sha256.bin");
+    entries.push(("etc/ai/".to_string(), Vec::new(), true));
+    entries.push(("etc/ai/diag.model".to_string(), bytes.to_vec(), false));
+    // Each fixture fails exactly one check of `model::decode`.
+    entries.push(("etc/ai/fixtures/".to_string(), Vec::new(), true));
+    let mut bad_magic = bytes;
+    bad_magic[0] = b'X';
+    let mut wrong_dims = bytes;
+    wrong_dims[8] = 17;
+    let mut absurd = bytes;
+    let at = model::HEADER_LEN + 4;
+    absurd[at..at + 4].copy_from_slice(&(model::MAX_WEIGHT + 1).to_le_bytes());
+    for (name, data) in [
+        ("bad-magic.model", bad_magic.to_vec()),
+        ("truncated.model", bytes[..bytes.len() - 1].to_vec()),
+        ("wrong-dims.model", wrong_dims.to_vec()),
+        ("absurd-weight.model", absurd.to_vec()),
+    ] {
+        entries.push((format!("etc/ai/fixtures/{name}"), data, false));
+    }
+    // The knowledge base (KB11-001): one runbook per condition - a closed
+    // table, so the build refuses a missing entry or a stray file.
+    let kb = ai.join("kb");
+    println!("cargo:rerun-if-changed={}", kb.display());
+    let mut names: Vec<String> = fs::read_dir(&kb)
+        .expect("reading ai/kb")
+        .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+        .collect();
+    names.sort();
+    let mut want: Vec<String> = scenario::Condition::ALL
+        .iter()
+        .map(|c| format!("{}.txt", c.name()))
+        .collect();
+    want.sort();
+    assert_eq!(
+        names, want,
+        "ai/kb must hold exactly one runbook per condition"
+    );
+    entries.push(("etc/ai/kb/".to_string(), Vec::new(), true));
+    for name in names {
+        let path = kb.join(&name);
+        println!("cargo:rerun-if-changed={}", path.display());
+        let text = fs::read(&path).unwrap();
+        assert!(
+            text.len() <= 2048
+                && text
+                    .iter()
+                    .all(|&b| b == b'\n' || (0x20..0x7f).contains(&b)),
+            "ai/kb/{name}: at most 2048 bytes of printable ASCII"
+        );
+        entries.push((format!("etc/ai/kb/{name}"), text, false));
     }
 }
 

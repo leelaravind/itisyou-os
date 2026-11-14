@@ -62,10 +62,15 @@ pub enum FsError {
     BadMagic,
     BadBlockSize,
     BadCrc,
-    /// file_count or an entry references out-of-range blocks.
+    /// file_count or an entry references out-of-range blocks, or (on a
+    /// write) the generation counter cannot advance.
     InconsistentMetadata,
     NameTooLong,
     NameEmpty,
+    /// The name contains a control character (V0.11). A name is echoed into
+    /// listings, audit records and the serial console; a line break in one
+    /// would let the text after it pose as a line of its own.
+    NameInvalid,
     NotFound,
     Exists,
     /// No free space / too many files.
@@ -272,6 +277,20 @@ impl SuperBlock {
         }
     }
 
+    /// The generation the next commit of this directory carries.
+    ///
+    /// The counter comes from the disk. A superblock whose generation cannot
+    /// advance cannot commit anything newer than itself, so the write is
+    /// refused: wrapping to 0 would rank the new commit BELOW the stale slot
+    /// at the next mount (`choose` keeps the higher generation), and in a
+    /// build with overflow checks it was a panic (V1-REL-005 fuzzing found
+    /// both, from a CRC-valid superblock at `u64::MAX`). Reads are unaffected.
+    fn next_generation(&self) -> Result<u64, FsError> {
+        self.generation
+            .checked_add(1)
+            .ok_or(FsError::InconsistentMetadata)
+    }
+
     /// Recompute the high-water mark after the directory changed.
     fn recompute_high_water(&mut self) {
         let high = self
@@ -319,6 +338,14 @@ impl SuperBlock {
         if name.len() > NAME_LEN {
             return Err(FsError::NameTooLong);
         }
+        // Control characters (a line break would split an audit record), and
+        // since the V0.11 review the invisible ones that reorder or hide text.
+        if name
+            .chars()
+            .any(|c| c.is_control() || crate::linebuf::reorders_or_hides(c))
+        {
+            return Err(FsError::NameInvalid);
+        }
         Ok(())
     }
 
@@ -351,6 +378,7 @@ impl SuperBlock {
             .iter()
             .position(|e| !e.used())
             .ok_or(FsError::NoSpace)?;
+        let generation = self.next_generation()?;
         let start = self.find_run(blocks_for(size), pinned)?;
         let mut name_buf = [0u8; NAME_LEN];
         name_buf[..name.len()].copy_from_slice(name.as_bytes());
@@ -361,7 +389,7 @@ impl SuperBlock {
             flags: FLAG_USED,
         };
         self.file_count += 1;
-        self.generation += 1;
+        self.generation = generation;
         self.recompute_high_water();
         Ok((slot, start))
     }
@@ -381,9 +409,10 @@ impl SuperBlock {
             .iter()
             .position(|e| e.used() && e.name_str() == Some(name))
             .ok_or(FsError::NotFound)?;
+        let generation = self.next_generation()?;
         self.entries[slot] = DirEntry::EMPTY;
         self.file_count -= 1;
-        self.generation += 1;
+        self.generation = generation;
         self.recompute_high_water();
         Ok(())
     }
@@ -422,10 +451,11 @@ impl SuperBlock {
         else {
             return self.allocate_avoiding(name, size, pinned);
         };
+        let generation = self.next_generation()?;
         let start = self.find_run(blocks_for(size), pinned)?;
         self.entries[slot].size = size;
         self.entries[slot].start_block = start;
-        self.generation += 1;
+        self.generation = generation;
         self.recompute_high_water();
         Ok((slot, start))
     }
@@ -615,6 +645,34 @@ mod tests {
         assert_eq!(sb.allocate("", 10), Err(FsError::NameEmpty));
         let long = "x".repeat(NAME_LEN + 1);
         assert_eq!(sb.allocate(&long, 10), Err(FsError::NameTooLong));
+    }
+
+    #[test]
+    fn rejects_control_characters_in_names() {
+        let mut sb = SuperBlock::empty(2048);
+        // C0 (a line break, which would split an audit record), DEL and C1.
+        for name in [
+            "a\nb",
+            "a\rb",
+            "\u{1b}[2J",
+            "a\u{7f}",
+            "a\u{85}b",
+            "\u{9b}x",
+            // Reordering and invisible characters (V0.11 review).
+            "\u{202e}:UOYSITI]",
+            "a\u{200b}b",
+            "\u{feff}x",
+            "a\u{2066}b",
+        ] {
+            assert_eq!(sb.allocate(name, 10), Err(FsError::NameInvalid), "{name:?}");
+        }
+        // The exact name a Ring 3 program would use to forge a marker line.
+        let forged = "a\n[ITISYOU:AUDIT] forged";
+        assert_eq!(forged.len(), NAME_LEN);
+        assert_eq!(sb.allocate(forged, 10), Err(FsError::NameInvalid));
+        // Printable non-ASCII is still a name.
+        sb.allocate("caf\u{e9}.txt", 10).unwrap();
+        assert!(sb.find("caf\u{e9}.txt").is_some());
     }
 
     #[test]
@@ -1017,6 +1075,46 @@ mod tests {
         // The high-water mark stays >= every live end, so the V0.9 decoder's
         // `end <= next_free_block` rule still accepts what V0.10 writes.
         assert!(SuperBlock::decode(&v09.encode()).is_ok());
+    }
+
+    /// V1-REL-005 regression (found by the fuzz target
+    /// `itfs::SuperBlock::decode+choose+transactions`): a CRC-valid superblock
+    /// whose generation is `u64::MAX` (or `u64::MAX - 1`, two writes later)
+    /// mounts, and a write did `generation += 1` - a panic with overflow
+    /// checks, a wrap to 0 without (the new commit then ranks below the stale
+    /// slot). Writes are refused, the directory untouched; the volume stays
+    /// readable.
+    #[test]
+    fn a_volume_whose_generation_cannot_advance_refuses_writes() {
+        let mut sb = SuperBlock::empty(64);
+        sb.allocate("hello.txt", 600).unwrap();
+        for generation in [u64::MAX, u64::MAX - 1] {
+            let mut block = sb.encode();
+            block[OFF_GEN..OFF_GEN + 8].copy_from_slice(&generation.to_le_bytes());
+            reseal(&mut block);
+            let mounted = SuperBlock::decode(&block).expect("still mounts");
+            assert_eq!(mounted.find("hello.txt").map(|e| e.size), Some(600));
+            let mut next = mounted;
+            if generation == u64::MAX - 1 {
+                // One commit is still possible, and it is the last.
+                next.allocate("new", 10).unwrap();
+                assert_eq!(next.generation, u64::MAX);
+            }
+            let before = next;
+            assert_eq!(
+                next.allocate("more", 10),
+                Err(FsError::InconsistentMetadata)
+            );
+            assert_eq!(
+                next.replace("hello.txt", 10),
+                Err(FsError::InconsistentMetadata)
+            );
+            assert_eq!(next.remove("hello.txt"), Err(FsError::InconsistentMetadata));
+            assert_eq!(next, before, "a refused write changed the directory");
+            // Errors that do not depend on the counter keep their meaning.
+            assert_eq!(next.remove("ghost"), Err(FsError::NotFound));
+            assert_eq!(next.allocate("", 1), Err(FsError::NameEmpty));
+        }
     }
 
     /// Randomised model check: a long mixed workload on a small volume, with

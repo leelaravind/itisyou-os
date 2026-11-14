@@ -402,6 +402,30 @@ pub fn release_owned(pid: u64) {
     // owned: the port would stay unusable for the rest of the boot.
     crate::net::socket::close_owner(pid);
     crate::net::tcp::close_owner(pid);
+    // V0.11: a view served to it can no longer be cited.
+    crate::ai::forget(pid);
+}
+
+/// Process counts for the approved view (V0.11): every slot, runnable,
+/// waiting (in `wait`, `sleep`, a console read or a window event), and ended
+/// but not yet collected.
+pub fn state_counts() -> (usize, usize, usize, usize) {
+    let guard = TABLE.lock();
+    let Some(table) = guard.as_ref() else {
+        return (0, 0, 0, 0);
+    };
+    let (mut runnable, mut waiting, mut ended) = (0, 0, 0);
+    for slot in table.slots.values() {
+        match slot.state {
+            ProcState::Runnable => runnable += 1,
+            ProcState::Blocked { .. }
+            | ProcState::Sleeping { .. }
+            | ProcState::ConsoleWait
+            | ProcState::GuiWait => waiting += 1,
+            ProcState::Exited(_) | ProcState::Faulted { .. } | ProcState::Killed => ended += 1,
+        }
+    }
+    (table.slots.len(), runnable, waiting, ended)
 }
 
 /// Run the scheduler until nothing is runnable OR `max_ticks` elapse —
@@ -465,14 +489,18 @@ pub fn live_count() -> usize {
     guard.as_ref().map(|t| t.slots.len()).unwrap_or(0)
 }
 
-/// Wake any process blocked in wait() on `child`, delivering `status`, and
-/// reap the child slot.
+/// Wake the parent if it is blocked in wait() on `child` or on any child
+/// (`proctree::wakes`, PROC1-001), delivering `status`, and reap the child
+/// slot.
 fn wake_waiters(table: &mut Table, child: u64, status: u64) {
+    let Some(parent) = table.slots.get(&child).map(|s| s.parent) else {
+        return;
+    };
     let waiters: Vec<u64> = table
         .slots
         .iter()
         .filter_map(|(&pid, s)| match s.state {
-            ProcState::Blocked { on } if on == child => Some(pid),
+            ProcState::Blocked { on } if proctree::wakes(on, pid, child, parent) => Some(pid),
             _ => None,
         })
         .collect();
@@ -675,8 +703,9 @@ pub fn for_each(mut f: impl FnMut(u64, u64, &str, ProcState)) {
 }
 
 /// spawn(path_ptr, path_len) — load an ELF from the VFS into a new process
-/// and admit it. Returns the child pid, or ERR_*. The child INHERITS the
-/// parent's capabilities and FS sandbox exactly (V0.7) — spawning can never
+/// and admit it. Returns the child pid, or ERR_*. The child inherits the
+/// parent's capabilities (less the console-only ones, which `caps::delegate`
+/// never passes on - V0.11) and its FS sandbox (V0.7) — spawning can never
 /// amplify authority.
 pub fn sys_spawn(path_ptr: u64, path_len: u64) -> u64 {
     spawn_common(path_ptr, path_len, u64::MAX, user::Args::empty(), "spawn")
@@ -774,12 +803,23 @@ fn spawn_common(
             // before installing the delegated one, so the child never holds
             // two sets (and the table never leaks the discarded slots).
             crate::capability::revoke_owner(child.pid);
-            child.handles = crate::capability::delegate_to_child(
+            let (handles, all_granted) = crate::capability::delegate_to_child(
                 parent_pid,
                 child.pid,
                 child_caps,
                 crate::interrupts::ticks(),
             );
+            // The global capability table is full (CAP1-001): refuse loudly
+            // rather than admit a child with a silently reduced set and audit
+            // it as if it held `child_caps`. Free what was loaded and grant
+            // partially, so nothing leaks.
+            if !all_granted {
+                crate::capability::revoke_owner(child.pid);
+                child.space.teardown();
+                crate::audit::denied_reason(action, child_caps, "capability_table_full");
+                return ERR_AGAIN;
+            }
+            child.handles = handles;
             let argc = args.count();
             child.args = args;
             // V0.10: the spawner is the parent — the only process that may

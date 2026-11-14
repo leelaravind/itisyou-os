@@ -9,7 +9,7 @@ import { MILESTONES } from '../lib/roadmap';
 const description =
   'Current build status of ITISYOU OS, generated from status/current.json: per-module statuses with the verification rules that decide when a status may change.';
 
-/** The milestone in development, if any — verified work that is not yet released. */
+/** The milestone in development, if any — the current release. */
 const building = MILESTONES.find((m) => m.current && m.status !== 'verified');
 const verificationLabel = STATUS_LABELS[status.verification] ?? status.verification;
 const stampNote = status.commit

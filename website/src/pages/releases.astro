@@ -95,17 +95,17 @@ const downloadable = (r: Release) => r.tag === downloads.tag || r.archive !== un
     <section class="grid grid-cols-1 md:grid-cols-12 gap-gutter mt-8" aria-labelledby="plan-title">
       <div class="md:col-span-5">
         <h2 id="plan-title" class="font-sans text-headline-md text-ink border-b border-line-soft pb-4 mb-6">
-          What a release will contain
+          What a release contains
         </h2>
         <p class="text-body-base text-meta-bright mb-4 max-w-prose">
-          The build pipeline already produces this shape for every commit; a public release will publish exactly what
-          its gate verified:
+          Since v0.8.1 a release publishes the boot images its CI run built and booted — never a local rebuild — under
+          <span class="font-mono text-mono-data">/downloads/&lt;tag&gt;/</span>. Earlier tags carry no images.
         </p>
         <ul class="flex flex-col gap-2 font-mono text-mono-data text-meta-bright list-none">
-          <li class="border border-line bg-log p-3">itisyou-kernel-&#123;bios,uefi&#125;.img — interactive kernel</li>
-          <li class="border border-line bg-log p-3">itisyou-kernel-selftest-&#123;bios,uefi&#125;.img — selftest suite</li>
-          <li class="border border-line bg-log p-3">manifest.txt — sizes + SHA-256 for every artifact</li>
-          <li class="border border-line bg-log p-3">QEMU evidence — serial logs + JSON results of the release run</li>
+          <li class="border border-line bg-log p-3">itisyou-os-&lt;version&gt;-x86_64-uefi.img — UEFI boot image (raw disk, GPT with an EFI system partition)</li>
+          <li class="border border-line bg-log p-3">itisyou-os-&lt;version&gt;-x86_64-bios.img — BIOS boot image (raw disk, MBR)</li>
+          <li class="border border-line bg-log p-3">SHA256SUMS.txt — the SHA-256 of both images, in the format sha256sum -c checks</li>
+          <li class="border border-line bg-log p-3">on /download — the release commit, the CI run that built the images, where they were booted, reproducibility, known limitations</li>
         </ul>
       </div>
       <div class="md:col-span-7">

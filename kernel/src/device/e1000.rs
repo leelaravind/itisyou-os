@@ -92,7 +92,7 @@ const RXD_STAT_EOP: u8 = 1 << 1;
 /// Ring depth. A power of two so the wrap is a mask, and small because this
 /// stack processes a frame to completion before taking the next one — a deeper
 /// ring would only buffer work nobody is doing yet.
-const RING_LEN: usize = 16;
+pub const RING_LEN: usize = 16;
 const RING_MASK: usize = RING_LEN - 1;
 /// Per-descriptor buffer size, matching `RCTL_BSIZE_2048`. Larger than the
 /// 1518-byte maximum Ethernet frame, so no frame is ever split across

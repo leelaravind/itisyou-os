@@ -10,7 +10,9 @@
 //! kernel reports the exit.
 //!
 //! Every `[ITISYOU:` a process prints becomes `[RING3-U:`: the kernel's
-//! evidence prefix belongs to the kernel.
+//! evidence prefix belongs to the kernel. Since V0.11 its control
+//! characters are shown escaped as well (`\x1b`, `\x0d`, ...), so it cannot
+//! move the cursor to redraw the kernel's lines on the operator's terminal.
 
 use crate::sync::Mutex;
 use kernel_core::linebuf::{neutralize_markers, LineBuf};
@@ -36,28 +38,29 @@ const FREE: Slot = Slot {
 static OUT: Mutex<[Slot; SLOTS]> = Mutex::new([FREE; SLOTS]);
 
 /// Send one line (or chunk) to the serial port in a single locked write:
-/// kernel markers neutralized, invalid UTF-8 shown as U+FFFD.
+/// kernel markers neutralized, invalid UTF-8 shown as U+FFFD, and (V0.11,
+/// OUT11-001) every control character but the line feed and the tab shown
+/// escaped rather than performed.
 fn emit(chunk: &[u8]) {
     let mut line = [0u8; LINE + 1];
     let n = chunk.len().min(line.len());
     line[..n].copy_from_slice(&chunk[..n]);
     neutralize_markers(&mut line[..n]);
-    crate::serial::write_fmt(format_args!("{}", Lossy(&line[..n])));
+    crate::serial::write_fmt(format_args!("{}", Escaped(&line[..n])));
 }
 
-/// Display bytes as UTF-8, replacing each invalid sequence with U+FFFD.
-struct Lossy<'a>(&'a [u8]);
+/// Process output as the console shows it (`linebuf::write_escaped`).
+struct Escaped<'a>(&'a [u8]);
 
-impl core::fmt::Display for Lossy<'_> {
+impl core::fmt::Display for Escaped<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        for chunk in self.0.utf8_chunks() {
-            f.write_str(chunk.valid())?;
-            if !chunk.invalid().is_empty() {
-                f.write_str("\u{FFFD}")?;
-            }
-        }
-        Ok(())
+        kernel_core::linebuf::write_escaped(self.0, f)
     }
+}
+
+/// Per-process line buffers in use (V1.0 leak accounting).
+pub fn slots_in_use() -> usize {
+    OUT.lock().iter().filter(|s| s.used).count()
 }
 
 /// Append `bytes` written by `pid`; complete lines go out immediately.
@@ -68,12 +71,16 @@ pub fn write(pid: u64, bytes: &[u8]) {
         .position(|s| s.used && s.pid == pid)
         .or_else(|| slots.iter().position(|s| !s.used));
     let Some(idx) = idx else {
-        // No buffer free: write through rather than lose output. Still
-        // neutralize markers, one bounded chunk at a time.
+        // No buffer free: write through rather than lose output, through a
+        // buffer of this write's own (so a marker split across its chunks
+        // is still caught), ended with a newline if the write leaves a line
+        // open - the next write cannot complete a marker this one started
+        // (V0.11; v0.10.0 emitted each 256-byte chunk and each write on its
+        // own, and a split marker reached the port whole).
         drop(slots);
-        for chunk in bytes.chunks(LINE) {
-            emit(chunk);
-        }
+        let mut once = LineBuf::<LINE>::new();
+        once.push(bytes, emit);
+        once.flush(emit);
         return;
     };
     let slot = &mut slots[idx];
@@ -82,7 +89,6 @@ pub fn write(pid: u64, bytes: &[u8]) {
     slot.buf.push(bytes, emit);
 }
 
-/// Flush `pid`'s partial line (a newline is appended) and release its slot.
 /// Emit `pid`'s partial line without a newline (V0.10): the prompt a
 /// program shows before it reads a line. Markers are neutralized as always.
 pub fn flush_prompt(pid: u64) {
@@ -92,6 +98,7 @@ pub fn flush_prompt(pid: u64) {
     }
 }
 
+/// Flush `pid`'s partial line (a newline is appended) and release its slot.
 pub fn flush_owner(pid: u64) {
     let mut slots = OUT.lock();
     for slot in slots.iter_mut().filter(|s| s.used && s.pid == pid) {

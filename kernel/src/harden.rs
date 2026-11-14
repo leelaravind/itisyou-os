@@ -23,10 +23,17 @@
 //! Each is enabled only if the CPU advertises it, and what was actually
 //! enabled is reported rather than assumed — a hardening feature you believe
 //! is on and is not is worse than one you know is off.
+//!
+//! * **No FPU or SIMD** (V1.0, SEC1-002) — the kernel never saves x87/SSE
+//!   state across a process switch, and every program is built soft-float,
+//!   so that state was a storage channel between processes no capability
+//!   gates (one program's registers were the next one's to read). With
+//!   `CR0.EM` set and `CR4.OSFXSR` clear, an x87 instruction is `#NM` and an
+//!   SSE one `#UD`, both contained: the program ends, nothing leaks.
 
 use crate::serial_println;
 use core::sync::atomic::{AtomicBool, Ordering};
-use x86_64::registers::control::{Cr4, Cr4Flags};
+use x86_64::registers::control::{Cr0, Cr0Flags, Cr4, Cr4Flags};
 
 /// True once SMAP is enabled, so the user-copy helpers know whether the
 /// `stac`/`clac` bracket is needed. Executing `stac` on a CPU without SMAP is
@@ -100,6 +107,9 @@ pub fn init() {
 
     // SAFETY: each bit is only set after CPUID advertised the feature, and
     // this runs during single-threaded boot before any user process exists.
+    // The FPU bits: the kernel is soft-float (x86_64-unknown-none), so
+    // nothing in it executes an x87 or SSE instruction that EM or a clear
+    // OSFXSR would fault.
     unsafe {
         Cr4::update(|flags| {
             if smep {
@@ -111,13 +121,21 @@ pub fn init() {
             if umip {
                 flags.insert(Cr4Flags::USER_MODE_INSTRUCTION_PREVENTION);
             }
+            flags.remove(Cr4Flags::OSFXSR | Cr4Flags::OSXMMEXCPT_ENABLE);
+        });
+        Cr0::update(|flags| {
+            flags.insert(Cr0Flags::EMULATE_COPROCESSOR);
+            flags.remove(Cr0Flags::MONITOR_COPROCESSOR | Cr0Flags::TASK_SWITCHED);
         });
     }
     SMEP_ENABLED.store(smep, Ordering::SeqCst);
     SMAP_ENABLED.store(smap, Ordering::SeqCst);
     UMIP_ENABLED.store(umip, Ordering::SeqCst);
+    let fpu_off = Cr0::read().contains(Cr0Flags::EMULATE_COPROCESSOR)
+        && !Cr4::read().contains(Cr4Flags::OSFXSR);
     serial_println!(
-        "[ITISYOU:HARDEN] cpu_protection smep={smep} smap={smap} umip={umip} cr4={:#x}",
+        "[ITISYOU:HARDEN] cpu_protection smep={smep} smap={smap} umip={umip} user_fpu={} cr4={:#x}",
+        if fpu_off { "off" } else { "ON" },
         Cr4::read_raw(),
     );
 }

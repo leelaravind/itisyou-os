@@ -222,7 +222,9 @@ pub fn load_with(
     let bytes = crate::fs::read(path).map_err(LoadError::File)?;
     let mut process = load_from_bytes(bytes)?;
     process.set_authority(caps, fs_prefixes);
-    process.path = alloc::string::String::from(path);
+    // The canonical path of the file actually loaded, not the caller's
+    // string (a program chooses that string for its children).
+    process.path = crate::fs::canonical_path(path).map_err(LoadError::File)?;
     Ok(process)
 }
 

@@ -1,0 +1,18 @@
+cargo-features = ["per-package-target"]
+
+[package]
+name = "user-ai-probe"
+version.workspace = true
+edition.workspace = true
+description = "V0.11 probe of the AI-native system layer's kernel interfaces (sys_view; later propose)."
+forced-target = "x86_64-unknown-none"
+
+[dependencies]
+ulib = { path = "../ulib" }
+kernel-core = { path = "../../crates/kernel-core" }
+
+[[bin]]
+name = "user-ai-probe"
+path = "src/main.rs"
+test = false
+bench = false

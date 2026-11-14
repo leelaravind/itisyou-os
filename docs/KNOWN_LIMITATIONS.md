@@ -1,7 +1,10 @@
 # Known limitations — honest current state
 
 Updated continuously; last full revision: 2026-09-13 (v0.9.0 release; earlier: V0.8.1 release-integrity
-closeout). Each item says what is true of the current build, not what was true
+closeout); V0.11 items (in development, not released) added 2026-09-14.
+The 2026-11-14 Linux run added the CI and commit-hash items under "Project
+process" and the rollback race under init.
+Each item says what is true of the current build, not what was true
 when the subsystem first landed. Items that later milestones address name the
 milestone; the sequence lives in `docs/ROADMAP.md`.
 
@@ -25,6 +28,13 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
   bootloader BIOS-stage quirk specific to that binary; its ELF is valid and its
   UEFI image boots). Its two-boot persistence test runs on UEFI. Root cause not
   isolated. Every other image boots on both BIOS and UEFI.
+- Boot under emulation is slow and depends on host load. In the V0.11 BIOS
+  runs on the development laptop the first serial line (the bootloader's)
+  arrived between about 5 and 14 s after QEMU started; `/sbin/init` then
+  starts four services (tickd, flapd, inferd, flakyd) before the console is
+  usable. The harness allows 75 s from QEMU's serial connection to the first
+  byte (`qemu-runner`'s default `--boot-timeout-secs`, which no leg
+  overrides), inside each leg's own overall timeout.
 
 ## Kernel, processes, scheduling
 
@@ -50,12 +60,30 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
 - **Userspace init** (V0.10, ADR-0023): `/sbin/init` (pid 1) starts and
   supervises the services in `/etc/init.conf`, which lives in the initramfs —
   there is no persistent configuration and no reload. Its authority is fixed
-  (spawn, IPC, `fs_read` under `/etc`, service reporting), every service
-  inherits its `/etc` filesystem sandbox, and only init and its configured
-  services have deterministic pids. If init dies the kernel ends its whole
+  (spawn, IPC, `fs_read` under `/etc`, service reporting; since V0.11 also
+  the kernel's one-slot `retry`/`stop` mailbox, `init_ctl`, which only the
+  live init may read), every service inherits its `/etc` filesystem
+  sandbox, and only init and its configured services have deterministic
+  pids (since V0.11 four services: tickd, flapd, inferd and the test fixture
+  flakyd, pids 2–5). If init dies the kernel ends its whole
   tree and restarts it at most 3 times. `svc_report` trust: the kernel
   verifies pid, parentage, caps and row ownership; a service's name and
-  policy are init's claim, attributed with `supervisor=`.
+  policy are init's claim, attributed with `supervisor=`. Likewise, in a
+  `retry-service` rollback the kernel kills the pid init names in its `stop`
+  acknowledgement — but only a live child of init running the program
+  `/etc/init.conf` gives that service (anything else is refused
+  `not_an_instance`, ACT11-002), so init gains no kill authority over the
+  rest of the system; which instance of that program it names is still its
+  claim. In the published v1.0.0 images that check races with the instance
+  itself: a service that exits by itself (the fixture `flapd` always does)
+  can end before the kernel acts on init's acknowledgement, and the kernel
+  then prints and audits `rollback_kill_refused ... reason=not_an_instance`
+  for a process that was an instance and is merely gone — about every other
+  run of `ai-retry-bios`. Nothing wrong is killed and the rollback
+  completes; the refusal line and its denied audit record are false. Fixed
+  after v1.0.0 (not in any release yet): an instance that has already ended
+  is reported `rollback_instance_gone`; anything the kernel cannot confirm
+  as an instance is still refused.
 - **Ring 3 shell** (V0.10): `/bin/sh` runs only when the kernel console's
   `rsh` lends it the console's input, and the kernel console waits until it
   exits; the kernel console is still where the system is administered
@@ -78,9 +106,34 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
   a foreground program ran alone and both returned at once); `run` has no
   timeout — the console waits until the program ends — while `bg` gives up
   after 30 s.
-- IPC: bounded kernel message channels (4 channels, ≤256 B, ≤8 queued),
-  non-blocking, addressed by integer id. No shared-memory or synchronous
+- IPC: bounded kernel message channels (8 channels since V0.11 - 6 and 7
+  are `/bin/inferd`'s - ≤256 B, ≤8 queued), non-blocking, addressed by
+  integer id. Since V1.0 an IPC capability names the channels it reaches
+  (ADR-0025): plain `ipc` and every default set reach channels 0–5, and the
+  inference channels 6–7 only by a grant naming them (`ipc:6-7`). v0.11.0
+  and earlier scoped nothing: any holder of the IPC capability reached every
+  channel. Channels still carry no sender identity, so among the processes
+  that hold a channel a message is a claim (inferd's clients check a nonce;
+  the kernel recomputes what it relies on). A message outlives its sender:
+  what a program leaves queued stays until someone takes it, so the next
+  client of that channel can read it as an answer (`tick-client` rejects
+  what it cannot read as a reply - `TICKC-BAD-REPLY` - but an 8-byte message
+  would pass; the V1.0 fuzz legs drain the channels before their checks). A
+  grant is one contiguous range of channels. No shared-memory or synchronous
   rendezvous IPC.
+- **`wait(0)` never returned while the caller's children were running** in
+  v0.10.0 and v0.11.0 (found by V1.0's syscall fuzzer, fixed in V1.0 -
+  PROC1-001): the wake-up on a child's exit matched the waiter's pid alone,
+  so a parent blocked for "any child" slept forever, and a console `run` of
+  it never returned. It needs the Process capability and hangs only the
+  caller and whoever waits for it; `wait(<pid>)` and `wait_nohang` were
+  unaffected.
+- **A page-table frame leaked with store operations** in every release from
+  V0.4 to v0.11.0 (found by V1.0's soak leg, fixed in V1.0): each operation on
+  the persistent store re-opens the NVMe controller, and every open mapped its
+  registers at a fresh virtual address, so about one physical frame was lost
+  per 256 store operations - about 16 MiB per million - until reboot.
+  Since V1.0 the same registers keep one mapping (V1-REL-003).
 - The kernel heap is a fixed **32 MiB** range; no growth. Physical memory above
   4 GiB is ignored by the frame allocator (`ignored_high_frames`).
 - Syscalls run with interrupts masked (`SFMASK` clears IF); blocking waits inside
@@ -117,36 +170,44 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
   anchoring and checking are explicit commands (`audit anchor`, `audit
   check-anchor`), the witness must be reachable, and in the harness the witness
   is a test peer, not a hardened service. Persisting is explicit (`audit
-  save`), not automatic on every record.
-- **Three audit-trail defects in v0.10.0 and every release since v0.8.0**,
-  found during V0.11 development (fixed on the V0.11 branch, shipping in
-  v0.11.0; the published images are unchanged — a release is never rebuilt
-  in place):
-  - AUDIT11-001 — **false TAMPERED.** `audit save` stores only the current
-    boot's in-memory ring (at most 64 records) under a head that covers every
-    record ever made, and recovery verifies from genesis. So a trail saved by
-    any boot after the first, or once the ring has dropped a record, or after
-    a mid-boot `audit verify` (which re-runs boot recovery), is reported
-    `TAMPERED` on the next boot although nobody touched it — and the earlier
-    boots' records are no longer on the disk. Reproduced on the published
-    v0.10.0 image: boot 1 saves 5 records, boot 2 recovers them (`verified`)
-    and saves, boot 3 reports `TAMPERED`. Only a trail saved once, in the
-    first boot, with fewer than 64 records, verifies.
-  - SEC11-001 — **programs can rewrite the evidence.** The filesystem
-    syscalls reach every name in the store, including `/data/audit.log` and
-    the package store's `<app>.<v>.pkg`/`.ok` files, so a program holding
-    `fs_write` with no sandbox (the console's default for `run`) can replace
-    the audit trail — in the limit with a valid empty one, which verifies;
-    only the V0.9 anchor catches that — or delete an application's commit
-    marker, rolling it back without anyone approving it. No program in the
-    image does this.
-  - AUDIT11-002 — **forged kernel lines through the kernel's own output.**
-    File names may contain line breaks, and the kernel echoes names raw (in
-    the audit detail of every `fs_write`/`fs_delete`, `store ls`, `pkg list`
-    and package recovery) and file contents raw (`store cat`). A program with
-    `fs_write` can create `/data/a` + line break + `[ITISYOU:AUDIT] …` and the
-    kernel itself prints a line that reads as a kernel marker; in a saved
-    trail the same line break also triggers AUDIT11-001.
+  save`), not automatic on every record. Since V0.11 the stored trail is a
+  **window of the newest 128 records** whose header names the head its first
+  record extends (`base`): records before the window are gone from the disk
+  and the chain vouches only for those still present (dropping them changes
+  the stored count, which the anchor compares). `audit verify` is read-only
+  and compares the file with the trail this boot last saved or recovered, so
+  a replacement is caught while the system runs even when its chain is valid;
+  across a reboot only the anchor catches a valid replacement. Trails written
+  by v0.8.0–v0.10.0 after the ring had dropped a record, or by a boot other
+  than the first, are reported `TAMPERED` by every version, V0.11 included:
+  that is AUDIT11-001, and such a trail cannot be told apart from a tampered
+  one. A trail that does not verify STAYS reported: recovery continues its
+  chain on purpose, so every later save carries the break and every later
+  boot reports `TAMPERED` (AUDIT11-003; an earlier version of this page said
+  the next save replaced it with a verifying one — it does not). The way out
+  is the operator's: `store rm audit.log`, then a reboot, which starts a
+  fresh trail and loses the old records (they could not be vouched for
+  anyway). An unreadable trail — including one over 256 KiB or over 128
+  records, which is not read at all — is still overwritten by the next save.
+- The persistent store is shared: programs holding `fs_read`/`fs_write` reach
+  every name in it except the files the kernel owns — the audit trail and
+  the package store (`<app>.<v>.pkg`/`.ok`), refused since V0.11 (SEC11-001;
+  v0.10.0 and earlier let such a program replace the audit trail, or delete
+  a package's commit marker to roll it back). There is no per-program
+  directory beyond the path-prefix sandbox. Names with control characters
+  — or, since the V0.11 review, the invisible characters that reorder or
+  hide text — are refused, and every kernel echo of a name or of file
+  contents is one escaped line (AUDIT11-002; v0.10.0 and earlier echoed them
+  raw, so a program's file name could print a line that read as a kernel
+  marker). Printable lookalike characters are not escaped.
+- **Console evidence in v0.10.0** (both fixed in V0.11, found by its
+  adversarial review): a program could still print a genuine-looking
+  `[ITISYOU:` line by splitting the prefix across the kernel's 256-byte
+  output chunks, or across two writes when all 16 line buffers were in use
+  (OUT11-002); and `ps`/`kill` printed the path string a program passed to
+  `spawn`, so a component later popped by `..` could carry a line break and
+  a forged marker into the kernel's own output (SEC11-002). v0.10.0 stays as
+  released.
 - SMEP, SMAP and UMIP are enabled when the CPU advertises them (the harness's
   CPU model does); W^X for user segments, a guard page below the user stack, and
   user-pointer validation are always on — since V0.10 the validation also
@@ -164,6 +225,174 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
   the bootloader-provided boot/console stack has a guard page
   has not been verified.
 - No hardware root of trust, no Secure Boot chain, no measured boot.
+- **V1.0 whole-attack-surface review (V1-SEC-002).** A multi-agent review of
+  every syscall, the ELF loader, the VFS and ITFS, packages and the trust
+  hierarchy, the network stack, input and device parsing, ACPI, the AI layer
+  and the audit trail, each finding checked by an independent refuter
+  (`docs/V1_SECURITY_REVIEW.md` has the full table). Three high-severity
+  defects were found and **fixed** in V1.0, each with a leg and a mutation
+  control: unhandled CPU exceptions from Ring 3 panicking the kernel
+  (SEC1-001), a package launched under another app's name escaping the
+  signing key's scope (SEC1-004), and an IPv4 ICMP responder recursing
+  through a blocking ARP resolve into the syscall stack's guard page
+  (NET1-001). Also fixed: user FPU/SIMD state was a cross-process channel
+  (SEC1-002, FPU now off for programs); `sysret` returned kernel scratch
+  registers (SEC1-003); a store version of 4294967295 overflow-panicked the
+  next install and lenient store-name parsing let a hostile disk name an app
+  `..` (SEC1-005); TCP answered broadcast/multicast sources and echo
+  requests to broadcast (NET1-002); the SYN-RECEIVED→LISTEN reset built an
+  8 KB TCB on the syscall stack (NET1-003); an unbounded NIC drain froze the
+  CPU under a frame flood (NET1-004); read-only `fs_read`/`fs_list` could
+  format a blank or unmountable disk (FS1-001); one Gui program could take the
+  whole compositor budget, now bounded by a per-owner pixel quota that leaves
+  the desktop and other programs their share (GUI1-001); a program holding
+  `spawn` could exhaust the capability table and silently deny authority to
+  every later process (its spawn still audited as if the child held the full
+  set), now refused loudly with `capability_table_full` (CAP1-001); and
+  xHCI/MMIO device inputs were bounded (USB1-001/002/003).
+- **Availability limits a capability holder or a hostile disk can impose
+  (V1-SEC-002, accepted for an experimental single-user VM: each needs an
+  authority the operator granted or a disk edited outside the OS, none
+  crosses a privilege boundary or corrupts kernel memory, all fail closed,
+  and the operator can see and end the cause with `ps`/`kill`/`store rm`).**
+  - A program can **rotate the audit window on demand**: any process, even
+    with no capabilities, can emit 128+ audited denials (e.g. `console_read`
+    while it does not own the console, or any gated call with no handle) and
+    push earlier records out of the 128-record stored trail and the
+    64-record ring before the operator's next `audit save`. Every evicted
+    record was already printed on the serial console — the declared evidence
+    channel — and the chain head still covers it, so this hides records from
+    the on-disk trail, not from the live log. A robust fix (coalescing or
+    per-pid denial budgeting without breaking the append-only hash chain) is
+    future work.
+  - A program with `fs_write` can **fill the 12-slot store directory** (or
+    its space) so the kernel-owned audit trail cannot be saved and no package
+    can install, until the operator removes the files. Nothing reserves a
+    slot for kernel-owned names.
+  - A remote peer can **pin TCP slots and ports until reboot**: a connection
+    left in FIN-WAIT-2, or with unsent data behind a zero window, is never
+    reclaimed, and its local port stays unusable. Eight such connections
+    exhaust the 8-slot table. (ADR-0020's "reclaimed at the next poll" holds
+    only for connections that reach `Closed`.)
+  - A background program that writes partial output can **stall the
+    cooperative busy-point scheduler** during a kernel command, which can
+    make the AI retry-service verification report `result=pass` without the
+    service having run (or make an approval fail). It needs a spawn-holding
+    program running during an operator approval; the AI layer is experimental
+    and every action is operator-approved.
+- **IPC channels 0–5 are a shared cooperative namespace**: a program granted
+  a channel can fill its 8-message queue or leave an oversized (up to 256 B)
+  message at the head that a reader with a smaller buffer cannot dequeue,
+  disrupting other users of that channel (e.g. tickd on 2–3). The inference
+  channels 6–7 are reachable by an explicit `ipc:6-7` grant (ADR-0025) —
+  **and, as the V1.0 review noted, by a holder of the Service ADMIN
+  capability, whose handle is unscoped by design (ADR-0025 §5)**: `service`
+  is console-only (not in the legacy set, not grantable to a package, and no
+  shipped service requests it), so this exception stays with whoever the
+  operator explicitly trusts with supervision. Two further IPC gaps the
+  review found, both low and both fail-closed: `cap_restrict` cannot narrow a
+  channel-scoped IPC handle (it always answers `scope_denied`), so IPC
+  authority can be revoked whole but not time-limited or reduced; and a caps
+  list mixing `service` with a partial channel range widens to every channel
+  with no parse-time warning.
+- **Device-register robustness (V1-SEC-002, lows, QEMU's models are
+  well-behaved):** several drivers would misbehave only on hostile or
+  malfunctioning *emulated* hardware not present in the supported QEMU
+  configuration — UHCI/AC97 I/O-port addition, an xHCI event ring with no
+  deadline, and NVMe `LBADS`/`DSTRD` fields — noted in
+  `docs/V1_SECURITY_REVIEW.md` and left for a hardening pass, since the
+  supported environment is QEMU's own devices.
+
+## AI layer (V0.11 — in development, not released)
+
+- **The model is a linear classifier trained on synthetic data**
+  (MODEL11-001, ADR-0024): three integer yes/no detectors —
+  `service_failed`, `scheduler_paused`, `denial_burst` — each a bias and 16
+  weights over the view's 16 features, trained at build time by an averaged
+  perceptron on examples generated from the hand-written ranges in
+  `ai/scenarios.txt`, never on telemetry observed from a running system. It
+  does not learn at run time. Its measured accuracy — exact match 10000 bp on
+  150 held-out synthetic examples — is also reached by a one-rule baseline
+  for every condition, because the scenarios define each condition by
+  essentially one feature: the figure says the designed distributions are
+  separable, not that the model diagnoses real systems. Inference runs in
+  Ring 3 (`/bin/inferd`), but the kernel evaluates the same model too — only
+  to check the condition a proposal cites, never to decide anything
+  (PROP11-001).
+- **Three conditions, two actions.** `service_failed` may propose only
+  `retry-service` and `scheduler_paused` only `resume-scheduler` (a closed
+  table in `kernel_core::policy`); `denial_burst` is diagnosed but has no
+  action (`AGENT-ACTION id=denial_burst action=none`), and a proposal citing
+  it is refused `action_not_allowed`. There is no runaway-process condition
+  and no action that stops an arbitrary process (no per-process CPU
+  accounting exists to detect one, and there is no Ring 3 kill to refuse;
+  ADR-0024) — the only kill is `retry-service`'s rollback of the instance it
+  asked init to start. Knowledge is
+  a fixed map — one runbook per condition under `/etc/ai/kb/` — not
+  retrieval, and the agent does not plan, generate text or learn. It files
+  one proposal per run and names as its retry target only the first failed
+  service in the view (on the shipped image, flapd), so `ai-retry-bios` files
+  the proposal for flakyd through its test probe, not through the agent.
+- **What inferd answers is an unauthenticated claim.** IPC carries no sender
+  identity (see *Kernel, processes, scheduling*). In v0.11.0 every program
+  `run` from the console without a caps list held the IPC capability for
+  every channel, so any such process could take inferd's requests off
+  channel 6 — reading the 16 features the requester derived from its view —
+  or answer on channel 7. Since V1.0 (ADR-0025) only a process granted
+  `ipc:6-7` by name reaches those channels — inferd, and whatever the
+  operator starts with that grant — so the residual is limited to processes
+  holding that grant. The nonce a client sends only lets an honest
+  client discard stale and foreign replies; it authenticates nothing. A
+  reply read by the wrong client is discarded, not put back, so clients
+  asking at the same time can lose each other's answers and time out
+  (`AGENT-INFER-TIMEOUT`, after 3 s). A spoofed reply can therefore mislead a
+  diagnosis, but it cannot get an unjustified proposal filed: the kernel
+  recomputes the cited condition from the view it last served that process,
+  with the model compiled into it, and refuses a mismatch
+  (`diagnosis_mismatch`).
+- **Proposals live only in kernel memory.** The table holds 8 and is lost at
+  reboot (ids start again at 1 on every boot); what survives is the audit
+  records, and only if the trail is saved (`audit save`). New proposals are
+  refused `table_full` while all 8 are pending. One pending proposal per
+  submitter means per process: separate processes the console granted
+  `propose` can each hold one. A proposal must cite a view served to its
+  submitter at most 500 ticks (5 s) earlier, and a pending one expires 6000
+  ticks (60 s) after it was filed — checked whenever a proposal is filed and
+  when the console runs `proposals`, `approve` or `deny`, not on the clock
+  (expiry is host-tested; no QEMU leg waits out the 60 s). Only the filing and
+  execution audit records (`proposal_submitted`, `action_executed`) cite the
+  model and the view, by a 16-hex-digit digest prefix, and the kernel
+  forgets the view's bytes when the process it served ends, so a diagnosis
+  cannot be re-derived from the trail afterwards.
+- **The healthy case is not observable in the shipped image.** flapd fails
+  by design on every boot (and flakyd until a retry is approved), so the
+  running system always shows at least `service_failed`, and
+  `ai-diagnose-bios` forbids `conditions=none`. The no-condition diagnosis is
+  covered only by host tests: the held-out synthetic examples include the two
+  `healthy` scenarios of `ai/scenarios.txt`, and a unit test checks that a
+  detector scoring exactly zero does not fire.
+- **`/bin/flakyd` is a test fixture shipped in the image**, as
+  `/sbin/init`'s fourth service (no capabilities), so that the success path
+  of `retry-service` can be exercised: it exits with failure whenever it is
+  started before 300 ticks (3 s) of guest uptime and runs from then on, so at
+  boot init restarts it three times and leaves its row Failed until a retry
+  is approved.
+- **Approval is the kernel console's alone.** `approve <id>` and
+  `deny <id>` exist only in the kernel console, which reads no input while
+  the Ring 3 shell holds it. There is no remote or multi-operator approval,
+  and nothing records which person approved: the audit says `by=console` /
+  `approved_by=console` and no more. Every proposal needs approval — the
+  policy has no automatic path — and `approve` holds the console for the
+  verification window (1 s for `resume-scheduler`, 3 s for `retry-service`,
+  plus up to 3 s for each acknowledgement it waits for from init).
+- **Guest time is not wall time.** The kernel's clocks are the 100 Hz PIT
+  tick and the TSC calibrated against it at boot: the TTL and the view's age
+  are counted in ticks, verification windows and `busy` in calibrated TSC
+  time. Under QEMU's emulation (TCG: the runner passes no accelerator) guest
+  time runs slower than the host's wall clock, so a harness pause in host
+  time (`@pause`) ages the guest by less; a leg that needs guest time to pass
+  waits with the console's `busy <ms>` (`ai-retry-bios` runs `busy 3000`
+  before retrying flakyd).
 
 ## Storage
 
@@ -289,6 +518,38 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
 
 ## Project process
 
+- **v1.0.0 has no GitHub CI run, and the workflow at v1.0.0 could not have
+  been green.** Running its steps on Linux (2026-11-14,
+  `docs/LOCAL_LINUX_RUN.md`) passed 55 of 58 QEMU steps. All three failures
+  are dealt with after v1.0.0, none of them in a release yet:
+  `fault-contain-uefi` could not start (the step lacked `--firmware`);
+  `ai-retry-bios` hit the rollback race described under init; and
+  `fault-contain-bios` asserts a `#DB` from `int1`, which the QEMU 8.2.2 of
+  Ubuntu 24.04 does not implement (QEMU 9.1.0 and later do). For the last
+  the owner chose to keep the assertion and change the emulator: the
+  workflow now builds a pinned QEMU 11.1.0 (`scripts/ci-install-qemu.sh`),
+  the version the Windows gate uses. With all three, a local Linux run
+  passes 58 of 58 and the first GitHub run since v0.10.0 is green
+  (`43651248948`, pull request #3, all four jobs). That is one run on a
+  commit after v1.0.0, so V1-REL-001, V1-REL-002 and V1-REP-004 are still
+  BLOCKED.
+- **Image digests depend on the build host, not only on the source.** Two
+  clean builds agree on one host, but the same tree built on GitHub's
+  runner and on another Linux host gives different digests for every image
+  (2026-11-14, `docs/LOCAL_LINUX_RUN.md`), as Windows and Linux builds
+  already did. Cause not isolated; probably absolute toolchain and registry
+  paths in panic locations.
+- **QEMU 8.2.2 is no longer a tested emulator.** Earlier releases' CI ran on
+  it; from this change both the Linux matrix and the Windows gate run QEMU
+  11.1.0, so one emulator version is exercised, not two. On 8.2.2 the
+  matrix passes 57 of 58 steps (2026-11-14) and `fault-contain-bios` cannot
+  pass. `docs/V1_ACCEPTANCE.md` V1-ENV-001 still names "QEMU 8.2.2 on
+  Ubuntu 24.04" as a tested environment; that criterion has not been
+  amended and is the owner's to amend.
+- **The commit hashes cited throughout the documents do not exist on
+  `origin`** — the history there carries the same commits under other
+  hashes. `docs/COMMIT_HASHES.md` maps the release tags and release commits;
+  46 cited hashes are unmapped.
 - Website deployment state is tracked in `docs/REQUIREMENTS.md` (CF-001 and the
   per-release WEB rows).
 - The `v0.8.0` release reported `0.7.0-dev` from its own kernel; `v0.8.1` exists

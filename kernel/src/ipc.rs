@@ -14,7 +14,9 @@ use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 
 /// Number of channels and per-channel/message bounds (kept tiny on purpose).
-const CHANNELS: usize = 4;
+/// V0.11: 8 - channels 6 and 7 carry `/bin/inferd`'s requests and replies
+/// (`kernel_core::infer`).
+const CHANNELS: usize = 8;
 const MSG_MAX: u64 = 256;
 const QUEUE_MAX: usize = 8;
 
@@ -24,11 +26,25 @@ struct Channel {
 
 static CHANNELS_STATE: Mutex<[Option<Channel>; CHANNELS]> = Mutex::new([const { None }; CHANNELS]);
 
+/// Messages queued on every channel (V1.0 leak accounting).
+pub fn queued() -> usize {
+    CHANNELS_STATE
+        .lock()
+        .iter()
+        .flatten()
+        .map(|c| c.queue.len())
+        .sum()
+}
+
 pub fn init() {
     let mut guard = CHANNELS_STATE.lock();
     for slot in guard.iter_mut() {
+        // The whole bounded queue up front (V1.0): a queue grown on demand
+        // keeps its larger buffer after it drains, so what the kernel holds
+        // would depend on the most messages a channel ever queued - which
+        // the syscall fuzzer's leak check read as heap left behind.
         *slot = Some(Channel {
-            queue: VecDeque::new(),
+            queue: VecDeque::with_capacity(QUEUE_MAX),
         });
     }
 }

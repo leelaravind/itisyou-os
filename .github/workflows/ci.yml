@@ -15,6 +15,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # V1-REL-006: every leg below must assert exactly what the local
+      # matrix (scripts/test.ps1) asserts for the same label.
+      - name: CI parity with the local matrix
+        run: python3 scripts/check-ci-parity.py
+
+      # V1-SEC-005: every unsafe site is covered by docs/UNSAFE_INVENTORY.md.
+      - name: Unsafe inventory covers every unsafe site
+        run: python3 scripts/check-unsafe-inventory.py
+
       # rust-toolchain.toml pins the exact nightly + components + target.
       - name: Install pinned Rust toolchain
         run: rustup show
@@ -65,10 +74,27 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+      # QEMU is built from a pinned, checksummed release instead of taken
+      # from the distribution. Ubuntu 24.04 ships QEMU 8.2.2, which does not
+      # implement the one-byte `int1` instruction (it raises #UD; QEMU 9.1.0
+      # and later raise #DB, as hardware does), so `fault-contain-bios`
+      # cannot pass on it. The pin is the QEMU the project develops against,
+      # so this matrix and the Windows gate run the same emulator. The build
+      # is cached; the key changes when the script (version, checksum,
+      # configure flags) does.
+      - name: Cache the pinned QEMU
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/itisyou-qemu
+          key: qemu-${{ runner.os }}-${{ hashFiles('scripts/ci-install-qemu.sh') }}
+
       - name: Install QEMU + OVMF
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf
+          sudo apt-get install -y --no-install-recommends ovmf \
+            build-essential ninja-build pkg-config python3-venv flex bison \
+            libglib2.0-dev libpixman-1-dev libslirp-dev xz-utils curl
+          bash scripts/ci-install-qemu.sh
 
       - name: QEMU boot smoke (BIOS)
         run: |
@@ -125,10 +151,17 @@ jobs:
             --expect B080 --expect B090 --expect B100 --expect B110 \
             --expect B120 --expect B130 --expect B140 --expect B150 \
             --expect B160 \
-            --send help --send version --send memory --send tasks \
-            --send "ls /" --send "cat /etc/version" \
-            --send "run /bin/init" --send shutdown \
-            --require "itisyou-os 0.10.0" \
+            --send help --send version --send system --send memory --send tasks \
+            --send uptime --send "ls /" --send "cat /etc/version" \
+            --send "echo shell-echo-check" --send definitely-not-a-command \
+            --send "run /bin/init" --send "run /bin/broken" --send panic-test \
+            --send shutdown \
+            --require "itisyou-os 1.0.0" \
+            --require "physical: usable_frames=" --require "heap: used=" \
+            --require "etc/" --require "shell-echo-check" \
+            --require "unknown command: definitely-not-a-command" \
+            --require "load failed: Elf(BadMagic)" \
+            --require "panic-test: pass 'confirm'" \
             --require "task 0: kmain" \
             --require "RING3-DONE" \
             --require "run: /bin/init: Exit(0)" \
@@ -163,6 +196,23 @@ jobs:
             --require "[ITISYOU:INPUT] mouse dx=" --require "mouse dx=40 dy=25 " --require "mouse dx=-20 dy=15 " \
             --require "DESKTOP-INPUT-VERIFIED" \
             --timeout-secs 180 --label desktop-input-bios
+
+      - name: QEMU window quotas — per-owner count and pixels (BIOS)
+        run: |
+          # V0.10 + V1.0 GUI1-001: a Gui program's windows are bounded by
+          # count (4) and by backing pixels (half the budget), so one program
+          # cannot take the whole compositor. Two 1024x512 windows reach the
+          # pixel quota exactly; the third is refused before the count cap.
+          cargo run -q -p qemu-runner -- \
+            --image target/images/itisyou-kernel-bios.img \
+            --expect B210 \
+            --send "run /bin/proc-probe gui -- gui-quota" \
+            --send "run /bin/proc-probe gui -- gui-pixels" \
+            --send "shutdown" \
+            --require "PROCPROBE-GUI-QUOTA-OK windows=4" \
+            --require "PROCPROBE-GUI-PIXELS-OK windows=2" \
+            --forbid "PROCPROBE-FAILED" \
+            --timeout-secs 180 --label gui-quota-bios
 
       - name: QEMU device model + AC97 audio (BIOS)
         run: |
@@ -210,7 +260,7 @@ jobs:
           # Enable Slot, Address Device, two control IN transfers,
           # Configure Endpoint, SET_CONFIGURATION/SET_PROTOCOL, and an
           # interrupt transfer carrying a real keypress tagged src=xhci.
-          cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --xhci --expect B190 --expect B210             --send "lsdev" --send "xhciwait"             --inject-after "XHCI-HID-WAITING"             --monitor-cmd "sendkey g"             --send "shutdown"             --require "xhci ready caplength="             --require "xhci device vendor=0x0627"             --require "xhci hid iface=0 endpoint=0x81"             --require "XHCI-HID-REPORT bytes=8"             --require "ascii=g"             --require "[ITISYOU:INPUT] key=g src=xhci"             --forbid "xhci enumerate_failed"             --timeout-secs 300 --label xhci-hid-bios
+          cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --xhci --expect B190 --expect B210             --send "lsdev" --send "xhciwait"             --inject-after "XHCI-HID-WAITING"             --monitor-cmd "sendkey g"             --send "shutdown"             --require "xhci ready caplength="             --require "xhci device vendor=0x0627"             --require "xhci hid iface=0 endpoint=0x81"             --require "XHCI-HID-REPORT bytes=8"             --require "ascii=g"             --require "[ITISYOU:INPUT] key=g src=xhci"             --require "driver: xhci"             --forbid "xhci enumerate_failed"             --timeout-secs 300 --label xhci-hid-bios
 
       - name: QEMU system platform (caps, sandbox, services, packages)
         run: |
@@ -233,7 +283,7 @@ jobs:
           # Proves both directions (client AND responder), the capability
           # gate, and that five hostile frames are refused and answered by
           # nothing.
-          cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --net --expect B190 --expect B200             --send "run /bin/net-probe network"             --send "run /bin/net-denied -"             --send "ping 10.0.2.2 2"             --send "resolve os.itisyou.app"             --send "net" --send "audit" --send "shutdown"             --require "nic_ready driver=e1000 mac=52:54:00:12:34:56 link_up=true"             --require "iface_up ip=10.0.2.15 gateway=10.0.2.2"             --require "NETPROBE-IFACE mac=52:54:00:12:34:56 ip=10.0.2.15 link_up=1"             --require "NETPROBE-BOUND port=40100"             --require "NETPROBE-ECHO-OK bytes=25 from=10.0.2.2"             --require "NETPROBE-RESOLVE-OK name=os.itisyou.app address=93.184.216.34"             --require "NETPROBE-OK"             --require "NETDENY-OK call=net_info"             --require "NETDENY-OK call=udp_bind"             --require "NETDENY-OK call=udp_send"             --require "NETDENY-OK call=udp_recv"             --require "NETDENY-OK call=net_resolve"             --require "NETDENY-ALL-DENIED"             --require "action=udp_bind cap=0x0 result=denied"             --require "kind=network reason=no_handle"             --require "PING-SUMMARY target=10.0.2.2 sent=2 received=2"             --require "RESOLVE-OK name=os.itisyou.app address=93.184.216.34"             --require "[HOST:NET] guest_mac=52:54:00:12:34:56"             --require "[HOST:NET] guest_ip=10.0.2.15"             --require "[HOST:NET] guest_arp_reply from=10.0.2.15"             --require "[HOST:NET] guest_icmp_reply id=4919"             --require "[HOST:NET] dns_query name=os.itisyou.app type=1 class=1"             --require "guest_arp_replies=1 guest_icmp_replies=1 hostile_sent=true replies_to_hostile=0"             --require "bad_ip_csum=0 bad_udp_csum=0 bad_icmp_csum=0"             --require "rx_malformed=3 rx_unwanted=2"             --timeout-secs 300 --label net-bios
+          cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --net --expect B190 --expect B200             --send "run /bin/net-probe network"             --send "run /bin/net-denied -"             --send "ping 10.0.2.2 2"             --send "resolve os.itisyou.app"             --send "net" --send "audit" --send "shutdown"             --require "nic_ready driver=e1000 mac=52:54:00:12:34:56 link_up=true"             --require "iface_up ip=10.0.2.15 gateway=10.0.2.2"             --require "NETPROBE-IFACE mac=52:54:00:12:34:56 ip=10.0.2.15 link_up=1"             --require "NETPROBE-BOUND port=40100"             --require "NETPROBE-ECHO-OK bytes=25 from=10.0.2.2"             --require "NETPROBE-RESOLVE-OK name=os.itisyou.app address=93.184.216.34"             --require "NETPROBE-OK"             --require "NETDENY-OK call=net_info"             --require "NETDENY-OK call=udp_bind"             --require "NETDENY-OK call=udp_send"             --require "NETDENY-OK call=udp_recv"             --require "NETDENY-OK call=net_resolve"             --require "NETDENY-ALL-DENIED"             --require "action=udp_bind cap=0x0 result=denied"             --require "kind=network reason=no_handle"             --require "PING-SUMMARY target=10.0.2.2 sent=2 received=2"             --require "RESOLVE-OK name=os.itisyou.app address=93.184.216.34"             --require "[HOST:NET] guest_mac=52:54:00:12:34:56"             --require "[HOST:NET] guest_ip=10.0.2.15"             --require "[HOST:NET] guest_arp_reply from=10.0.2.15"             --require "[HOST:NET] guest_icmp_reply id=4919"             --require "[HOST:NET] dns_query name=os.itisyou.app type=1 class=1"             --require "guest_arp_replies=1 guest_icmp_replies=1 hostile_sent=true replies_to_hostile=0"             --require "bad_ip_csum=0 bad_udp_csum=0 bad_icmp_csum=0"             --require "rx_malformed=3 rx_unwanted=2"             --require "action=udp_bind cap=0x100 result=ok"             --require "action=net_info cap=0x0 result=denied"             --require "[HOST:NET] hostile_probe_start"             --timeout-secs 300 --label net-bios
 
       - name: QEMU DHCP against QEMU user-mode networking (BIOS)
         run: |
@@ -273,6 +323,7 @@ jobs:
             --require "PING6-SUMMARY target=fec0::2 sent=2 received=2" \
             --require "PING-SUMMARY target=10.0.2.2 sent=1 received=1" \
             --require "rx_malformed=0 rx_unwanted=0 router_adverts=1" \
+            --require "net6: link_local=fe80::5054:ff:fe12:3456 global=fec0::5054:ff:fe12:3456 router=fe80::2" \
             --forbid "IPV6-NO-ROUTER" \
             --timeout-secs 240 --label net-ipv6-bios
 
@@ -374,6 +425,41 @@ jobs:
             --timeout-secs 300 --label trust-bios
           rm -f artifacts/trust-test.img
 
+      - name: QEMU V1.0 a hostile package store is refused (BIOS)
+        run: |
+          # SEC1-004/005: a package filed under another app's name, an app
+          # named `..`, a version 4294967295 and a signed version spelling.
+          rm -f artifacts/hostile-store.img
+          mkdir -p artifacts
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
+            --nvme-persist artifacts/hostile-store.img --expect B190 \
+            --send "store import /pkgs/hello-app-1.itpkg other-app.1.pkg" \
+            --send "store put other-app.1.ok ok" \
+            --send "store import /pkgs/hello-app-1.itpkg ...1.pkg" \
+            --send "store put ...1.ok ok" \
+            --send "pkg list" --send "pkg launch other-app" --send "pkg launch .." \
+            --send "store put hello-app.4294967295.ok ok" \
+            --send "pkg install /pkgs/hello-app-1.itpkg" \
+            --send "store rm hello-app.4294967295.ok" \
+            --send "store put hello-app.+2.ok ok" \
+            --send "pkg install /pkgs/hello-app-1.itpkg" \
+            --send "pkg launch hello-app" --send "shutdown" \
+            --require-order "store: import path=/pkgs/hello-app-1.itpkg name=other-app.1.pkg bytes=" \
+            --require-order "  other-app: active=Some(1)" \
+            --require-order "launch name=other-app v=1 result=refused reason=name_mismatch manifest_name=hello-app" \
+            --require-order "pkg: launch other-app: BadPackage" \
+            --require-order "pkg: launch ..: NotInstalled" \
+            --require-order "stage name=hello-app result=refused reason=version_space" \
+            --require-order "pkg: install refused: Storage" \
+            --require-order "install name=hello-app v=1 result=ok" \
+            --require-order "HELLO-APP-OK" \
+            --require "action=pkg_launch cap=0x0 result=denied" --require "reason=bad_name" \
+            --require "action=pkg_stage cap=0x0 result=denied" \
+            --forbid "  ..: active=" --forbid "launch name=other-app v=1 caps=" \
+            --forbid "launch name=.. " \
+            --timeout-secs 300 --label pkg-store-hostile-bios
+          rm -f artifacts/hostile-store.img
+
       - name: QEMU kernel stack guard (BIOS)
         run: |
           cargo run -q -p qemu-runner -- \
@@ -390,11 +476,16 @@ jobs:
         run: |
           cargo run -q -p qemu-runner -- \
             --image target/images/itisyou-kernel-bios.img --expect B200 \
-            --send "bg /bin/line-probe spawn" --send "shutdown" \
+            --send "bg /bin/line-probe spawn" --send "run /bin/line-probe -- P" \
+            --send "ps" --send "shutdown" \
             --require "LINEPROBE-A-0123456789abcdefghijklmnopqrstuv" \
             --require "LINEPROBE-B-0123456789abcdefghijklmnopqrstuv" \
             --require "[RING3-U:SVC] spoofed-by-ring3" --require "LINEPROBE-OK" \
+            --require "[RING3-U:SVC] spoofed-split" \
+            --require "LINEPROBE-HOSTILE-PATH result=" \
+            --require "path=/bin/spin-forever state=" \
             --forbid "[ITISYOU:SVC] spoofed-by-ring3" --forbid "LINEPROBE-FAILED" \
+            --forbid "[ITISYOU:SVC] spoofed-split" --forbid "[ITISYOU:AUDIT] forged" \
             --timeout-secs 240 --label line-atomic-bios
 
       - name: QEMU kernel copies refuse read-only user memory (BIOS)
@@ -428,6 +519,7 @@ jobs:
             --require "PROCPROBE-NOHANG-AGAIN-OK" \
             --require "PROCPROBE-NOHANG-REAPED status=7" \
             --require "PROCPROBE-ANY-REAPED status=7" \
+            --require "PROCPROBE-WAIT-ANY status=7" \
             --require "PROCPROBE-SLEEP-OK requested=50" \
             --require "PROCPROBE-SLEEP-BOUND-OK" \
             --require "PROCPROBE-ORPHAN-SPAWNED" \
@@ -481,8 +573,8 @@ jobs:
             --send "ps" \
             --send "run /bin/tick-client" \
             --send "shutdown" \
-            --require "service tickd /bin/tickd caps=ipc restart=always" \
-            --require "INIT-CONFIG-OK path=/etc/init.conf services=2 order=tickd,flapd" \
+            --require "service tickd /bin/tickd caps=ipc:2-3 restart=always" \
+            --require "INIT-CONFIG-OK path=/etc/init.conf services=4 order=tickd,flapd,inferd,flakyd" \
             --require "INIT-CONFIG-ERROR path=/etc/init-tests/cycle.conf line=0 reason=cycle" \
             --require "INIT-CONFIG-ERROR path=/etc/init-tests/badcap.conf line=2 reason=unknown_capability" \
             --require "INIT-CONFIG-ERROR path=/etc/init.conf line=0 reason=read_denied" \
@@ -500,13 +592,15 @@ jobs:
             --forbid "ARGS-FAILED" \
             --forbid "INIT-USAGE" \
             --forbid "INIT-REPORT-REFUSED" \
-            --require '[ITISYOU:INIT] start pid=1 path=/sbin/init caps=0x413 sandbox=/etc' \
-            --require 'INIT-CONFIG path=/etc/init.conf services=2 order=tickd,flapd' \
-            --require 'pid=1 action=spawn cap=0x2 result=ok' \
+            --require '[ITISYOU:INIT] start pid=1 path=/sbin/init caps=0xff0413 sandbox=/etc' \
+            --require 'INIT-CONFIG path=/etc/init.conf services=4 order=tickd,flapd,inferd,flakyd' \
+            --require 'pid=1 action=spawn cap=0xc0002 result=ok' \
             --require 'pid=1 action=spawn cap=0x0 result=ok' \
-            --require 'bg_start name=tickd pid=2 caps=0x2 long_running=true supervisor=1' \
+            --require 'bg_start name=tickd pid=2 caps=0xc0002 long_running=true supervisor=1' \
             --require 'bg_start name=flapd pid=3 caps=0x0 long_running=true supervisor=1' \
-            --require '[ITISYOU:INIT] ready pid=1 services=2' \
+            --require 'bg_start name=inferd pid=4 caps=0xc00012 long_running=true supervisor=1' \
+            --require 'bg_start name=flakyd pid=5 caps=0x0 long_running=true supervisor=1' \
+            --require '[ITISYOU:INIT] ready pid=1 services=4' \
             --require '[ITISYOU:INIT] settled ready=true' \
             --require '  pid=1 ppid=0 path=/sbin/init state=' \
             --require '  pid=2 ppid=1 path=/bin/tickd state=runnable' \
@@ -517,7 +611,7 @@ jobs:
             --require '[ITISYOU:INIT] died pid=1 status=killed' \
             --require 'action=restart restarts=1' \
             --require '[ITISYOU:INIT] restart pid=' \
-            --require 'caps=0x413 sandbox=/etc restarts=1' \
+            --require 'caps=0xff0413 sandbox=/etc restarts=1' \
             --require 'kill: pid=2: no such process' \
             --forbid "settled ready=false" \
             --forbid "init=true reason=" \
@@ -557,7 +651,7 @@ jobs:
             --require "[ITISYOU:CONSOLE] owner=kernel reason=owner_exit" \
             --require "rsh: /bin/sh: exit=0" \
             --require "back-in-kernel" \
-            --require "itisyou-os 0.10" \
+            --require "(x86_64, QEMU, pre-alpha)" \
             --require "shutting down (QEMU exit)" \
             --forbid "unknown command: rsh-only-builtin" \
             --forbid "unknown command: pid" \
@@ -723,7 +817,7 @@ jobs:
           # exit treated as a fault and restarted under the bounded policy,
           # then Failed at the ceiling rather than a restart storm; and the
           # system staying healthy and interactive throughout.
-          cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --expect B190             --send "bg /bin/tick-client"             --send "bg /bin/spin-finite"             --send "svc"             --send "bg /bin/tick-client"             --send "shutdown"             --require "bg_start name=tickd pid=2 caps=0x2 long_running=true"             --require "bg_start name=flapd pid=3 caps=0x0 long_running=true"             --require "TICKD-READY" --require "TICKD-ALIVE tick="             --require "TICKD-SERVED n=2" --require "TICKC-OK passes="             --require "bg_restart name=flapd pid=" --require "clean_exit=true"             --require "bg_failed name=flapd restarts=3"             --require "name=flapd state=failed"             --require "tickd  Running"             --require "flapd  Failed { restarts: 3 }"             --require "SVC-CLIENT-OK"             --require "svc: started=3 done=2 failed=1 restarts=3"             --require "shutting down (QEMU exit)"             --timeout-secs 300 --label services-bg-bios
+          cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --expect B190             --send "bg /bin/tick-client"             --send "bg /bin/spin-finite"             --send "svc"             --send "bg /bin/tick-client"             --send "shutdown"             --require "bg_start name=tickd pid=2 caps=0xc0002 long_running=true"             --require "bg_start name=flapd pid=3 caps=0x0 long_running=true"             --require "TICKD-READY" --require "TICKD-ALIVE tick="             --require "TICKD-SERVED n=2" --require "TICKC-OK passes="             --require "bg_restart name=flapd pid=" --require "clean_exit=true"             --require "bg_failed name=flapd restarts=3"             --require "name=flapd state=failed"             --require "tickd  Running"             --require "flapd  Failed { restarts: 3 }"             --require "SVC-CLIENT-OK"             --require "svc: started=3 done=2 failed=1 restarts=3"             --require "shutting down (QEMU exit)"             --timeout-secs 300 --label services-bg-bios
 
       - name: QEMU hardening (SMEP/SMAP/UMIP, W^X, stack guard)
         run: |
@@ -735,6 +829,61 @@ jobs:
           # not writable, and a kernel address is unreadable. The two
           # --forbid assertions state the refusals, which print no line.
           cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --expect B210             --send "harden"             --send "run /bin/init"             --send "run /bin/wx-test"             --send "run /bin/harden-probe"             --send "run /bin/stack-guard-probe"             --send "run /bin/pf-test"             --send "shutdown"             --require "cpu_protection smep=true smap=true umip=true"             --require "harden: smep=true smap=true umip=true"             --require "RING3-DONE"             --require "load failed: WxSegment"             --require "HARDEN-PROBE-SGDT"             --require "vector=13 addr=0x0 contained=true"             --require "STACKGUARD-WROTE page=15"             --require "vector=14 addr=0x7ffffdf000 contained=true"             --require "addr=0xffff8000dead0000 contained=true"             --forbid "HARDEN-LEAK-SGDT"             --forbid "STACKGUARD-LEAK"             --timeout-secs 300 --label harden-bios
+
+      - name: QEMU V1.0 every CPU exception from Ring 3 is contained (BIOS)
+        run: |
+          # SEC1-001/002/003: #DE, #DB (int1, TF), a non-canonical stack push,
+          # x87 and SSE each end only the program; after a syscall the
+          # scratch registers come back zero. The runner fails on a panic.
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
+            --expect B210 \
+            --send "run /bin/fault-probe - -- div0" --send "run /bin/fault-probe - -- int1" \
+            --send "run /bin/fault-probe - -- step" --send "run /bin/fault-probe - -- stack" \
+            --send "run /bin/fault-probe - -- x87" --send "run /bin/fault-probe - -- sse" \
+            --send "run /bin/fault-probe - -- regs" --send "run /bin/child" --send "shutdown" \
+            --require "cpu_protection smep=true smap=true umip=true user_fpu=off" \
+            --require-order "FAULTPROBE-ARMED mode=div0" \
+            --require-order "exception=divide_error vector=0 cs_rpl=3" \
+            --require-order "run: /bin/fault-probe: Fault { vector: 0," \
+            --require-order "FAULTPROBE-ARMED mode=int1" \
+            --require-order "exception=debug vector=1 cs_rpl=3" \
+            --require-order "run: /bin/fault-probe: Fault { vector: 1," \
+            --require-order "FAULTPROBE-ARMED mode=step" \
+            --require-order "exception=debug vector=1 cs_rpl=3" \
+            --require-order "run: /bin/fault-probe: Fault { vector: 1," \
+            --require-order "FAULTPROBE-ARMED mode=stack" \
+            --require-order "run: /bin/fault-probe: Fault { vector: " \
+            --require-order "FAULTPROBE-ARMED mode=x87" \
+            --require-order "exception=device_not_available vector=7 cs_rpl=3" \
+            --require-order "run: /bin/fault-probe: Fault { vector: 7," \
+            --require-order "FAULTPROBE-ARMED mode=sse" \
+            --require-order "exception=invalid_opcode cs_rpl=3" \
+            --require-order "run: /bin/fault-probe: Fault { vector: 6," \
+            --require-order "FAULTPROBE-REGS clear=true checked=12" \
+            --require-order "run: /bin/child: Exit(7)" \
+            --forbid "FAULTPROBE-UNCONTAINED" --forbid "FAULTPROBE-REGS clear=false" \
+            --timeout-secs 240 --label fault-contain-bios
+
+      - name: QEMU V1.0 CPU exceptions contained, FPU off (UEFI)
+        run: |
+          # OVMF leaves CR4.OSFXSR set; the kernel must clear it.
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-uefi.img --uefi \
+            --firmware /usr/share/OVMF/OVMF_CODE_4M.fd \
+            --expect B210 \
+            --send "run /bin/fault-probe - -- div0" --send "run /bin/fault-probe - -- x87" \
+            --send "run /bin/fault-probe - -- sse" --send "run /bin/fault-probe - -- regs" \
+            --send "run /bin/child" --send "shutdown" \
+            --require "cpu_protection smep=true smap=true umip=true user_fpu=off" \
+            --require-order "FAULTPROBE-ARMED mode=div0" \
+            --require-order "run: /bin/fault-probe: Fault { vector: 0," \
+            --require-order "FAULTPROBE-ARMED mode=x87" \
+            --require-order "run: /bin/fault-probe: Fault { vector: 7," \
+            --require-order "FAULTPROBE-ARMED mode=sse" \
+            --require-order "run: /bin/fault-probe: Fault { vector: 6," \
+            --require-order "FAULTPROBE-REGS clear=true checked=12" \
+            --require-order "run: /bin/child: Exit(7)" \
+            --forbid "FAULTPROBE-UNCONTAINED" --forbid "FAULTPROBE-REGS clear=false" \
+            --timeout-secs 300 --label fault-contain-uefi
 
       - name: QEMU program arguments (console and parent-to-child)
         run: |
@@ -831,14 +980,20 @@ jobs:
         run: |
           # Capability-scoped Ring 3 writes to the persistent store. Boot 1
           # walks the contract - create, atomic overwrite to a different
-          # length, list, delete, and four refusals each for a different
+          # length, list, delete, and five refusals each for a different
           # reason. `fs-write-denied` holds fs_read and nothing else, so its
           # refusals prove the WRITE right specifically: it can still read
           # and list the same store. The sandbox is tested separately from
           # the capability by confining a writer to /pkgs.
+          # V0.11: the writer also tries a name with a line break in it
+          # (AUDIT11-002: echoed into the audit detail, it forged a kernel
+          # marker line) and the kernel-owned files (SEC11-001): the audit
+          # trail and the package store. An application is installed first,
+          # so the commit marker the writer tries to delete is real, and
+          # `pkg list` shows it is still active afterwards.
           # Boot 2 (fresh guest, same disk) reads back what Ring 3 wrote.
           rm -f artifacts/fswrite-test.img
-          cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --nvme-persist artifacts/fswrite-test.img             --expect B190             --send "run /bin/fs-writer fs_read,fs_write"             --send "store put planted.txt planted"             --send "run /bin/fs-write-denied fs_read"             --send "run /bin/fs-writer fs_read,fs_write /pkgs"             --send "run /bin/fs-user-persist fs_read,fs_write"             --send "store ls" --send "audit" --send "shutdown"             --require "FSWRITE-CREATED bytes=17"             --require "FSWRITE-OVERWROTE bytes=34"             --require "FSWRITE-LISTED"             --require "FSWRITE-ERRORS-OK"             --require "FSWRITE-DELETED"             --require "FSWRITE-OK"             --require "FSDENY-OK call=fs_write"             --require "FSDENY-OK call=fs_delete"             --require "FSDENY-READ-STILL-ALLOWED"             --require "FSDENY-LIST-STILL-ALLOWED"             --require "FSDENY-ALL-DENIED"             --require "FSWRITE-FAILED step=create"             --require "action=fs_write_sandbox cap=0x80 result=denied"             --require "action=fs_write cap=0x80 result=ok"             --require "action=fs_delete cap=0x80 result=ok"             --require "FSUSER-WROTE bytes=38"             --timeout-secs 300 --label fs-write-bios
+          cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --nvme-persist artifacts/fswrite-test.img             --expect B190             --send "pkg install /pkgs/hello-app-1.itpkg"             --send "run /bin/fs-writer fs_read,fs_write"             --send "pkg list"             --send "store cat echo.txt"             --require "store: echo.txt = line1\x0a[RING3-U:AUDIT] forged-content"             --require "FSWRITE-KERNEL-OWNED-REFUSED"             --require "action=fs_write cap=0x80 result=denied"             --require "action=fs_delete cap=0x80 result=denied"             --require "action=fs_read cap=0x10 result=denied"             --require "reason=kernel_owned"             --require "hello-app: active=Some(1) previous=None staged=None"             --forbid "[ITISYOU:AUDIT] forged"             --send "store put planted.txt planted"             --send "run /bin/fs-write-denied fs_read"             --send "run /bin/fs-writer fs_read,fs_write /pkgs"             --send "run /bin/fs-user-persist fs_read,fs_write"             --send "store ls" --send "audit" --send "shutdown"             --require "FSWRITE-CREATED bytes=17"             --require "FSWRITE-OVERWROTE bytes=34"             --require "FSWRITE-LISTED"             --require "FSWRITE-ERRORS-OK"             --require "FSWRITE-DELETED"             --require "FSWRITE-OK"             --require "FSDENY-OK call=fs_write"             --require "FSDENY-OK call=fs_delete"             --require "FSDENY-READ-STILL-ALLOWED"             --require "FSDENY-LIST-STILL-ALLOWED"             --require "FSDENY-ALL-DENIED"             --require "FSWRITE-FAILED step=create"             --require "action=fs_write_sandbox cap=0x80 result=denied"             --require "action=fs_write cap=0x80 result=ok"             --require "action=fs_delete cap=0x80 result=ok"             --require "FSUSER-WROTE bytes=38"             --timeout-secs 300 --label fs-write-bios
           cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --nvme-persist artifacts/fswrite-test.img             --expect B190             --send "run /bin/fs-user-persist fs_read,fs_write"             --send "store ls" --send "shutdown"             --require "FSUSER-VERIFIED bytes=38"             --timeout-secs 300 --label fs-write-persist
           rm -f artifacts/fswrite-test.img
 
@@ -885,12 +1040,73 @@ jobs:
           # Records are hash-chained, so an edited trail cannot verify.
           # Boot 1 persists it, boot 2 (fresh guest, same disk) recomputes
           # the chain and gets the same head, boot 3 forges the stored
-          # header and must be reported as TAMPERED.
+          # header and `audit verify` (read-only since V0.11) must report
+          # it TAMPERED.
           rm -f artifacts/audit-test.img
           cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --nvme-persist artifacts/audit-test.img             --expect B210             --send "pkg install /pkgs/hello-app-1.itpkg"             --send "run /bin/fs-writer fs_read,fs_write"             --send "audit" --send "audit save" --send "shutdown"             --require "trail_recovered status=absent"             --require "audit: chain boot=0"             --require "trail_saved records="             --timeout-secs 300 --label audit-persist-write
           cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --nvme-persist artifacts/audit-test.img             --expect B210             --send "audit" --send "shutdown"             --require "trail_recovered status=verified records="             --require "audit: chain boot=1"             --timeout-secs 300 --label audit-persist-verify
-          cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --nvme-persist artifacts/audit-test.img             --expect B210             --send "store put audit.log itisyou-audit v1 boot=0 count=1 head=0000000000000000000000000000000000000000000000000000000000000000"             --send "audit verify" --send "shutdown"             --require "trail_recovered status=verified"             --require "trail_recovered status=TAMPERED"             --timeout-secs 300 --label audit-persist-tamper
+          cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --nvme-persist artifacts/audit-test.img             --expect B210             --send "store put audit.log itisyou-audit v1 boot=0 count=1 head=0000000000000000000000000000000000000000000000000000000000000000"             --send "audit verify" --send "shutdown"             --require "trail_recovered status=verified"             --require "trail_checked status=TAMPERED reason=chain"             --timeout-secs 300 --label audit-persist-tamper
+          # Boot-time detection, and a tampered trail stays reported across a
+          # save until the operator removes it (AUD08-001, V0.11 review).
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img --nvme-persist artifacts/audit-test.img --expect B210 --send "store put audit.log itisyou-audit v2 boot=7 count=0 base=1111111111111111111111111111111111111111111111111111111111111111 head=2222222222222222222222222222222222222222222222222222222222222222" --send "shutdown" --require "trail_recovered status=TAMPERED" --forbid "trail_recovered status=verified" --timeout-secs 300 --label audit-tamper-boot
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img --nvme-persist artifacts/audit-test.img --expect B210 --send "audit save" --send "audit verify" --send "shutdown" --require "trail_recovered status=TAMPERED" --require "trail_saved records=" --require "trail_checked status=TAMPERED reason=chain" --forbid "trail_recovered status=verified" --forbid "trail_checked status=verified" --timeout-secs 300 --label audit-tamper-save
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img --nvme-persist artifacts/audit-test.img --expect B210 --send "store rm audit.log" --send "shutdown" --require "trail_recovered status=TAMPERED" --require "store: rm name=audit.log" --forbid "trail_recovered status=verified" --timeout-secs 300 --label audit-tamper-stays
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img --nvme-persist artifacts/audit-test.img --expect B210 --send "audit save" --send "audit verify" --send "shutdown" --require "trail_recovered status=absent" --require "trail_checked status=verified reason=none" --timeout-secs 300 --label audit-tamper-cleared
           rm -f artifacts/audit-test.img
+
+      - name: QEMU audit trail across boots and past the window (three boots)
+        run: |
+          # AUDIT11-001. Until V0.11 the trail stored only the in-memory
+          # ring's records (64, this boot's only) under a head covering every
+          # record ever made, so the next boot reported a trail nobody
+          # touched as TAMPERED whenever the ring had dropped a record or an
+          # earlier boot's trail had been recovered. Boot 1 makes more
+          # records than the stored window holds (13 per fs-writer run x 11,
+          # plus the boot's own, > 128), so the save must move `base` off
+          # genesis. Boot 2 recovers it, adds records, checks the file
+          # mid-boot (read-only: before V0.11 this re-ran recovery and
+          # dropped the unsaved records from the chain) and saves again.
+          # Boot 3 must find the second boot's trail verified.
+          rm -f artifacts/audit-window.img
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
+            --nvme-persist artifacts/audit-window.img --expect B210 \
+            --send "run /bin/fs-writer fs_read,fs_write" \
+            --send "run /bin/fs-writer fs_read,fs_write" \
+            --send "run /bin/fs-writer fs_read,fs_write" \
+            --send "run /bin/fs-writer fs_read,fs_write" \
+            --send "run /bin/fs-writer fs_read,fs_write" \
+            --send "run /bin/fs-writer fs_read,fs_write" \
+            --send "run /bin/fs-writer fs_read,fs_write" \
+            --send "run /bin/fs-writer fs_read,fs_write" \
+            --send "run /bin/fs-writer fs_read,fs_write" \
+            --send "run /bin/fs-writer fs_read,fs_write" \
+            --send "run /bin/fs-writer fs_read,fs_write" \
+            --send "audit save" --send "audit verify" --send "audit" --send "shutdown" \
+            --require "trail_recovered status=absent" \
+            --require "trail_saved records=128 " \
+            --require "trail_checked status=verified reason=none records=128 " \
+            --require "audit: chain boot=0 saved_records=128 window=128 " \
+            --forbid "base=0000000000000000000000000000000000000000000000000000000000000000" \
+            --forbid "FSWRITE-FAILED" \
+            --timeout-secs 300 --label audit-window-write
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
+            --nvme-persist artifacts/audit-window.img --expect B210 \
+            --send "run /bin/fs-writer fs_read,fs_write" --send "audit verify" \
+            --send "audit save" --send "audit verify" --send "audit" --send "shutdown" \
+            --require "trail_recovered status=verified records=128 " \
+            --require "trail_checked status=verified reason=none records=128 " \
+            --require "trail_saved records=128 " \
+            --require "audit: chain boot=1 saved_records=128 window=128 " \
+            --forbid "status=TAMPERED" \
+            --timeout-secs 300 --label audit-window-continue
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
+            --nvme-persist artifacts/audit-window.img --expect B210 \
+            --send "audit" --send "shutdown" \
+            --require "trail_recovered status=verified records=128 " \
+            --require "audit: chain boot=2 " \
+            --forbid "status=TAMPERED" \
+            --timeout-secs 300 --label audit-window-verify
+          rm -f artifacts/audit-window.img
 
       - name: QEMU audit anchoring against an off-disk witness (four boots)
         run: |
@@ -913,7 +1129,9 @@ jobs:
           cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
             --nvme-persist artifacts/anchor-test.img \
             --expect B210 --send "store put audit.log itisyou-audit v1 boot=0 count=0 head=0000000000000000000000000000000000000000000000000000000000000000" \
-            --send "shutdown" --timeout-secs 240 --label audit-anchor-forge
+            --send "audit verify" --send "shutdown" \
+            --require "trail_checked status=TAMPERED reason=replaced records=0 " \
+            --timeout-secs 240 --label audit-anchor-forge
           cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
             --net-user --nvme-persist artifacts/anchor-test.img --audit-witness artifacts/anchor-witness.txt \
             --expect B210 --send "audit check-anchor 10.0.2.2 {WITNESS_PORT}" --send "shutdown" \
@@ -936,6 +1154,24 @@ jobs:
           cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --nvme-persist artifacts/update-test.img             --expect B190             --send "pkg install /pkgs/hello-app-1.itpkg"             --send "pkg stage /pkgs/hello-app-2.itpkg"             --send "shutdown"             --require "install name=hello-app v=1 result=ok"             --require "stage name=hello-app v=2"             --timeout-secs 240 --label update-interrupt
           cargo run -q -p qemu-runner --             --image target/images/itisyou-kernel-bios.img             --nvme-persist artifacts/update-test.img             --expect B190             --send "pkg recover"             --send "pkg launch hello-app"             --send "shutdown"             --require "orphan_staged=v2 action=remove"             --require "launch name=hello-app v=1"             --require "HELLO-APP-OK"             --timeout-secs 240 --label update-recovery
           rm -f artifacts/update-test.img
+
+      - name: QEMU capability-table exhaustion is loud (BIOS)
+        run: |
+          # V1.0 CAP1-001: a spawn holder cannot silently exhaust the 256-entry
+          # capability table and leave later processes with no authority. The
+          # spawn is refused (capability_table_full) rather than admitted with
+          # a reduced set; a program run afterwards still works.
+          cargo run -q -p qemu-runner -- \
+            --image target/images/itisyou-kernel-bios.img \
+            --expect B210 \
+            --send "run /bin/proc-probe spawn,ipc,gui,dev,fs_read,audio,fs_write,network,proc_control -- cap-exhaust" \
+            --send "run /bin/child" \
+            --send "shutdown" \
+            --require "PROCPROBE-CAP-EXHAUST-OK spawned=" \
+            --require "reason=capability_table_full" \
+            --require "run: /bin/child: Exit(7)" \
+            --forbid "PROCPROBE-FAILED" \
+            --timeout-secs 240 --label cap-exhaust-bios
 
       - name: QEMU intentional panic (BIOS)
         run: |
@@ -964,6 +1200,436 @@ jobs:
             --expect B010 --expect B160 --require "FS-PERSIST-VERIFIED" \
             --timeout-secs 120 --label fs-persist-verify
           rm -f artifacts/fs-persist-ci.img
+
+      - name: QEMU V0.11 the diagnostic model the build trained (BIOS)
+        run: |
+          # MODEL11-001 (ADR-0024): the build trained the model on Linux and
+          # accepted the pin (a stale pin fails the build), so this digest
+          # being the one committed in ai/diag.model.sha256 is the
+          # cross-host reproducibility check; at boot the kernel finds the
+          # same bytes in the initramfs and decodes them.
+          pin=$(head -n1 ai/diag.model.sha256 | tr -d '\r\n ')
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
+            --expect B110 --send "shutdown" \
+            --require "[ITISYOU:AI] model sha256=$pin bytes=276 initramfs_match=true decode=ok" \
+            --forbid "initramfs_match=false" \
+            --timeout-secs 180 --label ai-model-bios
+
+      - name: QEMU V0.11 the approved system view (BIOS)
+        run: |
+          # VIEW11-001 (ADR-0024): sys_view is refused with no capabilities
+          # and to a `run` without a caps list (the legacy default no longer
+          # carries it); granted by name, the record decodes and tells the
+          # truth - flapd failed, tickd running, the scheduler's pause.
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
+            --expect B210 --send "@pause 1500" \
+            --send "run /bin/ai-probe - - -- view-denied" \
+            --send "run /bin/ai-probe -- view-denied" \
+            --send "run /bin/ai-probe sys_view - -- view" \
+            --send "sched pause" --send "run /bin/ai-probe sys_view - -- view" \
+            --send "sched resume" --send "run /bin/ai-probe - - -- ansi" --send "shutdown" \
+            --require "AIPROBE-ANSI \x1b[2A\x1b[2K\x0dforged\u{202e}:UOYSITI]" \
+            --require "AIPROBE-VIEW-DENIED err=perm" \
+            --require "action=sys_view cap=0x0 result=denied" \
+            --require "kind=sysadmin reason=no_handle" \
+            --require "kind=sysadmin reason=scope_denied" \
+            --require "AIPROBE-VIEW-SMALL-OK" \
+            --require "[ITISYOU:AI] view_served pid=" \
+            --require "AIPROBE-VIEW sched paused=0 always_on=1 " \
+            --require "AIPROBE-VIEW sched paused=1 always_on=1 " \
+            --require "AIPROBE-VIEW service=tickd state=running restarts=0 by_init=1 " \
+            --require "AIPROBE-VIEW service=flapd state=failed restarts=3 by_init=1 " \
+            --require "AIPROBE-VIEW features=" --require "AIPROBE-VIEW-OK" \
+            --forbid "AIPROBE-VIEW-LEAK" --forbid "AIPROBE-VIEW-DECODE-FAILED" \
+            --forbid "AIPROBE-FAILED" --forbid "RING3-PANIC" \
+            --timeout-secs 240 --label ai-view-bios
+
+      - name: QEMU V0.11 inference in Ring 3 (BIOS)
+        run: |
+          # INFER11-001 (ADR-0024): inferd, init's third service, loads the
+          # model the build trained, refuses each hostile fixture by name,
+          # and answers over IPC 6/7 exactly as the model computed from the
+          # same file (match=true), also while the scheduler is paused.
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
+            --expect B210 --send "@pause 1500" \
+            --send "run /bin/inferd fs_read /etc -- check /etc/ai/diag.model" \
+            --send "run /bin/inferd fs_read /etc -- check /etc/ai/fixtures/bad-magic.model" \
+            --send "run /bin/inferd fs_read /etc -- check /etc/ai/fixtures/truncated.model" \
+            --send "run /bin/inferd fs_read /etc -- check /etc/ai/fixtures/wrong-dims.model" \
+            --send "run /bin/inferd fs_read /etc -- check /etc/ai/fixtures/absurd-weight.model" \
+            --send "run /bin/ai-probe sys_view,ipc:6-7,fs_read /etc -- infer" \
+            --send "sched pause" --send "run /bin/ai-probe sys_view,ipc:6-7,fs_read /etc -- infer" \
+            --send "sched resume" --send "shutdown" \
+            --require "bg_start name=inferd pid=4 caps=0xc00012 long_running=true supervisor=1" \
+            --require "INFERD-READY model=e0fc6642563aba99 channel=6" \
+            --require "INFERD-MODEL-OK path=/etc/ai/diag.model sha256=e0fc6642563aba99" \
+            --require "INFERD-MODEL-REFUSED path=/etc/ai/fixtures/bad-magic.model reason=bad_magic" \
+            --require "INFERD-MODEL-REFUSED path=/etc/ai/fixtures/truncated.model reason=bad_length" \
+            --require "INFERD-MODEL-REFUSED path=/etc/ai/fixtures/wrong-dims.model reason=bad_dimensions" \
+            --require "INFERD-MODEL-REFUSED path=/etc/ai/fixtures/absurd-weight.model reason=weight_out_of_range" \
+            --require "AIPROBE-INFER conditions=service_failed match=true model_match=true " \
+            --require "AIPROBE-INFER conditions=service_failed,scheduler_paused match=true model_match=true " \
+            --require "INFERD-SERVED n=2" \
+            --forbid "match=false" --forbid "AIPROBE-INFER-TIMEOUT" --forbid "AIPROBE-FAILED" \
+            --forbid "INFERD-BAD-REQUEST" --forbid "RING3-PANIC" \
+            --timeout-secs 240 --label ai-infer-bios
+
+      - name: QEMU V0.11 the diagnostic agent on real situations (BIOS)
+        run: |
+          # AGENT11-001, KB11-001 (ADR-0024): the agent's exact condition sets
+          # in three constructed situations - booted (flapd failed), paused,
+          # and after a denial burst - with each runbook and the action it
+          # names; refused without the view capability.
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
+            --expect B210 --send "@pause 1500" \
+            --send "run /bin/agent sys_view,ipc:6-7,fs_read /etc/ai -- diagnose" \
+            --send "sched pause" --send "run /bin/agent sys_view,ipc:6-7,fs_read /etc/ai -- diagnose" \
+            --send "sched resume" --send "run /bin/sandbox-probe -" \
+            --send "run /bin/agent sys_view,ipc:6-7,fs_read /etc/ai -- diagnose" \
+            --send "run /bin/agent - /etc/ai -- diagnose" --send "shutdown" \
+            --require "AGENT-DIAGNOSIS conditions=service_failed model=e0fc6642563aba99 " \
+            --require "AGENT-DIAGNOSIS conditions=service_failed,scheduler_paused model=e0fc6642563aba99 " \
+            --require "AGENT-DIAGNOSIS conditions=service_failed,denial_burst model=e0fc6642563aba99 " \
+            --require "AGENT-RUNBOOK id=service_failed sha=" \
+            --require "AGENT-RUNBOOK id=scheduler_paused sha=" \
+            --require "AGENT-RUNBOOK id=denial_burst sha=" \
+            --require "AGENT-ACTION id=service_failed action=retry-service target=flapd" \
+            --require "AGENT-ACTION id=scheduler_paused action=resume-scheduler" \
+            --require "AGENT-ACTION id=denial_burst action=none" \
+            --require "AGENT-VIEW-DENIED err=perm" \
+            --forbid "AGENT-INFER-TIMEOUT" --forbid "conditions=none " \
+            --forbid "AGENT-RUNBOOK-MISSING" --forbid "RING3-PANIC" \
+            --timeout-secs 240 --label ai-diagnose-bios
+
+      - name: QEMU V0.11 proposals the kernel checks, and nothing executes (BIOS)
+        run: |
+          # PROP11-001 (ADR-0024): every adversarial proposal refused for its
+          # own reason (model, view binding and age, recomputed condition,
+          # applicability, format, table) - the order ties each reason to
+          # its run - the agent's real one accepted and listed with its
+          # preview, deny final; nothing runs.
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
+            --expect B210 --send "@pause 1500" \
+            --send "run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose forge-model" \
+            --send "run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose never-served" \
+            --send "run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose forged-view" \
+            --send "run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose stale" \
+            --send "run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose diagnosis" \
+            --send "run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose not-applicable" \
+            --send "run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose bad-field" \
+            --send "run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose bad-action" \
+            --send "run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose not-allowed" \
+            --send "run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose flood" \
+            --send "run /bin/ai-probe sys_view,fs_read /etc/ai -- propose good" \
+            --send "run /bin/ai-probe sys_view,propose,ipc:6-7,fs_read /etc/ai -- direct" \
+            --send "run /bin/agent sys_view,propose,ipc:6-7,fs_read /etc/ai -- propose" \
+            --send "proposals" --send "deny 2" --send "deny 2" --send "deny 99" \
+            --send "proposals" --send "shutdown" \
+            --require "[ITISYOU:AI] proposal_refused pid=" \
+            --require-order "reason=unknown_model" --require-order "AIPROBE-PROPOSE mode=forge-model refused" \
+            --require-order "reason=snapshot_mismatch" --require-order "AIPROBE-PROPOSE mode=never-served refused" \
+            --require-order "reason=snapshot_mismatch" --require-order "AIPROBE-PROPOSE mode=forged-view refused" \
+            --require-order "reason=snapshot_stale" --require-order "AIPROBE-PROPOSE mode=stale refused" \
+            --require-order "reason=diagnosis_mismatch" --require-order "AIPROBE-PROPOSE mode=diagnosis refused" \
+            --require-order "reason=not_applicable" --require-order "AIPROBE-PROPOSE mode=not-applicable refused" \
+            --require-order "reason=bad_field" --require-order "AIPROBE-PROPOSE mode=bad-field refused" \
+            --require-order "reason=unknown_action" --require-order "AIPROBE-PROPOSE mode=bad-action refused" \
+            --require-order "reason=action_not_allowed" --require-order "AIPROBE-PROPOSE mode=not-allowed refused" \
+            --require-order "AIPROBE-PROPOSE-FILED mode=flood-first id=1" \
+            --require-order "reason=already_pending" --require-order "AIPROBE-PROPOSE mode=flood refused" \
+            --require "AIPROBE-PROPOSE-FILED mode=flood-first id=1" \
+            --require "proposal_submitted id=1 " \
+            --require "model_check=ok snapshot_check=ok diagnosis_check=ok applies=ok" \
+            --require "action=propose cap=0x0 result=denied" \
+            --require "kind=sysadmin reason=scope_denied" \
+            --require "AIPROBE-DIRECT-ALL-DENIED" \
+            --require "AGENT-PROPOSAL filed id=2 action=retry-service target=flapd" \
+            --require "[ITISYOU:AI] proposal id=1 state=pending action=retry-service target=flapd condition=service_failed risk=low reversible=true" \
+            --require "[ITISYOU:AI] preview id=2 ask /sbin/init to start flapd once more" \
+            --require "[ITISYOU:AI] proposal_denied id=2 by=console" \
+            --require "deny: id=2 refused reason=already_decided" \
+            --require "deny: id=99 refused reason=no_such_proposal" \
+            --require "[ITISYOU:AI] proposal id=2 state=denied" \
+            --require "action=proposal_submitted cap=0x1000 result=ok" \
+            --forbid "AIPROBE-ACCEPTED" --forbid "AIPROBE-DIRECT-ALLOWED" \
+            --forbid "action_executed" --forbid "AIPROBE-FAILED" --forbid "RING3-PANIC" \
+            --timeout-secs 300 --label ai-propose-bios
+
+      - name: QEMU V0.11 approval, execution, verification (BIOS)
+        run: |
+          # ACT11-001 (ADR-0024): deny final; approve re-checks the
+          # precondition, executes resume-scheduler, verifies it with the
+          # busy measurement; a stale proposal is refused, not executed.
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
+            --expect B210 \
+            --send "@pause 1500" \
+            --send "sched pause" \
+            --send "run /bin/agent sys_view,propose,ipc:6-7,fs_read /etc/ai -- propose" \
+            --send "deny 1" \
+            --send "approve 1" \
+            --send "busy 1000" \
+            --send "run /bin/agent sys_view,propose,ipc:6-7,fs_read /etc/ai -- propose" \
+            --send "proposals" \
+            --send "approve 2" \
+            --send "busy 1000" \
+            --send "sched pause" \
+            --send "run /bin/agent sys_view,propose,ipc:6-7,fs_read /etc/ai -- propose" \
+            --send "sched resume" \
+            --send "approve 3" \
+            --send "approve 99" \
+            --send "proposals" \
+            --send "shutdown" \
+            --require "AGENT-PROPOSAL filed id=1 action=resume-scheduler target=-" \
+            --require "[ITISYOU:AI] proposal_denied id=1 by=console" \
+            --require "approve: id=1 refused reason=already_decided" \
+            --require "busy: ms=1000 paused=true others_progressed=false other_quanta=0" \
+            --require "AGENT-PROPOSAL filed id=2 action=resume-scheduler target=-" \
+            --require "[ITISYOU:AI] proposal id=2 state=pending action=resume-scheduler target=- condition=scheduler_paused risk=low reversible=true" \
+            --require "[ITISYOU:AI] preview id=2 turn background scheduling back on" \
+            --require "[ITISYOU:AI] proposal_approved id=2 by=console" \
+            --require "[ITISYOU:AI] action_executed id=2 action=resume-scheduler approved_by=console" \
+            --require "[ITISYOU:AI] action_verified id=2 result=pass" \
+            --require "busy: ms=1000 paused=false others_progressed=true" \
+            --require "AGENT-PROPOSAL filed id=3 action=resume-scheduler target=-" \
+            --require "approve: id=3 refused reason=precondition_changed" \
+            --require "[ITISYOU:AI] proposal_expired id=3 reason=precondition_changed" \
+            --require "approve: id=99 refused reason=no_such_proposal" \
+            --require "[ITISYOU:AI] proposal id=2 state=verified" \
+            --require "[ITISYOU:AI] proposal id=3 state=expired" \
+            --require "action=proposal_approved cap=0x0 result=ok" \
+            --require "action=action_executed cap=0x0 result=ok" \
+            --require "approved_by=console model=e0fc6642563aba99 view=" \
+            --require "action=action_verified cap=0x0 result=ok" \
+            --forbid "action_executed id=1 " \
+            --forbid "action_executed id=3 " \
+            --forbid "action_verified id=2 result=fail" \
+            --forbid "action_rolled_back" \
+            --forbid "AGENT-INFER-TIMEOUT" \
+            --forbid "AGENT-PROPOSAL-REFUSED" \
+            --forbid "RING3-PANIC" \
+            --timeout-secs 300 --label ai-act-bios
+
+      - name: QEMU V0.11 retry-service through init, verified and rolled back (BIOS)
+        run: |
+          # ACT11-002 (ADR-0024): the init mailbox (syscall 44, init only);
+          # flakyd retried and verified; flapd retried, tripped, stopped by
+          # init and killed by the kernel - row failed, restarts=1.
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
+            --expect B210 \
+            --send "@pause 1500" \
+            --send "busy 3000" \
+            --send "run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose retry-flakyd" \
+            --send "approve 1" \
+            --send "run /bin/agent sys_view,propose,ipc:6-7,fs_read /etc/ai -- propose" \
+            --send "approve 2" \
+            --send "run /bin/ai-probe service - -- initctl" \
+            --send "svc" \
+            --send "proposals" \
+            --send "shutdown" \
+            --require "bg_failed name=flakyd restarts=3 supervisor=1" \
+            --require "AIPROBE-PROPOSE-FILED mode=retry-flakyd id=1" \
+            --require "[ITISYOU:AI] proposal_approved id=1 by=console" \
+            --require "[ITISYOU:INIT] mailbox post seq=1 op=retry name=flakyd" \
+            --require "INIT-RETRY name=flakyd pid=" \
+            --require "[ITISYOU:INIT] mailbox ack seq=1 ok=true pid=" \
+            --require "[ITISYOU:AI] action_executed id=1 action=retry-service target=flakyd pid=" \
+            --require "FLAKYD-UP" \
+            --require "[ITISYOU:AI] action_verified id=1 result=pass target=flakyd window_ms=3000 tripped=false running_same_pid=true" \
+            --require "AGENT-PROPOSAL filed id=2 action=retry-service target=flapd" \
+            --require "[ITISYOU:AI] action_executed id=2 action=retry-service target=flapd pid=" \
+            --require "INIT-RETRY name=flapd pid=" \
+            --require "op=stop name=flapd" \
+            --require "INIT-STOP name=flapd pid=" \
+            --require "[ITISYOU:AI] action_verified id=2 result=fail target=flapd" \
+            --require "tripped=true" \
+            --require "[ITISYOU:AI] action_rolled_back id=2 action=retry-service target=flapd stop_ack=true" \
+            --require "row=failed restarts=1" \
+            --require "AIPROBE-INITCTL-REFUSED err=perm" \
+            --require "init_ctl refused pid=" \
+            --require "reason=not_init" \
+            --require "flakyd  Running" \
+            --require "flapd  Failed { restarts: 1 }" \
+            --require "tickd  Running  pid=2 restarts=0" \
+            --require "[ITISYOU:AI] proposal id=1 state=verified" \
+            --require "[ITISYOU:AI] proposal id=2 state=rolled_back" \
+            --require "action=action_rolled_back cap=0x0 result=ok" \
+            --forbid "rollback_kill_refused" \
+            --forbid "action_verified id=1 result=fail" \
+            --forbid "action_verified id=2 result=pass" \
+            --forbid "INIT-REAPED-ORPHAN" \
+            --forbid "svc_report refused pid=1" \
+            --forbid "AIPROBE-INITCTL-REACHED" \
+            --forbid "action_failed" \
+            --forbid "AGENT-PROPOSAL-REFUSED" \
+            --forbid "RING3-PANIC" \
+            --timeout-secs 360 --label ai-retry-bios
+
+      - name: QEMU V1.0 IPC channels scoped by the grant (BIOS)
+        run: |
+          # V1-SEC-006 (ADR-0025): plain ipc and every default set leave out
+          # the inference channels; only ipc:6-7 reaches inferd.
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
+            --expect B210 --send "@pause 1500" \
+            --send "run /bin/ai-probe -- ipc-steal" \
+            --send "run /bin/ai-probe ipc -- ipc-steal" \
+            --send "run /bin/ai-probe ipc:0-5 -- ipc-steal" \
+            --send "run /bin/ai-probe ipc:5-6 -- ipc-steal" \
+            --send "run /bin/ai-probe ipc:6-7 -- ipc-steal" \
+            --send "run /bin/ai-probe sys_view,ipc:6-7,fs_read /etc -- infer" \
+            --send "run /bin/tick-client" --send "svc" --send "shutdown" \
+            --require "bg_start name=tickd pid=2 caps=0xc0002 " \
+            --require "bg_start name=inferd pid=4 caps=0xc00012 " \
+            --require-order "run /bin/ai-probe -- ipc-steal" \
+            --require-order "AIPROBE-IPC request_channel=denied reply_channel=denied" \
+            --require-order "run /bin/ai-probe ipc -- ipc-steal" \
+            --require-order "AIPROBE-IPC request_channel=denied reply_channel=denied" \
+            --require-order "run /bin/ai-probe ipc:0-5 -- ipc-steal" \
+            --require-order "AIPROBE-IPC request_channel=denied reply_channel=denied" \
+            --require-order "run /bin/ai-probe ipc:5-6 -- ipc-steal" \
+            --require-order "AIPROBE-IPC request_channel=reached reply_channel=denied" \
+            --require-order "run /bin/ai-probe ipc:6-7 -- ipc-steal" \
+            --require-order "AIPROBE-IPC request_channel=reached reply_channel=reached" \
+            --require "kind=service reason=scope_denied" \
+            --require "AIPROBE-INFER-FOREIGN-REPLY" --require "match=true model_match=true" \
+            --require "TICKC-OK passes=" --require "tickd  Running" --require "inferd  Running" \
+            --forbid "AIPROBE-FAILED" --forbid "AIPROBE-INFER-TIMEOUT" --forbid "RING3-PANIC" \
+            --timeout-secs 240 --label ipc-scope-bios
+
+      - name: QEMU V1.0 long use leaves nothing behind (BIOS)
+        run: |
+          # V1-REL-003: after a warm-up, 250 process lifecycles with file
+          # writes, deletes and IPC, agent diagnoses and pings; leakcheck
+          # must find every kernel counter exactly where it was.
+          rm -f artifacts/soak-test.img
+          mkdir -p artifacts
+          head -c 8192 /dev/zero > artifacts/soak-test.img
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
+            --nvme-persist artifacts/soak-test.img --net-user --expect B210 \
+            --send "run /bin/soak spawn,ipc:2-3,fs_write /data -- 30" \
+            --send "run /bin/agent sys_view,ipc:6-7,fs_read /etc/ai -- diagnose" \
+            --send "ping 10.0.2.2 1" --send "leakcheck mark" \
+            --send "run /bin/soak spawn,ipc:2-3,fs_write /data -- 250" \
+            --send "run /bin/agent sys_view,ipc:6-7,fs_read /etc/ai -- diagnose" \
+            --send "run /bin/agent sys_view,ipc:6-7,fs_read /etc/ai -- diagnose" \
+            --send "ping 10.0.2.2 1" --send "ping 10.0.2.2 1" \
+            --send "leakcheck" --send "shutdown" \
+            --require "SOAK-OK iterations=30 lifecycles=30" \
+            --require "SOAK-OK iterations=250 lifecycles=250" \
+            --require "[ITISYOU:LEAK] mark frames_free=" \
+            --require-order "[ITISYOU:LEAK] mark frames_free=" \
+            --require-order "SOAK-OK iterations=250" \
+            --require-order "[ITISYOU:LEAK] check frames=0 heap=0 processes=0 handles=0 ipc_queued=0 sockets=0 tcp=0 out_slots=0 result=clean" \
+            --forbid "result=leak" --forbid "SOAK-FAILED" \
+            --forbid "AGENT-INFER-TIMEOUT" --forbid "RING3-PANIC" \
+            --timeout-secs 900 --label soak-bios
+          rm -f artifacts/soak-test.img
+
+      - name: QEMU V1.0 syscall fuzzer, no capabilities (BIOS)
+        run: |
+          # V1-REL-004: 4 x 25 000 seeded random syscalls per configuration;
+          # no panic, no hang (a hung syscall stops the markers and the leg
+          # times out), every call counted; then the
+          # channels are drained, leakcheck must be clean, and ps, svc,
+          # program runs, the agent's diagnosis and audit verify must pass.
+          rm -f artifacts/fuzz-test.img
+          mkdir -p artifacts
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
+            --nvme-persist artifacts/fuzz-test.img --expect B210 \
+            --send "run /bin/sysfuzz - -- 1001 25000" \
+            --send "busy 500" --send "run /bin/sysfuzz ipc:0-7 - -- drain" --send "leakcheck mark" \
+            --send "run /bin/sysfuzz - -- 1002 25000" \
+            --send "run /bin/sysfuzz - -- 1003 25000" \
+            --send "run /bin/sysfuzz - -- 1004 25000" \
+            --send "busy 500" --send "run /bin/sysfuzz ipc:0-7 - -- drain" --send "leakcheck" \
+            --send "ps" --send "svc" --send "run /bin/child" --send "run /bin/tick-client" \
+            --send "run /bin/agent sys_view,ipc:6-7,fs_read /etc/ai -- diagnose" \
+            --send "audit save" --send "audit verify" --send "shutdown" \
+            --require-order "SYSFUZZ-OK seed=1001 calls=25000 " \
+            --require-order "[ITISYOU:LEAK] mark frames_free=" \
+            --require-order "SYSFUZZ-OK seed=1002 calls=25000 " \
+            --require-order "SYSFUZZ-OK seed=1003 calls=25000 " \
+            --require-order "SYSFUZZ-OK seed=1004 calls=25000 " \
+            --require-order "[ITISYOU:LEAK] check frames=0 heap=0 processes=0 handles=0 ipc_queued=0 sockets=0 tcp=0 out_slots=0 result=clean" \
+            --require-order "ps: processes=3" \
+            --require-order "svc: started=3 done=2 failed=1" \
+            --require-order "run: /bin/child: Exit(7)" \
+            --require-order "TICKC-OK passes=" \
+            --require-order "AGENT-DIAGNOSIS conditions=" \
+            --require-order "trail_saved records=" \
+            --require-order "trail_checked status=verified reason=none" \
+            --require "tickd  Running" --require "inferd  Running" \
+            --forbid "SYSFUZZ-FAILED" --forbid "run: /bin/sysfuzz: Fault" --forbid "result=leak" \
+            --forbid "AGENT-INFER-TIMEOUT" --forbid "RING3-PANIC" \
+            --timeout-secs 900 --label sysfuzz-none-bios
+          rm -f artifacts/fuzz-test.img
+
+      - name: QEMU V1.0 syscall fuzzer, the console default set in a sandbox (BIOS)
+        run: |
+          rm -f artifacts/fuzz-test.img
+          mkdir -p artifacts
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
+            --nvme-persist artifacts/fuzz-test.img --expect B210 \
+            --send "run /bin/sysfuzz spawn,ipc,gui,dev,fs_read,audio,sys_admin,fs_write,network,proc_control /data -- 2001 25000" \
+            --send "busy 500" --send "run /bin/sysfuzz ipc:0-7 - -- drain" --send "leakcheck mark" \
+            --send "run /bin/sysfuzz spawn,ipc,gui,dev,fs_read,audio,sys_admin,fs_write,network,proc_control /data -- 2002 25000" \
+            --send "run /bin/sysfuzz spawn,ipc,gui,dev,fs_read,audio,sys_admin,fs_write,network,proc_control /data -- 2003 25000" \
+            --send "run /bin/sysfuzz spawn,ipc,gui,dev,fs_read,audio,sys_admin,fs_write,network,proc_control /data -- 2004 25000" \
+            --send "busy 500" --send "run /bin/sysfuzz ipc:0-7 - -- drain" --send "leakcheck" \
+            --send "ps" --send "svc" --send "run /bin/child" --send "run /bin/tick-client" \
+            --send "run /bin/agent sys_view,ipc:6-7,fs_read /etc/ai -- diagnose" \
+            --send "audit save" --send "audit verify" --send "shutdown" \
+            --require-order "SYSFUZZ-OK seed=2001 calls=25000 " \
+            --require-order "[ITISYOU:LEAK] mark frames_free=" \
+            --require-order "SYSFUZZ-OK seed=2002 calls=25000 " \
+            --require-order "SYSFUZZ-OK seed=2003 calls=25000 " \
+            --require-order "SYSFUZZ-OK seed=2004 calls=25000 " \
+            --require-order "[ITISYOU:LEAK] check frames=0 heap=0 processes=0 handles=0 ipc_queued=0 sockets=0 tcp=0 out_slots=0 result=clean" \
+            --require-order "ps: processes=3" \
+            --require-order "svc: started=3 done=2 failed=1" \
+            --require-order "run: /bin/child: Exit(7)" \
+            --require-order "TICKC-OK passes=" \
+            --require-order "AGENT-DIAGNOSIS conditions=" \
+            --require-order "trail_saved records=" \
+            --require-order "trail_checked status=verified reason=none" \
+            --require "tickd  Running" --require "inferd  Running" \
+            --forbid "SYSFUZZ-FAILED" --forbid "run: /bin/sysfuzz: Fault" --forbid "result=leak" \
+            --forbid "AGENT-INFER-TIMEOUT" --forbid "RING3-PANIC" \
+            --timeout-secs 900 --label sysfuzz-default-bios
+          rm -f artifacts/fuzz-test.img
+
+      - name: QEMU V1.0 syscall fuzzer, the agent capability set (BIOS)
+        run: |
+          rm -f artifacts/fuzz-test.img
+          mkdir -p artifacts
+          cargo run -q -p qemu-runner -- --image target/images/itisyou-kernel-bios.img \
+            --nvme-persist artifacts/fuzz-test.img --expect B210 \
+            --send "run /bin/sysfuzz sys_view,propose,ipc:6-7,fs_read /etc/ai -- 3001 25000" \
+            --send "busy 500" --send "run /bin/sysfuzz ipc:0-7 - -- drain" --send "leakcheck mark" \
+            --send "run /bin/sysfuzz sys_view,propose,ipc:6-7,fs_read /etc/ai -- 3002 25000" \
+            --send "run /bin/sysfuzz sys_view,propose,ipc:6-7,fs_read /etc/ai -- 3003 25000" \
+            --send "run /bin/sysfuzz sys_view,propose,ipc:6-7,fs_read /etc/ai -- 3004 25000" \
+            --send "busy 500" --send "run /bin/sysfuzz ipc:0-7 - -- drain" --send "leakcheck" \
+            --send "ps" --send "svc" --send "run /bin/child" --send "run /bin/tick-client" \
+            --send "run /bin/agent sys_view,ipc:6-7,fs_read /etc/ai -- diagnose" \
+            --send "audit save" --send "audit verify" --send "shutdown" \
+            --require-order "SYSFUZZ-OK seed=3001 calls=25000 " \
+            --require-order "[ITISYOU:LEAK] mark frames_free=" \
+            --require-order "SYSFUZZ-OK seed=3002 calls=25000 " \
+            --require-order "SYSFUZZ-OK seed=3003 calls=25000 " \
+            --require-order "SYSFUZZ-OK seed=3004 calls=25000 " \
+            --require-order "[ITISYOU:LEAK] check frames=0 heap=0 processes=0 handles=0 ipc_queued=0 sockets=0 tcp=0 out_slots=0 result=clean" \
+            --require-order "ps: processes=3" \
+            --require-order "svc: started=3 done=2 failed=1" \
+            --require-order "run: /bin/child: Exit(7)" \
+            --require-order "TICKC-OK passes=" \
+            --require-order "AGENT-DIAGNOSIS conditions=" \
+            --require-order "trail_saved records=" \
+            --require-order "trail_checked status=verified reason=none" \
+            --require "tickd  Running" --require "inferd  Running" \
+            --forbid "SYSFUZZ-FAILED" --forbid "run: /bin/sysfuzz: Fault" --forbid "result=leak" \
+            --forbid "AGENT-INFER-TIMEOUT" --forbid "RING3-PANIC" \
+            --timeout-secs 900 --label sysfuzz-agent-bios
+          rm -f artifacts/fuzz-test.img
 
       - name: Upload QEMU evidence
         if: always()

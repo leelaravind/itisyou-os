@@ -46,6 +46,13 @@ members = [
     "user/sysinit",
     "user/sh",
     "user/gui-echo",
+    "user/ai-probe",
+    "user/inferd",
+    "user/agent",
+    "user/flakyd",
+    "user/soak",
+    "user/sysfuzz",
+    "user/fault-probe",
 ]
 # The kernel must NEVER share a cargo invocation with host packages: cargo
 # resolves features once per invocation across all compile targets, so a
@@ -65,7 +72,7 @@ default-members = [
 # `status/current.json` `version`; `website/scripts/check-consistency.mjs`
 # fails the build when they drift. Development builds carry `-dev`; the
 # release commit drops it.
-version = "0.10.0"
+version = "1.0.0"
 edition = "2021"
 authors = ["leelaravind"]
 

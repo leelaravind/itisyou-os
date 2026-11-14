@@ -130,6 +130,32 @@ static IDT: Lazy<InterruptDescriptorTable> = Lazy::new(|| {
     idt.general_protection_fault
         .set_handler_fn(general_protection_handler);
     idt.page_fault.set_handler_fn(page_fault_handler);
+    // Every other exception gets a gate too (V1.0, SEC1-001): see
+    // `contain`. NMI is reported and resumed; a machine check is a panic.
+    idt.divide_error.set_handler_fn(divide_error_handler);
+    idt.debug.set_handler_fn(debug_handler);
+    idt.non_maskable_interrupt.set_handler_fn(nmi_handler);
+    idt.overflow.set_handler_fn(overflow_handler);
+    idt.bound_range_exceeded.set_handler_fn(bound_range_handler);
+    idt.device_not_available
+        .set_handler_fn(device_not_available_handler);
+    idt.invalid_tss.set_handler_fn(invalid_tss_handler);
+    idt.segment_not_present
+        .set_handler_fn(segment_not_present_handler);
+    idt.stack_segment_fault
+        .set_handler_fn(stack_segment_handler);
+    idt.x87_floating_point.set_handler_fn(x87_handler);
+    idt.alignment_check.set_handler_fn(alignment_check_handler);
+    idt.machine_check.set_handler_fn(machine_check_handler);
+    idt.simd_floating_point.set_handler_fn(simd_handler);
+    idt.virtualization.set_handler_fn(virtualization_handler);
+    idt.cp_protection_exception
+        .set_handler_fn(control_protection_handler);
+    idt.hv_injection_exception
+        .set_handler_fn(hv_injection_handler);
+    idt.vmm_communication_exception
+        .set_handler_fn(vmm_communication_handler);
+    idt.security_exception.set_handler_fn(security_handler);
     // SAFETY: DOUBLE_FAULT_IST_INDEX refers to a valid IST entry installed
     // by gdt::init before the IDT is loaded.
     unsafe {
@@ -474,6 +500,84 @@ extern "x86-interrupt" fn page_fault_handler(
         "page fault addr={:?} error={:?} rip={:#x}",
         addr,
         error_code,
+        frame.instruction_pointer.as_u64()
+    );
+}
+
+/// A CPU exception without a handler of its own: contained like `#GP` when
+/// Ring 3 raised it - the program ends, the kernel goes on - and a panic
+/// only when the kernel did. V1.0 (SEC1-001, found by the V1-SEC-002
+/// review): only `#BP`, `#UD`, `#GP`, `#PF` and `#DF` had gates, and any
+/// other vector raised by a program - a `div` by zero, a single step
+/// (`popfq` with TF, or `int1`), a push through a non-canonical stack
+/// pointer - found a gate that was not present, escalated to a double fault
+/// and panicked the kernel. One instruction from a program with no
+/// capabilities halted the system.
+fn contain(frame: &InterruptStackFrame, vector: u8, name: &str, error: Option<u64>) -> ! {
+    crate::harden::clear_user_flags();
+    let rip = frame.instruction_pointer.as_u64();
+    if from_user(frame) {
+        match error {
+            Some(e) => crate::serial_println!(
+                "[ITISYOU:INFO] exception={name} vector={vector} cs_rpl=3 rip={rip:#x} error={e:#x} action=terminate_process"
+            ),
+            None => crate::serial_println!(
+                "[ITISYOU:INFO] exception={name} vector={vector} cs_rpl=3 rip={rip:#x} action=terminate_process"
+            ),
+        }
+        crate::user::transition::abort_fault(vector);
+    }
+    panic!("{name} (vector {vector}) rip={rip:#x} error={error:?}");
+}
+
+macro_rules! contained {
+    ($handler:ident, $vector:expr, $name:literal) => {
+        extern "x86-interrupt" fn $handler(frame: InterruptStackFrame) {
+            contain(&frame, $vector, $name, None)
+        }
+    };
+    ($handler:ident, $vector:expr, $name:literal, error) => {
+        extern "x86-interrupt" fn $handler(frame: InterruptStackFrame, error: u64) {
+            contain(&frame, $vector, $name, Some(error))
+        }
+    };
+}
+
+contained!(divide_error_handler, 0, "divide_error");
+contained!(debug_handler, 1, "debug");
+contained!(overflow_handler, 4, "overflow");
+contained!(bound_range_handler, 5, "bound_range");
+contained!(device_not_available_handler, 7, "device_not_available");
+contained!(invalid_tss_handler, 10, "invalid_tss", error);
+contained!(
+    segment_not_present_handler,
+    11,
+    "segment_not_present",
+    error
+);
+contained!(stack_segment_handler, 12, "stack_segment", error);
+contained!(x87_handler, 16, "x87_floating_point");
+contained!(alignment_check_handler, 17, "alignment_check", error);
+contained!(simd_handler, 19, "simd_floating_point");
+contained!(virtualization_handler, 20, "virtualization");
+contained!(control_protection_handler, 21, "control_protection", error);
+contained!(hv_injection_handler, 28, "hv_injection");
+contained!(vmm_communication_handler, 29, "vmm_communication", error);
+contained!(security_handler, 30, "security", error);
+
+/// Not a fault: nothing is wrong with the interrupted code, so it resumes.
+extern "x86-interrupt" fn nmi_handler(frame: InterruptStackFrame) {
+    crate::harden::clear_user_flags();
+    crate::serial_println!(
+        "[ITISYOU:INFO] exception=nmi rip={:#x} (resumed)",
+        frame.instruction_pointer.as_u64()
+    );
+}
+
+/// The hardware reports it cannot vouch for its own state: stop.
+extern "x86-interrupt" fn machine_check_handler(frame: InterruptStackFrame) -> ! {
+    panic!(
+        "machine check rip={:#x}",
         frame.instruction_pointer.as_u64()
     );
 }

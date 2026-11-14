@@ -299,10 +299,13 @@ impl Madt {
         gsi: u32,
         entries: impl Fn(&IoApicEntry) -> u32,
     ) -> Option<IoApicEntry> {
+        // `gsi - gsi_base`, not `gsi_base + entries`: the base comes from the
+        // firmware, and a window ending at the top of the GSI space overflowed
+        // (V1-REL-005 fuzzing).
         self.ioapics
             .iter()
             .flatten()
-            .find(|a| gsi >= a.gsi_base && gsi < a.gsi_base + entries(a))
+            .find(|a| gsi >= a.gsi_base && gsi - a.gsi_base < entries(a))
             .copied()
     }
 }
@@ -581,6 +584,30 @@ mod tests {
         assert_eq!((sci.gsi, sci.active_low, sci.level), (9, false, true));
         assert!(m.ioapic_for(2, |_| 24).is_some());
         assert!(m.ioapic_for(24, |_| 24).is_none());
+    }
+
+    /// V1-REL-005 regression (found by the fuzz target
+    /// `acpi::Rsdp+Madt+Fadt+root_entries+find_s5`): an I/O APIC whose
+    /// 24-entry window ends exactly at the top of the GSI space made
+    /// `ioapic_for` compute `gsi_base + entries` = 2^32 - an overflow panic
+    /// with overflow checks, and a wrapped window that matched nothing
+    /// without.
+    #[test]
+    fn ioapic_for_a_window_that_ends_at_the_top_of_the_gsi_space() {
+        let mut body = Vec::new();
+        body.extend_from_slice(&0xFEE0_0000u32.to_le_bytes());
+        body.extend_from_slice(&1u32.to_le_bytes());
+        let mut io = [1u8, 12, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        io[4..8].copy_from_slice(&0xFEC0_0000u32.to_le_bytes());
+        io[8..12].copy_from_slice(&(u32::MAX - 23).to_le_bytes());
+        body.extend_from_slice(&io);
+        let m = Madt::parse(&table(b"APIC", &body)).unwrap();
+        let chip = m.ioapics[0].unwrap();
+        assert_eq!(m.ioapic_for(u32::MAX - 23, |_| 24), Some(chip));
+        assert_eq!(m.ioapic_for(u32::MAX, |_| 24), Some(chip));
+        assert_eq!(m.ioapic_for(u32::MAX - 24, |_| 24), None);
+        assert_eq!(m.ioapic_for(u32::MAX, |_| 23), None);
+        assert_eq!(m.ioapic_for(0, |_| 256), None);
     }
 
     #[test]

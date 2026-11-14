@@ -439,6 +439,41 @@ fn security_tests(suite: &mut Suite) {
     let (_, denials_after) = crate::audit::counts();
     suite.check("cap_denials_audited", denials_after >= denials_before + 7);
 
+    // PROP11-001 (V0.11 review): the view a proposal cites is looked up for
+    // the SUBMITTING process only - a view served to another process, alive
+    // or not, is never found for this one - and forgotten when its process
+    // ends. (No QEMU leg can hold two console-granted processes alive at
+    // once, so the binding is shown here.)
+    {
+        let len = kernel_core::sysview::LEN;
+        let (a, b) = (
+            [0xa1u8; kernel_core::sysview::LEN],
+            [0xb2u8; kernel_core::sysview::LEN],
+        );
+        let (pa, pb, pc) = (u64::MAX - 11, u64::MAX - 12, u64::MAX - 13);
+        crate::ai::served(pa, &a);
+        crate::ai::served(pb, &b);
+        let own = crate::ai::last_served(pa).is_some_and(|(_, v)| v[..] == a[..])
+            && crate::ai::last_served(pb).is_some_and(|(_, v)| v[..] == b[..]);
+        let others = crate::ai::last_served(pc).is_none();
+        crate::ai::forget(pa);
+        let forgotten = crate::ai::last_served(pa).is_none()
+            && crate::ai::last_served(pb).is_some_and(|(_, v)| v.len() == len);
+        crate::ai::forget(pb);
+        suite.check("ai_view_binding_per_process", own && others && forgotten);
+    }
+
+    // V0.11 review: a stored trail is read only up to the most records any
+    // kernel ever stored; a crafted one with 100 000 lines is refused, not
+    // collected (it panicked recovery on every boot).
+    suite.check(
+        "audit_trail_parse_bounded",
+        crate::audit::parse_trail_accepts(0)
+            && crate::audit::parse_trail_accepts(128)
+            && !crate::audit::parse_trail_accepts(129)
+            && !crate::audit::parse_trail_accepts(100_000),
+    );
+
     // FS sandbox: CAP_FS_READ restricted to /etc — in-prefix reads work,
     // out-of-prefix and traversal reads are refused (probe checks all).
     let etc_sandbox = Arc::new(alloc::vec![String::from("/etc")]);

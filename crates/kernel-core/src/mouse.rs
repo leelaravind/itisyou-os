@@ -20,7 +20,8 @@ pub struct MouseEvent {
 pub struct Mouse {
     bytes: [u8; 3],
     index: usize,
-    /// Count of discarded bytes during resync (diagnostic).
+    /// Count of discarded bytes during resync (diagnostic). Saturates: the
+    /// device, not the kernel, decides how many bytes arrive.
     pub resyncs: u32,
 }
 
@@ -47,7 +48,7 @@ impl Mouse {
     /// back to back, which a working device never does.
     pub fn resync(&mut self) {
         if self.index != 0 {
-            self.resyncs += 1;
+            self.resyncs = self.resyncs.saturating_add(1);
             self.index = 0;
         }
     }
@@ -58,7 +59,11 @@ impl Mouse {
             // The first byte MUST have the always-1 bit; otherwise the stream
             // is out of sync — drop the byte and stay at index 0.
             if byte & ALWAYS_ONE == 0 {
-                self.resyncs += 1;
+                // Saturating (V1-REL-005 review): a device that streams
+                // bytes without the always-1 bit would otherwise overflow
+                // the counter after 2^32 of them - a panic in the IRQ12
+                // handler, since the kernel is built with overflow checks.
+                self.resyncs = self.resyncs.saturating_add(1);
                 return None;
             }
         }
@@ -168,6 +173,23 @@ mod tests {
         // A resync with nothing pending changes nothing.
         m.resync();
         assert_eq!(m.resyncs, 1);
+    }
+
+    /// V1-REL-005 regression (found by review while writing the decoder
+    /// fuzzer, which cannot feed 2^32 bytes): the resync counter overflowed
+    /// after 2^32 out-of-sync bytes. It saturates, and decoding goes on.
+    #[test]
+    fn the_resync_counter_saturates_instead_of_overflowing() {
+        let mut m = Mouse::new();
+        m.resyncs = u32::MAX;
+        assert_eq!(m.feed(0x00), None);
+        assert_eq!(m.resyncs, u32::MAX);
+        m.feed(ALWAYS_ONE);
+        m.resync();
+        assert_eq!(m.resyncs, u32::MAX);
+        m.feed(ALWAYS_ONE);
+        m.feed(2);
+        assert_eq!(m.feed(3).map(|e| (e.dx, e.dy)), Some((2, 3)));
     }
 
     #[test]

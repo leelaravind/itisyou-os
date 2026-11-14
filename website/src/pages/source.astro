@@ -5,7 +5,7 @@ import StatusTag from '../components/StatusTag.astro';
 import { status } from '../lib/status';
 
 const description =
-  'Source access for ITISYOU OS: the repository is private during early development and will open later. Repository layout and governance, with no fabricated repository statistics.';
+  'Source access for ITISYOU OS: the source repository is private; published releases, checksums and the engineering evidence are on this site. Repository layout and governance, with no fabricated repository statistics.';
 
 const layout = [
   ['kernel/', 'the x86_64 kernel (library + interactive/selftest binaries)'],
@@ -26,10 +26,10 @@ const layout = [
       <Breadcrumbs class="mb-4" crumbs={[{ label: 'SYSTEM', href: '/' }, { label: 'SOURCE' }, { label: 'ACCESS' }]} />
       <h1 class="font-sans font-light text-[36px] sm:text-display-lg text-ink mb-4">Source Access</h1>
       <p class="text-body-base text-meta-bright max-w-2xl">
-        ITISYOU OS is developed in a single monorepo. The repository is
-        <strong class="text-ink font-medium">private during early development</strong> and will open once the V0.1
-        foundation and its verification evidence stabilize. No public repository link exists yet — this page will carry
-        it when it does.
+        ITISYOU OS is developed in a single monorepo. The source repository is
+        <strong class="text-ink font-medium">private</strong>. It has been made public only briefly, so that GitHub CI
+        could run for releases, and the owner decides when it opens. Published releases, their checksums and the
+        engineering evidence are on this site.
       </p>
     </header>
 
@@ -43,11 +43,11 @@ const layout = [
         <dl class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div class="border border-line p-4">
             <dt class="font-mono text-mono-label text-muted uppercase tracking-widest mb-2">Visibility</dt>
-            <dd class="font-mono text-mono-data text-ink">private — early development</dd>
+            <dd class="font-mono text-mono-data text-ink">private — public only briefly, for release CI runs</dd>
           </div>
           <div class="border border-line p-4">
             <dt class="font-mono text-mono-label text-muted uppercase tracking-widest mb-2">Opens</dt>
-            <dd class="font-mono text-mono-data text-ink">when V0.1 evidence stabilizes — no date promised</dd>
+            <dd class="font-mono text-mono-data text-ink">the owner decides — no date or condition promised</dd>
           </div>
           <div class="border border-line p-4">
             <dt class="font-mono text-mono-label text-muted uppercase tracking-widest mb-2">Stars / forks / CI badges</dt>
@@ -55,18 +55,20 @@ const layout = [
           </div>
           <div class="border border-line p-4">
             <dt class="font-mono text-mono-label text-muted uppercase tracking-widest mb-2">License</dt>
-            <dd class="font-mono text-mono-data text-meta">decided before the repository opens</dd>
+            <dd class="font-mono text-mono-data text-meta">none published</dd>
           </div>
         </dl>
         <p class="text-sm text-meta-bright mt-6 max-w-2xl">
-          Why private? Early kernel development involves rapid interface churn and half-landed subsystems. Opening the
-          source together with its requirement matrix and verification evidence keeps the public record honest — the
-          same rule this website follows.
+          What is public is the evidence: every release’s version tag, commit and CI run; since v0.8.1, its boot images
+          with SHA-256 checksums; the engineering documents; and the status and development ledger generated from the
+          repository.
         </p>
       </div>
       <div class="md:col-span-4 bg-log p-gutter flex flex-col">
         <h2 class="font-mono text-mono-label text-ink mb-6 uppercase tracking-widest">Public record // now</h2>
         <ul class="flex flex-col gap-3 font-mono text-mono-data list-none">
+          <li><a href="/releases" class="text-meta-bright hover:text-ink underline underline-offset-4 transition-colors">releases — tags, commits, CI runs</a></li>
+          <li><a href="/download" class="text-meta-bright hover:text-ink underline underline-offset-4 transition-colors">boot images with SHA-256 checksums</a></li>
           <li><a href="/docs" class="text-meta-bright hover:text-ink underline underline-offset-4 transition-colors">engineering docs (rendered from the repo)</a></li>
           <li><a href="/build" class="text-meta-bright hover:text-ink underline underline-offset-4 transition-colors">live module status (status/current.json)</a></li>
           <li><a href="/changelog" class="text-meta-bright hover:text-ink underline underline-offset-4 transition-colors">development ledger — including failures</a></li>
@@ -107,8 +109,8 @@ const layout = [
         pushes; dependency choices are recorded with rationale; the dependency set is small and pinned.
       </p>
       <p class="font-mono text-mono-data text-muted">
-        When the repository opens, the requirement matrix, ADRs, unsafe-code inventory and QEMU evidence artifacts open
-        with it.
+        The requirement matrix, ADRs, unsafe-code inventory and QEMU evidence artifacts live in the repository; this
+        site carries the engineering documents and the release evidence drawn from them.
       </p>
     </section>
   </div>

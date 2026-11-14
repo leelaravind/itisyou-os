@@ -58,6 +58,9 @@ pub const CAP_FS_WRITE: u64 = 1 << 7;
 pub const CAP_NETWORK: u64 = 1 << 8;
 pub const CAP_PROC_CONTROL: u64 = 1 << 9;
 pub const CAP_SERVICE: u64 = 1 << 10;
+/// V0.11: console-granted only, never delegable (`kernel_core::caps`).
+pub const CAP_SYS_VIEW: u64 = 1 << 11;
+pub const CAP_PROPOSE: u64 = 1 << 12;
 
 /// Raw syscall: rax=nr, rdi/rsi/rdx=args → rax. rcx/r11 are clobbered by
 /// the hardware; the kernel may clobber any caller-saved register.
@@ -143,6 +146,38 @@ pub fn sleep_ticks(ticks: u64) -> u64 {
 pub const SYS_SVC_REPORT: u64 = 39;
 pub const SYS_CONSOLE_READ: u64 = 40;
 pub const SYS_GUI_EVENT: u64 = 41;
+/// V0.11 (ADR-0024): the approved system view (`CAP_SYS_VIEW`).
+pub const SYS_SYS_VIEW: u64 = 42;
+/// V0.11: file a proposal (`kernel_core::policy` record; `CAP_PROPOSE`).
+pub const SYS_PROPOSE: u64 = 43;
+/// V0.11: the kernel -> init mailbox (`kernel_core::initctl`); init only.
+pub const SYS_INIT_CTL: u64 = 44;
+
+/// Fetch the kernel's pending command for init into `buf` (24 bytes):
+/// its length, `ERR_AGAIN` when there is none, `ERR_PERM` for anyone but
+/// the live init.
+pub fn init_ctl_fetch(buf: &mut [u8]) -> u64 {
+    raw_syscall(SYS_INIT_CTL, 0, buf.as_mut_ptr() as u64, buf.len() as u64)
+}
+
+/// Acknowledge the fetched command (a 16-byte `kernel_core::initctl::Ack`).
+pub fn init_ctl_ack(ack: &[u8]) -> u64 {
+    raw_syscall(SYS_INIT_CTL, 1, ack.as_ptr() as u64, ack.len() as u64)
+}
+
+/// File a proposal: its id, or `ERR_INVAL` (malformed record), `ERR_AGAIN`
+/// (table full, or one already pending), `ERR_PERM` (refused - the kernel
+/// prints and audits the reason).
+pub fn propose(record: &[u8]) -> u64 {
+    raw_syscall(SYS_PROPOSE, record.as_ptr() as u64, record.len() as u64, 0)
+}
+
+/// Copy the approved system view (a `kernel_core::sysview` record) into
+/// `buf`: returns its length, `ERR_2BIG` if `buf` is too small, `ERR_PERM`
+/// without the view capability.
+pub fn sys_view(buf: &mut [u8]) -> u64 {
+    raw_syscall(SYS_SYS_VIEW, buf.as_mut_ptr() as u64, buf.len() as u64, 0)
+}
 
 /// Event kinds in a `gui_event` record (`kernel_core::wm`): byte 0.
 pub const GUI_EV_FOCUS_IN: u8 = 1;

@@ -6,6 +6,7 @@
 //! name    := [a-z0-9-]{1,15}
 //! path    := ('/bin/' | '/sbin/') [A-Za-z0-9._-]+     ; <= 64 bytes, no '..' or '//'
 //! option  := 'caps=' ('-' | capname(','capname)*)      ; caps names; default '-'
+//!                                                      ; 'ipc:<a>[-<b>]' names channels (V1.0)
 //!          | 'restart=' ('always'|'on-failure'|'never'); default on-failure
 //!          | 'after=' name(','name)*                   ; <= 4 dependencies
 //! arg     := progargs-valid token                      ; <= 16 args, <= 512 bytes encoded
@@ -83,6 +84,13 @@ pub enum Reason {
     DuplicateOption,
     /// A `caps=` list naming no known capability (or malformed).
     UnknownCapability,
+    /// A `caps=` list naming a capability only the kernel console may grant
+    /// (V0.11: `sys_view`, `propose`) - a service is init's child, and that
+    /// authority cannot be passed to a child.
+    ConsoleOnlyCapability,
+    /// A `caps=` list whose `ipc` channels are malformed or do not form one
+    /// contiguous range (V1.0, ADR-0025).
+    IpcChannels,
     /// A `restart=` value other than always/on-failure/never.
     BadRestart,
     /// More than [`MAX_DEPS`] dependencies.
@@ -105,7 +113,7 @@ pub enum Reason {
 
 impl Reason {
     /// Every reason, in declaration order.
-    pub const ALL: [Reason; 18] = [
+    pub const ALL: [Reason; 20] = [
         Reason::UnknownDirective,
         Reason::MissingName,
         Reason::MissingPath,
@@ -115,6 +123,8 @@ impl Reason {
         Reason::UnknownOption,
         Reason::DuplicateOption,
         Reason::UnknownCapability,
+        Reason::ConsoleOnlyCapability,
+        Reason::IpcChannels,
         Reason::BadRestart,
         Reason::TooManyDeps,
         Reason::BadArgs,
@@ -138,6 +148,8 @@ impl Reason {
             Reason::UnknownOption => "unknown_option",
             Reason::DuplicateOption => "duplicate_option",
             Reason::UnknownCapability => "unknown_capability",
+            Reason::ConsoleOnlyCapability => "console_only_capability",
+            Reason::IpcChannels => "ipc_channels",
             Reason::BadRestart => "bad_restart",
             Reason::TooManyDeps => "too_many_deps",
             Reason::BadArgs => "bad_args",
@@ -437,7 +449,7 @@ fn parse_line<'a>(
         }
         *seen = true;
         match key {
-            "caps" => svc.caps = parse_caps(value).ok_or(fail(Reason::UnknownCapability))?,
+            "caps" => svc.caps = parse_caps(value).map_err(fail)?,
             "restart" => svc.restart = Restart::parse(value).ok_or(fail(Reason::BadRestart))?,
             _ => {
                 for dep in value.split(',') {
@@ -459,18 +471,31 @@ fn parse_line<'a>(
 /// `-` (no capabilities) or a comma-separated list of capability names, each
 /// looked up by [`caps::parse`]. Empty elements and surrounding whitespace
 /// (which `caps::parse` would forgive) are refused here.
-fn parse_caps(value: &str) -> Option<u64> {
+fn parse_caps(value: &str) -> Result<u64, Reason> {
     if value == "-" {
-        return Some(0);
+        return Ok(0);
     }
     let mut bits = 0u64;
     for name in value.split(',') {
         if name.is_empty() || name.trim() != name {
-            return None;
+            return Err(Reason::UnknownCapability);
         }
-        bits |= caps::parse(name).ok()?;
+        bits |= caps::parse(name).map_err(|e| match e {
+            caps::CapParseError::BadChannels => Reason::IpcChannels,
+            caps::CapParseError::Unknown => Reason::UnknownCapability,
+        })?;
     }
-    Some(bits)
+    // Each `ipc` entry is a range on its own; together they must still be one.
+    if bits & caps::CAP_IPC != 0 && caps::ipc_channels(bits).is_none() {
+        return Err(Reason::IpcChannels);
+    }
+    // A service is init's child, and the console-only bits cannot be passed
+    // to a child (V0.11): naming one is refused here rather than silently
+    // dropped at spawn.
+    if bits & caps::CAP_CONSOLE_ONLY != 0 {
+        return Err(Reason::ConsoleOnlyCapability);
+    }
+    Ok(bits)
 }
 
 fn valid_path(path: &str) -> bool {
@@ -528,28 +553,41 @@ mod tests {
     }
 
     #[test]
-    fn shipped_init_conf_is_v08_background() {
+    fn shipped_init_conf_is_v08_background_plus_inferd() {
         let config = parse(SHIPPED).unwrap();
-        assert_eq!(config.len, 2);
+        assert_eq!(config.len, 4);
         let got: Vec<(&str, &str, u64, Restart)> = config
             .services()
             .map(|s| (s.name, s.path, s.caps, s.restart))
             .collect();
-        // Exactly the V0.8 kernel BACKGROUND table: tickd holds IPC only,
-        // flapd holds nothing; both are long-running.
+        // The V0.8 kernel BACKGROUND table - tickd holds IPC only, flapd
+        // holds nothing - and, third so their pids stay 2 and 3, V0.11's
+        // inferd with IPC and reads (under init's /etc sandbox). Since V1.0
+        // (ADR-0025) each names its IPC channels: tickd its own 2-3, inferd
+        // the reserved inference channels 6-7.
+        let chans = |lo, hi| (lo..=hi).fold(CAP_IPC, |b, c| b | caps::cap_ipc_channel(c));
         assert_eq!(
             got,
             [
-                ("tickd", "/bin/tickd", 0x2, Restart::Always),
+                ("tickd", "/bin/tickd", chans(2, 3), Restart::Always),
                 ("flapd", "/bin/flapd", 0x0, Restart::Always),
+                (
+                    "inferd",
+                    "/bin/inferd",
+                    chans(6, 7) | CAP_FS_READ,
+                    Restart::Always
+                ),
+                ("flakyd", "/bin/flakyd", 0x0, Restart::Always),
             ]
         );
         assert_eq!(CAP_IPC, 0x2);
+        assert_eq!(chans(2, 3), 0xc_0002);
+        assert_eq!(chans(6, 7) | CAP_FS_READ, 0xc0_0012);
         assert!(config.services().all(|s| s.long_running()));
         assert!(config
             .services()
             .all(|s| s.n_after == 0 && s.args.is_empty()));
-        assert_eq!(order_of(SHIPPED), [0, 1]);
+        assert_eq!(order_of(SHIPPED), [0, 1, 2, 3]);
         // Also valid when handed over as raw bytes, as init reads it.
         assert_eq!(parse_bytes(SHIPPED.as_bytes()).unwrap(), config);
     }
@@ -608,7 +646,7 @@ mod tests {
         let a = config.get(0).unwrap();
         assert_eq!(
             (a.name, a.path, a.caps, a.line),
-            ("a", "/bin/x", CAP_IPC, 5)
+            ("a", "/bin/x", CAP_IPC | caps::CAP_IPC_DEFAULT, 5)
         );
         let b = config.get(1).unwrap();
         assert_eq!(
@@ -675,6 +713,17 @@ mod tests {
                 Reason::DuplicateOption,
             ),
             ("service a /bin/x caps=root", 1, Reason::UnknownCapability),
+            // V0.11: console-only authority is not a service's to have.
+            (
+                "service a /bin/x caps=sys_view",
+                1,
+                Reason::ConsoleOnlyCapability,
+            ),
+            (
+                "service a /bin/x caps=ipc,propose",
+                1,
+                Reason::ConsoleOnlyCapability,
+            ),
             ("service a /bin/x restart=sometimes", 1, Reason::BadRestart),
             ("service a /bin/x after=b,c,d,e,f", 1, Reason::TooManyDeps),
             ("service a /bin/x --", 1, Reason::BadArgs),
@@ -701,11 +750,16 @@ mod tests {
         assert_eq!(fails(&"#".repeat(MAX_FILE + 1)), (0, Reason::FileTooLarge));
         let e = parse_bytes(b"service a /bin/\xFF").unwrap_err();
         assert_eq!((e.line, e.reason), (0, Reason::NotUtf8));
+        assert_eq!(
+            fails("service a /bin/x caps=ipc:2,ipc:6"),
+            (1, Reason::IpcChannels)
+        );
         covered.extend([
             Reason::LineTooLong,
             Reason::TooManyServices,
             Reason::FileTooLarge,
             Reason::NotUtf8,
+            Reason::IpcChannels,
         ]);
         for reason in Reason::ALL {
             assert!(covered.contains(&reason), "{} untested", reason.name());
@@ -909,7 +963,7 @@ mod tests {
             ["one", "two", "caps=gui", "--"]
         );
         assert_eq!(block(&svc), b"one\0two\0caps=gui\0--\0");
-        assert_eq!(svc.caps, CAP_IPC);
+        assert_eq!(svc.caps, CAP_IPC | caps::CAP_IPC_DEFAULT);
         // encode_args refuses a hand-built service with too many arguments.
         let mut hand = svc;
         let many = " x".repeat(progargs::MAX_ARGS + 1);
@@ -920,14 +974,32 @@ mod tests {
 
     #[test]
     fn capability_lists() {
-        assert_eq!(only("service a /bin/x caps=ipc").caps, CAP_IPC);
+        let ipc = CAP_IPC | caps::CAP_IPC_DEFAULT;
+        assert_eq!(only("service a /bin/x caps=ipc").caps, ipc);
         assert_eq!(
             only("service a /bin/x caps=spawn,ipc,fs_read").caps,
-            CAP_SPAWN | CAP_IPC | CAP_FS_READ
+            CAP_SPAWN | ipc | CAP_FS_READ
         );
-        assert_eq!(only("service a /bin/x caps=ipc,ipc").caps, CAP_IPC);
-        let all = "service a /bin/x caps=spawn,ipc,gui,dev,fs_read,audio,sys_admin,fs_write,network,proc_control,service";
-        assert_eq!(only(all).caps, caps::CAP_ALL_KNOWN);
+        assert_eq!(only("service a /bin/x caps=ipc,ipc").caps, ipc);
+        // V1.0 (ADR-0025): a named channel range, including the reserved
+        // inference channels, and ranges that together are not one range.
+        assert_eq!(
+            caps::ipc_channels(only("service a /bin/x caps=ipc:6-7,fs_read").caps),
+            Some((6, 7))
+        );
+        for bad in ["caps=ipc:2,ipc:6", "caps=ipc:8", "caps=ipc:3-2"] {
+            let text = format!("service a /bin/x {bad}");
+            assert_eq!(
+                parse(&text).map(|_| ()),
+                Err(ConfigError {
+                    line: 1,
+                    reason: Reason::IpcChannels
+                }),
+                "{bad}"
+            );
+        }
+        let all = "service a /bin/x caps=spawn,ipc:0-7,gui,dev,fs_read,audio,sys_admin,fs_write,network,proc_control,service";
+        assert_eq!(only(all).caps, caps::CAP_DELEGABLE);
         for bad in [
             "caps=",
             "caps=,",
@@ -1048,6 +1120,8 @@ mod tests {
                 "unknown_option",
                 "duplicate_option",
                 "unknown_capability",
+                "console_only_capability",
+                "ipc_channels",
                 "bad_restart",
                 "too_many_deps",
                 "bad_args",

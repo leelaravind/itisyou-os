@@ -1,15 +1,111 @@
-# Current status — v0.10.0 released (V0.10 — Userspace System)
+# Current status — v1.0.0 released (V1.0 — Experimental Personal OS, VM-verified)
 
-**Timestamp:** 2026-09-13 (Europe/London)
-**Branch:** `main` · **Repository:** `E:\Project\itisyou-os`
-**Latest release:** `v0.10.0` — V0.10 Userspace System. Release commit
-`c936bc7` (CI run `34782271250`, all jobs green, images reproduced
-bit-for-bit by the run's two clean builds); download live at
-https://os.itisyou.app/download (UEFI
-`f98f5cbe89dc295699f75231bc71766eb6c129a60baa41d028f5ac0f315da792`, BIOS
-`d8416a58f367d835a6755662d8d9322b0ba042d7362179030f0a0ea24f44f098`). The
-earlier releases `v0.9.0` and `v0.8.1` stay downloadable.
-**Next:** V0.11 — AI-Native System Layer.
+**Timestamp:** 2026-11-14 (revised from a clone of `origin`; the release itself is 2026-09-14)
+**Latest release:** `v1.0.0` — tag on commit `702119e` of branch `v1.0/ipc`.
+Released **without a GitHub CI run** (private repository, Actions billing
+unresolved), on the local Windows gate: the full QEMU matrix (74 legs), two
+clean builds with identical digests, and UEFI and BIOS boot tests of the
+published bytes. Published at https://os.itisyou.app/download (as recorded
+at release; not re-checked on 2026-11-14) — UEFI
+`64bb08cf5298b37d2bd4fb43fb2b016a3854e6477c2462867a6bf35032cc2ba3`, BIOS
+`9dbe74b0fd5497adaab69e084b6dcd5194a5fb6089762943d9d338df3e104f33`
+(`website/src/data/downloads.json`). V0.11 was folded into v1.0.0 and never
+tagged on its own.
+
+**Where the code is.** `main` is still at v0.10.0 (`510dd5e`). V0.11 and
+V1.0 are on `v1.0/ipc` (37 commits ahead of `main`, `main` is its ancestor,
+so the merge is a fast-forward). Branch `claude/gifted-cori-vzs71o` is
+`v1.0/ipc` plus the 2026-11-14 work: documentation,
+`scripts/run-ci-local.py`, the workflow changes and one kernel fix. **That
+branch is no longer the v1.0.0 code** — it still reports `itisyou-os 1.0.0`
+and must be given the next version before anything is released from it; the
+published v1.0.0 images are unchanged.
+
+**Open, in the order they block each other:**
+
+1. **The matrix is green on Linux, locally and in one GitHub run.** The
+   workflow's steps were run on Linux for the first time on 2026-11-14
+   (`docs/LOCAL_LINUX_RUN.md`, not a GitHub run). At v1.0.0 the QEMU matrix
+   passed 55 of 58 steps. The three failures are fixed on the branch:
+   `fault-contain-uefi` (the step lacked `--firmware`), `ai-retry-bios` (a
+   race in the ACT11-002 rollback, the real cause of the "flaky" leg), and
+   `fault-contain-bios` (QEMU 8.2 has no `int1`; by the owner's decision the
+   workflow now builds the pinned QEMU 11.1.0 and the assertion is
+   unchanged). Result: **58 of 58 QEMU steps**, 556 host tests, lint, the
+   website job and the two-clean-builds reproducibility job pass.
+   The repository was then made public and pull request #3 ran the
+   workflow on GitHub: run `43651248948`, all four jobs green.
+2. **V1-REL-001, V1-REL-002 and V1-REP-004 are still BLOCKED.** They ask
+   for CI on the release commit, three consecutive clean runs, and the
+   `v1.0.0` tag on a green-CI commit. The one GitHub run is on a commit
+   after v1.0.0 with a kernel change; the tagged commit itself cannot be
+   green (its workflow has the three defects above). The owner decides what
+   to stamp: in practice the next version, released from this branch.
+3. **`main` has not been given v1.0.0.**
+4. **The commit hashes cited in the documents do not exist on `origin`**
+   (`docs/COMMIT_HASHES.md`).
+5. Draft PR #1 (`w0-01-freeze-normative-inputs`) is a separate, owner-gated
+   track, untouched: it waits for the two accepted DOCX files.
+
+The exact steps for the owner's machine are the last section of
+`docs/SESSION_CHECKPOINT.md`.
+
+## V1.0 (released as v1.0.0)
+
+Acceptance criteria were written before any acceptance run
+(`docs/V1_ACCEPTANCE.md`); the rows are in `docs/REQUIREMENTS.md` § V1.0.
+Delivered for V1.0, each with a QEMU leg and a mutation control unless the
+row says otherwise: soak and leak accounting (V1-REL-003), a Ring 3 syscall
+fuzzer over three capability sets (V1-REL-004), a decoder mutation fuzzer
+(V1-REL-005), CI parity with the local matrix (V1-REL-006), a mechanical
+unsafe inventory (V1-SEC-005), IPC channel scoping (V1-SEC-006, ADR-0025),
+and a whole-attack-surface review (V1-SEC-002, `docs/V1_SECURITY_REVIEW.md`):
+37 findings — 3 high, 15 medium, 19 low — of which 18 were fixed, including
+all three highs, and 7 mediums are recorded as accepted in
+`docs/KNOWN_LIMITATIONS.md`.
+
+## V0.11 (folded into v1.0.0; never released on its own)
+
+
+Every V0.11 row in `docs/REQUIREMENTS.md` is IMPLEMENTED+VERIFIED on
+`v0.11/work` with QEMU and host evidence, each with a negative control.
+
+- **Audit trail, reviewed first.** Three defects present since v0.8.0 were
+  fixed before any agent code (AUDIT11-001, AUDIT11-002, SEC11-001) and
+  disclosed for v0.10.0 on the site.
+- **The AI-native layer (ADR-0024):**
+  - a pinned diagnostic model trained at build time from synthetic scenarios
+    (MODEL11-001). Its accuracy equals a one-rule baseline, which is reported
+    as such;
+  - a console-only read-only system view (VIEW11-001);
+  - `inferd` running the model in Ring 3 under init (INFER11-001);
+  - runbooks (KB11-001);
+  - an agent with no authority (AGENT11-001);
+  - kernel-checked proposals (PROP11-001);
+  - console-only approval with kernel execution, verification and rollback
+    for `resume-scheduler` (ACT11-001) and for `retry-service` through a
+    kernel→init mailbox (ACT11-002).
+- **Terminal escapes.** Ring 3 output can no longer drive the operator's
+  terminal (OUT11-001).
+- **The adversarial review.** Six independent reviewers covered the whole
+  V0.11 diff, and every finding was verified by a second reviewer. Nine
+  findings were confirmed, and each is now fixed with a leg or selftest and a
+  control:
+  - two console-evidence defects in v0.10.0, disclosed for it: a marker split
+    across output chunks (OUT11-002), and a program-chosen path printed by
+    `ps` (SEC11-002);
+  - a crafted audit trail that crashed recovery, and a false "the next save
+    heals it" claim (AUDIT11-003);
+  - a rollback kill that trusted init's pid, and a fetched-but-unacknowledged
+    retry (ACT11-002);
+  - proposal expiry, and bidi characters in the kernel's echo (PROP11-001,
+    AUDIT11-002);
+  - two tests weaker than their claims (PROP11-001).
+
+Limitations are in `docs/KNOWN_LIMITATIONS.md`: synthetic training, three
+conditions and two actions, unauthenticated IPC, and proposals that are not
+persisted. **Next:** the v0.11.0 release, which needs CI (another short
+public window).
 
 ## V0.9 (released as v0.9.0)
 

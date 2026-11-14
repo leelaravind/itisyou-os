@@ -54,6 +54,8 @@ if (Test-Path 'target/images/itisyou-kernel-selftest-uefi.img') {
         '--require', 'RING3-HELLO', '--require', 'RING3-DONE',
         '--require', 'RING3-PARENT-DONE', '--require', 'RING3-PARENT-IPC-OK',
         '--require', 'nvme_ready blocks=', '--require', 'SPIN-FINITE-OK',
+        '--require', 'gfx width=', '--require', 'RING3-GUI-OK',
+        '--expect', 'B170', '--expect', 'B180',
         '--timeout-secs', '300', '--label', 'selftest-uefi')
 } else {
     Write-Output 'SKIPPED: UEFI image absent - bootloader UEFI stage blocked upstream (rust-osdev/bootloader#579)'
@@ -72,7 +74,7 @@ Write-Output '=== QEMU shell interaction (BIOS) ==='
     '--send', 'panic-test', '--send', 'shutdown',
     # The running kernel must name the version the release claims
     # (Cargo workspace version == status/current.json; check-consistency.mjs).
-    '--require', 'itisyou-os 0.10.0',
+    '--require', 'itisyou-os 1.0.0',
     '--require', 'task 0: kmain',
     '--require', 'RING3-DONE',
     '--require', 'run: /bin/init: Exit(0)',
@@ -114,6 +116,24 @@ Remove-Item $deskShot -ErrorAction SilentlyContinue
     '--require', 'mouse dx=40 dy=25 ', '--require', 'mouse dx=-20 dy=15 ',
     '--require', 'DESKTOP-INPUT-VERIFIED',
     '--timeout-secs', '150', '--label', 'desktop-input-bios')
+
+Write-Output '=== QEMU window quotas: per-owner count and pixels (BIOS) ==='
+# V0.10 and V1.0 GUI1-001 (the V1-SEC-002 review): a Gui program's windows are
+# bounded two ways so one program cannot take the whole compositor and leave
+# nothing for the desktop or other apps. First by count: four windows, then
+# ERR_AGAIN. Then by backing pixels: two 1024x512 windows reach the per-owner
+# quota (half the budget) exactly and the third is refused, before the count
+# cap - so a single program cannot consume the whole 2 M-pixel budget with two
+# max-size windows, as it could before V1.0.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B210',
+    '--send', 'run /bin/proc-probe gui -- gui-quota',
+    '--send', 'run /bin/proc-probe gui -- gui-pixels',
+    '--send', 'shutdown',
+    '--require', 'PROCPROBE-GUI-QUOTA-OK windows=4',
+    '--require', 'PROCPROBE-GUI-PIXELS-OK windows=2',
+    '--forbid', 'PROCPROBE-FAILED',
+    '--timeout-secs', '150', '--label', 'gui-quota-bios')
 
 Write-Output '=== QEMU device model + AC97 audio (BIOS) ==='
 # Attach an AC97 audio controller whose output is captured to a WAV via QEMU's
@@ -282,6 +302,57 @@ Remove-Item $trustDisk -ErrorAction SilentlyContinue
     '--timeout-secs', '240', '--label', 'trust-bios')
 Remove-Item $trustDisk -ErrorAction SilentlyContinue
 
+Write-Output '=== QEMU V1.0: a hostile package store is refused, not obeyed (BIOS) ==='
+# SEC1-004/005 (the V1-SEC-002 review). `store import` plants what only a
+# disk edited outside the OS could hold. (1) The hello-app package - signed
+# by the published test key, whose scope is `hello-` - filed as
+# `other-app.1.pkg`: `pkg launch other-app` must refuse (name_mismatch), where
+# before it ran the package as other-app. (2) A package filed as `...1.pkg`:
+# before, `pkg list` showed an app `..` whose sandbox `/apps/..` was `/`; now
+# the name means nothing and `pkg launch ..` is refused. (3) A commit marker
+# for version 4294967295: the next `pkg install` must refuse (version_space)
+# rather than overflow and panic the kernel. (4) `hello-app.+2.ok`, a second
+# spelling of version 2, is ignored: the install that follows is v1, and it
+# launches.
+$hostileDisk = Join-Path $env:ITISYOU_SCRATCH 'itisyou-hostile-store.img'
+Remove-Item $hostileDisk -ErrorAction SilentlyContinue
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $hostileDisk,
+    '--expect', 'B190',
+    '--send', 'store import /pkgs/hello-app-1.itpkg other-app.1.pkg',
+    '--send', 'store put other-app.1.ok ok',
+    '--send', 'store import /pkgs/hello-app-1.itpkg ...1.pkg',
+    '--send', 'store put ...1.ok ok',
+    '--send', 'pkg list',
+    '--send', 'pkg launch other-app',
+    '--send', 'pkg launch ..',
+    '--send', 'store put hello-app.4294967295.ok ok',
+    '--send', 'pkg install /pkgs/hello-app-1.itpkg',
+    '--send', 'store rm hello-app.4294967295.ok',
+    '--send', 'store put hello-app.+2.ok ok',
+    '--send', 'pkg install /pkgs/hello-app-1.itpkg',
+    '--send', 'pkg launch hello-app',
+    '--send', 'shutdown',
+    '--require-order', 'store: import path=/pkgs/hello-app-1.itpkg name=other-app.1.pkg bytes=',
+    '--require-order', '  other-app: active=Some(1)',
+    '--require-order', 'launch name=other-app v=1 result=refused reason=name_mismatch manifest_name=hello-app',
+    '--require-order', 'pkg: launch other-app: BadPackage',
+    '--require-order', 'pkg: launch ..: NotInstalled',
+    '--require-order', 'stage name=hello-app result=refused reason=version_space',
+    '--require-order', 'pkg: install refused: Storage',
+    '--require-order', 'install name=hello-app v=1 result=ok',
+    '--require-order', 'HELLO-APP-OK',
+    # (No double quotes in a marker: Windows PowerShell drops them on the
+    # way to a native program.)
+    '--require', 'action=pkg_launch cap=0x0 result=denied',
+    '--require', 'reason=bad_name',
+    '--require', 'action=pkg_stage cap=0x0 result=denied',
+    '--forbid', '  ..: active=',
+    '--forbid', 'launch name=other-app v=1 caps=',
+    '--forbid', 'launch name=.. ',
+    '--timeout-secs', '240', '--label', 'pkg-store-hostile-bios')
+Remove-Item $hostileDisk -ErrorAction SilentlyContinue
+
 Write-Output '=== QEMU long-running background services (BIOS) ==='
 # V0.8 persistent services: `tickd` and `flapd` are ordinary Ring 3 processes
 # started at boot with exactly the capabilities they declare (tickd IPC-only,
@@ -307,7 +378,7 @@ Write-Output '=== QEMU long-running background services (BIOS) ==='
     '--send', 'svc',
     '--send', 'bg /bin/tick-client',
     '--send', 'shutdown',
-    '--require', 'bg_start name=tickd pid=2 caps=0x2 long_running=true',
+    '--require', 'bg_start name=tickd pid=2 caps=0xc0002 long_running=true',
     '--require', 'bg_start name=flapd pid=3 caps=0x0 long_running=true',
     '--require', 'TICKD-READY',
     '--require', 'TICKD-ALIVE tick=',
@@ -557,6 +628,77 @@ Write-Output '=== QEMU hardening: SMEP/SMAP/UMIP, W^X, stack guard (BIOS) ==='
     '--forbid', 'STACKGUARD-LEAK',
     '--timeout-secs', '240', '--label', 'harden-bios')
 
+Write-Output '=== QEMU V1.0: every CPU exception from Ring 3 is contained (BIOS) ==='
+# SEC1-001/002/003 (the V1-SEC-002 review). Before V1.0 only #BP, #UD, #GP,
+# #PF and #DF had IDT gates: a `div` by zero, `int1` or a TF single step from
+# a program with no capabilities found a gate that was not present, became a
+# double fault and panicked the kernel. Now each ends only the program (the
+# runner fails the leg on a kernel panic), and the system goes on - a
+# program still runs afterwards. `stack` pushes through a non-canonical
+# stack pointer: #SS on hardware, #GP under QEMU TCG, contained either way.
+# x87 and SSE instructions fault because the FPU is off for programs (its
+# state was never switched between them, SEC1-002), and after a syscall the
+# argument and scratch registers come back zero rather than holding what
+# the kernel left in them (SEC1-003).
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B210',
+    '--send', 'run /bin/fault-probe - -- div0',
+    '--send', 'run /bin/fault-probe - -- int1',
+    '--send', 'run /bin/fault-probe - -- step',
+    '--send', 'run /bin/fault-probe - -- stack',
+    '--send', 'run /bin/fault-probe - -- x87',
+    '--send', 'run /bin/fault-probe - -- sse',
+    '--send', 'run /bin/fault-probe - -- regs',
+    '--send', 'run /bin/child',
+    '--send', 'shutdown',
+    '--require', 'cpu_protection smep=true smap=true umip=true user_fpu=off',
+    '--require-order', 'FAULTPROBE-ARMED mode=div0',
+    '--require-order', 'exception=divide_error vector=0 cs_rpl=3',
+    '--require-order', 'run: /bin/fault-probe: Fault { vector: 0,',
+    '--require-order', 'FAULTPROBE-ARMED mode=int1',
+    '--require-order', 'exception=debug vector=1 cs_rpl=3',
+    '--require-order', 'run: /bin/fault-probe: Fault { vector: 1,',
+    '--require-order', 'FAULTPROBE-ARMED mode=step',
+    '--require-order', 'exception=debug vector=1 cs_rpl=3',
+    '--require-order', 'run: /bin/fault-probe: Fault { vector: 1,',
+    '--require-order', 'FAULTPROBE-ARMED mode=stack',
+    '--require-order', 'run: /bin/fault-probe: Fault { vector: ',
+    '--require-order', 'FAULTPROBE-ARMED mode=x87',
+    '--require-order', 'exception=device_not_available vector=7 cs_rpl=3',
+    '--require-order', 'run: /bin/fault-probe: Fault { vector: 7,',
+    '--require-order', 'FAULTPROBE-ARMED mode=sse',
+    '--require-order', 'exception=invalid_opcode cs_rpl=3',
+    '--require-order', 'run: /bin/fault-probe: Fault { vector: 6,',
+    '--require-order', 'FAULTPROBE-REGS clear=true checked=12',
+    '--require-order', 'run: /bin/child: Exit(7)',
+    '--forbid', 'FAULTPROBE-UNCONTAINED',
+    '--forbid', 'FAULTPROBE-REGS clear=false',
+    '--timeout-secs', '180', '--label', 'fault-contain-bios')
+
+Write-Output '=== QEMU V1.0: CPU exceptions contained, FPU off (UEFI) ==='
+# The same under OVMF, whose handoff leaves CR4.OSFXSR set: the kernel must
+# clear it, or SSE would run - and leak - in Ring 3.
+& $runner @('--image', 'target/images/itisyou-kernel-uefi.img', '--uefi',
+    '--expect', 'B210',
+    '--send', 'run /bin/fault-probe - -- div0',
+    '--send', 'run /bin/fault-probe - -- x87',
+    '--send', 'run /bin/fault-probe - -- sse',
+    '--send', 'run /bin/fault-probe - -- regs',
+    '--send', 'run /bin/child',
+    '--send', 'shutdown',
+    '--require', 'cpu_protection smep=true smap=true umip=true user_fpu=off',
+    '--require-order', 'FAULTPROBE-ARMED mode=div0',
+    '--require-order', 'run: /bin/fault-probe: Fault { vector: 0,',
+    '--require-order', 'FAULTPROBE-ARMED mode=x87',
+    '--require-order', 'run: /bin/fault-probe: Fault { vector: 7,',
+    '--require-order', 'FAULTPROBE-ARMED mode=sse',
+    '--require-order', 'run: /bin/fault-probe: Fault { vector: 6,',
+    '--require-order', 'FAULTPROBE-REGS clear=true checked=12',
+    '--require-order', 'run: /bin/child: Exit(7)',
+    '--forbid', 'FAULTPROBE-UNCONTAINED',
+    '--forbid', 'FAULTPROBE-REGS clear=false',
+    '--timeout-secs', '240', '--label', 'fault-contain-uefi')
+
 Write-Output '=== QEMU program arguments: console and parent-to-child (BIOS) ==='
 # V0.10 PROC10-001. Every process carries an immutable argument block (at most
 # 16 arguments, 512 bytes, printable ASCII without spaces), validated once
@@ -708,16 +850,25 @@ Write-Output '=== QEMU userspace filesystem writes (BIOS, two boots) ==='
 # the sandbox check, the store-name parsing and the atomic commit all sit
 # between the program and the disk.
 #
-# The error paths matter as much as the successes: four refusals, each for a
+# The error paths matter as much as the successes: five refusals, each for a
 # different reason, so one over-broad check cannot pass by accident. And
 # `fs-write-denied` holds `fs_read` and nothing else, so its refusals prove
 # the WRITE right specifically - it can still read and list the same store.
+#
+# V0.11: the writer also tries a name with a line break in it (AUDIT11-002:
+# echoed into the audit detail, it forged a kernel marker line) and the
+# kernel-owned files (SEC11-001): the audit trail and the package store. An
+# application is installed first, so the commit marker the writer tries to
+# delete is real, and `pkg list` shows it is still active afterwards.
 $fsDisk = Join-Path $env:ITISYOU_SCRATCH 'itisyou-fswrite-test.img'
 Remove-Item $fsDisk -ErrorAction SilentlyContinue
 & $runner @('--image', 'target/images/itisyou-kernel-bios.img',
     '--nvme-persist', $fsDisk,
     '--expect', 'B190',
+    '--send', 'pkg install /pkgs/hello-app-1.itpkg',
     '--send', 'run /bin/fs-writer fs_read,fs_write',
+    '--send', 'pkg list',
+    '--send', 'store cat echo.txt',
     '--send', 'store put planted.txt planted',
     '--send', 'run /bin/fs-write-denied fs_read',
     '--send', 'run /bin/fs-writer fs_read,fs_write /pkgs',
@@ -732,6 +883,18 @@ Remove-Item $fsDisk -ErrorAction SilentlyContinue
     '--require', 'FSWRITE-ERRORS-OK',
     '--require', 'FSWRITE-DELETED',
     '--require', 'FSWRITE-OK',
+    # Kernel-owned files: refused and audited for each call, and the commit
+    # marker the program tried to delete still makes v1 the active version.
+    '--require', 'FSWRITE-KERNEL-OWNED-REFUSED',
+    '--require', 'action=fs_write cap=0x80 result=denied',
+    '--require', 'action=fs_delete cap=0x80 result=denied',
+    '--require', 'action=fs_read cap=0x10 result=denied',
+    '--require', 'reason=kernel_owned',
+    '--require', 'hello-app: active=Some(1) previous=None staged=None',
+    # The line-break name is refused before anything echoes it, and contents
+    # a program wrote are echoed as one line with the marker neutralized.
+    '--require', 'store: echo.txt = line1\x0a[RING3-U:AUDIT] forged-content',
+    '--forbid', '[ITISYOU:AUDIT] forged',
     # The write right, specifically: refused for a process holding fs_read.
     '--require', 'FSDENY-OK call=fs_write',
     '--require', 'FSDENY-OK call=fs_delete',
@@ -850,9 +1013,119 @@ Remove-Item $auditDisk -ErrorAction SilentlyContinue
     '--send', 'audit verify',
     '--send', 'shutdown',
     '--require', 'trail_recovered status=verified',
-    '--require', 'trail_recovered status=TAMPERED',
+    # V0.11: `audit verify` checks the file without adopting it.
+    '--require', 'trail_checked status=TAMPERED reason=chain',
     '--timeout-secs', '240', '--label', 'audit-persist-tamper')
+# AUD08-001, and the V0.11 review: boot recovery must see a forgery too (no
+# other leg boots on a tampered trail), and a tampered trail STAYS reported -
+# a save continues its broken chain rather than laundering it. Boot 4 finds
+# boot 3's forgery and plants one whose head its records cannot reach; boot
+# 5 recovers it, saves and checks; boot 6 still finds it TAMPERED, and the
+# operator removes it; boot 7 starts a fresh trail that verifies.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $auditDisk,
+    '--expect', 'B210',
+    '--send', 'store put audit.log itisyou-audit v2 boot=7 count=0 base=1111111111111111111111111111111111111111111111111111111111111111 head=2222222222222222222222222222222222222222222222222222222222222222',
+    '--send', 'shutdown',
+    '--require', 'trail_recovered status=TAMPERED',
+    '--forbid', 'trail_recovered status=verified',
+    '--timeout-secs', '240', '--label', 'audit-tamper-boot')
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $auditDisk,
+    '--expect', 'B210',
+    '--send', 'audit save',
+    '--send', 'audit verify',
+    '--send', 'shutdown',
+    '--require', 'trail_recovered status=TAMPERED',
+    '--require', 'trail_saved records=',
+    '--require', 'trail_checked status=TAMPERED reason=chain',
+    '--forbid', 'trail_recovered status=verified',
+    '--forbid', 'trail_checked status=verified',
+    '--timeout-secs', '240', '--label', 'audit-tamper-save')
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $auditDisk,
+    '--expect', 'B210',
+    '--send', 'store rm audit.log',
+    '--send', 'shutdown',
+    '--require', 'trail_recovered status=TAMPERED',
+    '--require', 'store: rm name=audit.log',
+    '--forbid', 'trail_recovered status=verified',
+    '--timeout-secs', '240', '--label', 'audit-tamper-stays')
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $auditDisk,
+    '--expect', 'B210',
+    '--send', 'audit save',
+    '--send', 'audit verify',
+    '--send', 'shutdown',
+    '--require', 'trail_recovered status=absent',
+    '--require', 'trail_checked status=verified reason=none',
+    '--timeout-secs', '240', '--label', 'audit-tamper-cleared')
 Remove-Item $auditDisk -ErrorAction SilentlyContinue
+
+Write-Output '=== QEMU audit trail across boots and past the window (BIOS, three boots) ==='
+# AUDIT11-001. Until V0.11 the trail stored only the in-memory ring's records
+# (64, this boot's only) under a head covering every record ever made, so the
+# next boot reported a trail nobody touched as TAMPERED whenever the ring had
+# dropped a record or an earlier boot's trail had been recovered. Boot 1 makes
+# more records than the stored window holds (13 per fs-writer run - three
+# writes and a delete, nine refusals - x 11 = 143, plus the boot's own), so
+# the save must move `base` off genesis. Boot 2 recovers it, adds
+# records, checks the file mid-boot (read-only: before V0.11 this re-ran
+# recovery and dropped the unsaved records from the chain) and saves again.
+# Boot 3 must find the second boot's trail verified.
+$windowDisk = Join-Path $env:ITISYOU_SCRATCH 'itisyou-audit-window.img'
+Remove-Item $windowDisk -ErrorAction SilentlyContinue
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $windowDisk,
+    '--expect', 'B210',
+    '--send', 'run /bin/fs-writer fs_read,fs_write',
+    '--send', 'run /bin/fs-writer fs_read,fs_write',
+    '--send', 'run /bin/fs-writer fs_read,fs_write',
+    '--send', 'run /bin/fs-writer fs_read,fs_write',
+    '--send', 'run /bin/fs-writer fs_read,fs_write',
+    '--send', 'run /bin/fs-writer fs_read,fs_write',
+    '--send', 'run /bin/fs-writer fs_read,fs_write',
+    '--send', 'run /bin/fs-writer fs_read,fs_write',
+    '--send', 'run /bin/fs-writer fs_read,fs_write',
+    '--send', 'run /bin/fs-writer fs_read,fs_write',
+    '--send', 'run /bin/fs-writer fs_read,fs_write',
+    '--send', 'audit save',
+    '--send', 'audit verify',
+    '--send', 'audit',
+    '--send', 'shutdown',
+    '--require', 'trail_recovered status=absent',
+    '--require', 'trail_saved records=128 ',
+    '--require', 'trail_checked status=verified reason=none records=128 ',
+    '--require', 'audit: chain boot=0 saved_records=128 window=128 ',
+    # More records than fit: the base must have moved past genesis.
+    '--forbid', 'base=0000000000000000000000000000000000000000000000000000000000000000',
+    '--forbid', 'FSWRITE-FAILED',
+    '--timeout-secs', '300', '--label', 'audit-window-write')
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $windowDisk,
+    '--expect', 'B210',
+    '--send', 'run /bin/fs-writer fs_read,fs_write',
+    '--send', 'audit verify',
+    '--send', 'audit save',
+    '--send', 'audit verify',
+    '--send', 'audit',
+    '--send', 'shutdown',
+    '--require', 'trail_recovered status=verified records=128 ',
+    '--require', 'trail_checked status=verified reason=none records=128 ',
+    '--require', 'trail_saved records=128 ',
+    '--require', 'audit: chain boot=1 saved_records=128 window=128 ',
+    '--forbid', 'status=TAMPERED',
+    '--timeout-secs', '300', '--label', 'audit-window-continue')
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $windowDisk,
+    '--expect', 'B210',
+    '--send', 'audit',
+    '--send', 'shutdown',
+    '--require', 'trail_recovered status=verified records=128 ',
+    '--require', 'audit: chain boot=2 ',
+    '--forbid', 'status=TAMPERED',
+    '--timeout-secs', '300', '--label', 'audit-window-verify')
+Remove-Item $windowDisk -ErrorAction SilentlyContinue
 
 Write-Output '=== QEMU audit anchoring against a witness off the disk (BIOS, four boots) ==='
 # The chain is unkeyed, so an attacker who rewrites the WHOLE trail can write
@@ -888,7 +1161,11 @@ foreach ($f in @($anchorDisk, $anchorWitness)) { if (Test-Path $f) { Remove-Item
     '--nvme-persist', $anchorDisk,
     '--expect', 'B210',
     '--send', 'store put audit.log itisyou-audit v1 boot=0 count=0 head=0000000000000000000000000000000000000000000000000000000000000000',
+    # V0.11: while the system runs, the running kernel is the reference - a
+    # replaced trail is caught even though its chain is valid.
+    '--send', 'audit verify',
     '--send', 'shutdown',
+    '--require', 'trail_checked status=TAMPERED reason=replaced records=0 ',
     '--timeout-secs', '180', '--label', 'audit-anchor-forge')
 & $runner @('--image', 'target/images/itisyou-kernel-bios.img',
     '--net-user', '--nvme-persist', $anchorDisk, '--audit-witness', $anchorWitness,
@@ -933,6 +1210,28 @@ Remove-Item $updDisk -ErrorAction SilentlyContinue
 Remove-Item $updDisk -ErrorAction SilentlyContinue
 Remove-Item $platDisk -ErrorAction SilentlyContinue
 
+Write-Output '=== QEMU capability-table exhaustion is loud, not silent (BIOS) ==='
+# V1.0 CAP1-001 (the V1-SEC-002 review): a program holding `spawn` cannot
+# silently exhaust the 256-entry capability table and leave every later
+# process with no authority while the spawn audit still claims the full set.
+# proc-probe spawns long-lived children (each taking 8 handles) until the
+# table is full; that spawn is refused with ERR_AGAIN and audited
+# `capability_table_full`, and a program run afterwards still works
+# (`/bin/child` exits 7). The exact number that fit depends on the baseline,
+# so the leg asserts the refusal happened, not a count.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B210',
+    '--send', 'run /bin/proc-probe spawn,ipc,gui,dev,fs_read,audio,fs_write,network,proc_control -- cap-exhaust',
+    '--send', 'run /bin/child',
+    '--send', 'shutdown',
+    '--require', 'PROCPROBE-CAP-EXHAUST-OK spawned=',
+    # (No double quotes in a marker: Windows PowerShell drops them for a
+    # native program. The reason string is unique to this refusal.)
+    '--require', 'reason=capability_table_full',
+    '--require', 'run: /bin/child: Exit(7)',
+    '--forbid', 'PROCPROBE-FAILED',
+    '--timeout-secs', '200', '--label', 'cap-exhaust-bios')
+
 Write-Output '=== QEMU intentional panic (BIOS) ==='
 & $runner @('--image', 'target/images/itisyou-kernel-panictest-bios.img',
     '--expect', 'B010', '--expect', 'B020', '--expect-panic',
@@ -965,15 +1264,27 @@ Write-Output '=== QEMU line-atomic Ring 3 output; kernel markers unforgeable (BI
 # services. Both lines must arrive whole, and a line imitating a kernel
 # marker must come out rewritten. (Unbuffered, the lines interleave byte by
 # byte and kernel markers land mid-line.)
+#
+# V0.11 review: a marker straddling the 256-byte line-buffer seam (v0.10.0
+# rewrote each chunk on its own, so it reached the port whole), and a spawn
+# path whose popped component carries a line break and a forged marker (the
+# kernel stored, and `ps` printed, the string the program chose).
 & $runner @('--image', 'target/images/itisyou-kernel-bios.img',
     '--expect', 'B200',
     '--send', 'bg /bin/line-probe spawn',
+    '--send', 'run /bin/line-probe -- P',
+    '--send', 'ps',
     '--send', 'shutdown',
     '--require', 'LINEPROBE-A-0123456789abcdefghijklmnopqrstuv',
     '--require', 'LINEPROBE-B-0123456789abcdefghijklmnopqrstuv',
     '--require', '[RING3-U:SVC] spoofed-by-ring3',
+    '--require', '[RING3-U:SVC] spoofed-split',
     '--require', 'LINEPROBE-OK',
+    '--require', 'LINEPROBE-HOSTILE-PATH result=',
+    '--require', 'path=/bin/spin-forever state=',
     '--forbid', '[ITISYOU:SVC] spoofed-by-ring3',
+    '--forbid', '[ITISYOU:SVC] spoofed-split',
+    '--forbid', '[ITISYOU:AUDIT] forged',
     '--forbid', 'LINEPROBE-FAILED',
     '--timeout-secs', '180', '--label', 'line-atomic-bios')
 
@@ -1018,6 +1329,8 @@ Write-Output '=== QEMU process model: parent-only wait, wait_nohang, sleep, orph
     '--require', 'PROCPROBE-NOHANG-AGAIN-OK',
     '--require', 'PROCPROBE-NOHANG-REAPED status=7',
     '--require', 'PROCPROBE-ANY-REAPED status=7',
+    # V1.0 PROC1-001: wait(0) on a running child blocks and is woken.
+    '--require', 'PROCPROBE-WAIT-ANY status=7',
     '--require', 'PROCPROBE-SLEEP-OK requested=50',
     '--require', 'PROCPROBE-SLEEP-BOUND-OK',
     '--require', 'PROCPROBE-ORPHAN-SPAWNED',
@@ -1075,8 +1388,8 @@ Write-Output '=== QEMU userspace init: configuration and supervision (BIOS) ==='
     '--send', 'ps',
     '--send', 'run /bin/tick-client',
     '--send', 'shutdown',
-    '--require', 'service tickd /bin/tickd caps=ipc restart=always',
-    '--require', 'INIT-CONFIG-OK path=/etc/init.conf services=2 order=tickd,flapd',
+    '--require', 'service tickd /bin/tickd caps=ipc:2-3 restart=always',
+    '--require', 'INIT-CONFIG-OK path=/etc/init.conf services=4 order=tickd,flapd,inferd,flakyd',
     '--require', 'INIT-CONFIG-ERROR path=/etc/init-tests/cycle.conf line=0 reason=cycle',
     '--require', 'INIT-CONFIG-ERROR path=/etc/init-tests/badcap.conf line=2 reason=unknown_capability',
     '--require', 'INIT-CONFIG-ERROR path=/etc/init.conf line=0 reason=read_denied',
@@ -1094,13 +1407,15 @@ Write-Output '=== QEMU userspace init: configuration and supervision (BIOS) ==='
     '--forbid', 'ARGS-FAILED',
     '--forbid', 'INIT-USAGE',
     '--forbid', 'INIT-REPORT-REFUSED',
-    '--require', '[ITISYOU:INIT] start pid=1 path=/sbin/init caps=0x413 sandbox=/etc',
-    '--require', 'INIT-CONFIG path=/etc/init.conf services=2 order=tickd,flapd',
-    '--require', 'pid=1 action=spawn cap=0x2 result=ok',
+    '--require', '[ITISYOU:INIT] start pid=1 path=/sbin/init caps=0xff0413 sandbox=/etc',
+    '--require', 'INIT-CONFIG path=/etc/init.conf services=4 order=tickd,flapd,inferd,flakyd',
+    '--require', 'pid=1 action=spawn cap=0xc0002 result=ok',
     '--require', 'pid=1 action=spawn cap=0x0 result=ok',
-    '--require', 'bg_start name=tickd pid=2 caps=0x2 long_running=true supervisor=1',
+    '--require', 'bg_start name=tickd pid=2 caps=0xc0002 long_running=true supervisor=1',
     '--require', 'bg_start name=flapd pid=3 caps=0x0 long_running=true supervisor=1',
-    '--require', '[ITISYOU:INIT] ready pid=1 services=2',
+    '--require', 'bg_start name=inferd pid=4 caps=0xc00012 long_running=true supervisor=1',
+    '--require', 'bg_start name=flakyd pid=5 caps=0x0 long_running=true supervisor=1',
+    '--require', '[ITISYOU:INIT] ready pid=1 services=4',
     '--require', '[ITISYOU:INIT] settled ready=true',
     '--require', '  pid=1 ppid=0 path=/sbin/init state=',
     '--require', '  pid=2 ppid=1 path=/bin/tickd state=runnable',
@@ -1111,7 +1426,7 @@ Write-Output '=== QEMU userspace init: configuration and supervision (BIOS) ==='
     '--require', '[ITISYOU:INIT] died pid=1 status=killed',
     '--require', 'action=restart restarts=1',
     '--require', '[ITISYOU:INIT] restart pid=',
-    '--require', 'caps=0x413 sandbox=/etc restarts=1',
+    '--require', 'caps=0xff0413 sandbox=/etc restarts=1',
     '--require', 'kill: pid=2: no such process',
     '--forbid', 'settled ready=false',
     '--forbid', 'init=true reason=',
@@ -1156,7 +1471,9 @@ Write-Output '=== QEMU Ring 3 shell with the console input (BIOS) ==='
     '--require', '[ITISYOU:CONSOLE] owner=kernel reason=owner_exit',
     '--require', 'rsh: /bin/sh: exit=0',
     '--require', 'back-in-kernel',
-    '--require', 'itisyou-os 0.10',
+    # The kernel console's `version` line, without pinning a version (the
+    # V0.11 dev bump missed this pin and failed the leg).
+    '--require', '(x86_64, QEMU, pre-alpha)',
     '--require', 'shutting down (QEMU exit)',
     '--forbid', 'unknown command: rsh-only-builtin',
     '--forbid', 'unknown command: pid',
@@ -1358,6 +1675,570 @@ Remove-Item $persistDisk -ErrorAction SilentlyContinue
     '--require', 'FS-PERSIST-VERIFIED',
     '--timeout-secs', '90', '--label', 'fs-persist-verify')
 Remove-Item $persistDisk -ErrorAction SilentlyContinue
+
+Write-Output '=== QEMU V0.11: the diagnostic model the build trained (BIOS) ==='
+# MODEL11-001 (ADR-0024). The build trains the model from ai/scenarios.txt,
+# refuses to build on a stale pin, ships /etc/ai/diag.model and compiles its
+# SHA-256 into the kernel; at boot the kernel checks that the initramfs copy
+# is the one it was built with and that it decodes. The digest required here
+# is the pin in ai/diag.model.sha256.
+$modelPin = (Get-Content ai/diag.model.sha256 -TotalCount 1).Trim()
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B110',
+    '--send', 'shutdown',
+    '--require', "[ITISYOU:AI] model sha256=$modelPin bytes=276 initramfs_match=true decode=ok",
+    '--forbid', 'initramfs_match=false',
+    '--timeout-secs', '120', '--label', 'ai-model-bios')
+
+Write-Output '=== QEMU V0.11: the approved system view (BIOS) ==='
+# VIEW11-001 (ADR-0024). sys_view (42) serves a fixed, allow-listed record of
+# counts and service rows, and only to a process the console granted
+# `sys_view` by name: refused with no capabilities, and refused to a `run`
+# without a caps list (the legacy default no longer carries it). Granted, the
+# record decodes with the host-tested sysview module and tells the truth -
+# flapd failed after 3 restarts, tickd running, both reported by init, the
+# scheduler's pause - and the kernel remembers what it served (the
+# provenance a proposal will cite). A buffer one byte short is refused whole.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B210',
+    '--send', '@pause 1500',
+    '--send', 'run /bin/ai-probe - - -- view-denied',
+    '--send', 'run /bin/ai-probe -- view-denied',
+    '--send', 'run /bin/ai-probe sys_view - -- view',
+    '--send', 'sched pause',
+    '--send', 'run /bin/ai-probe sys_view - -- view',
+    '--send', 'sched resume',
+    '--send', 'run /bin/ai-probe - - -- ansi',
+    '--send', 'shutdown',
+    # OUT11-001: cursor-up, clear-line, carriage return and a right-to-left
+    # override shown escaped.
+    '--require', 'AIPROBE-ANSI \x1b[2A\x1b[2K\x0dforged\u{202e}:UOYSITI]',
+    '--require', 'AIPROBE-VIEW-DENIED err=perm',
+    '--require', 'action=sys_view cap=0x0 result=denied',
+    '--require', 'kind=sysadmin reason=no_handle',
+    # The legacy default holds a sysadmin handle (ADMIN) but not READ.
+    '--require', 'kind=sysadmin reason=scope_denied',
+    '--require', 'AIPROBE-VIEW-SMALL-OK',
+    '--require', '[ITISYOU:AI] view_served pid=',
+    '--require', 'AIPROBE-VIEW sched paused=0 always_on=1 ',
+    '--require', 'AIPROBE-VIEW sched paused=1 always_on=1 ',
+    '--require', 'AIPROBE-VIEW service=tickd state=running restarts=0 by_init=1 ',
+    '--require', 'AIPROBE-VIEW service=flapd state=failed restarts=3 by_init=1 ',
+    '--require', 'AIPROBE-VIEW features=',
+    '--require', 'AIPROBE-VIEW-OK',
+    '--forbid', 'AIPROBE-VIEW-LEAK',
+    '--forbid', 'AIPROBE-VIEW-DECODE-FAILED',
+    '--forbid', 'AIPROBE-FAILED',
+    '--forbid', 'RING3-PANIC',
+    '--timeout-secs', '180', '--label', 'ai-view-bios')
+
+Write-Output '=== QEMU V0.11: inference in Ring 3 (BIOS) ==='
+# INFER11-001 (ADR-0024). /sbin/init starts /bin/inferd as its third service
+# (tickd and flapd keep pids 2 and 3); it loads the model the build trained
+# and answers over IPC channels 6 and 7. Its check mode refuses each hostile
+# fixture for its own reason. The probe asks it about the real view and
+# recomputes the answer from the model file itself: Ring 3 inference is
+# exactly the host-tested arithmetic on the shipped bytes. Job-wait slices
+# run while the scheduler is paused, so inferd answers then too.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B210',
+    '--send', '@pause 1500',
+    '--send', 'run /bin/inferd fs_read /etc -- check /etc/ai/diag.model',
+    '--send', 'run /bin/inferd fs_read /etc -- check /etc/ai/fixtures/bad-magic.model',
+    '--send', 'run /bin/inferd fs_read /etc -- check /etc/ai/fixtures/truncated.model',
+    '--send', 'run /bin/inferd fs_read /etc -- check /etc/ai/fixtures/wrong-dims.model',
+    '--send', 'run /bin/inferd fs_read /etc -- check /etc/ai/fixtures/absurd-weight.model',
+    '--send', 'run /bin/ai-probe sys_view,ipc:6-7,fs_read /etc -- infer',
+    '--send', 'sched pause',
+    '--send', 'run /bin/ai-probe sys_view,ipc:6-7,fs_read /etc -- infer',
+    '--send', 'sched resume',
+    '--send', 'shutdown',
+    '--require', 'bg_start name=inferd pid=4 caps=0xc00012 long_running=true supervisor=1',
+    '--require', 'INFERD-READY model=e0fc6642563aba99 channel=6',
+    '--require', 'INFERD-MODEL-OK path=/etc/ai/diag.model sha256=e0fc6642563aba99',
+    '--require', 'INFERD-MODEL-REFUSED path=/etc/ai/fixtures/bad-magic.model reason=bad_magic',
+    '--require', 'INFERD-MODEL-REFUSED path=/etc/ai/fixtures/truncated.model reason=bad_length',
+    '--require', 'INFERD-MODEL-REFUSED path=/etc/ai/fixtures/wrong-dims.model reason=bad_dimensions',
+    '--require', 'INFERD-MODEL-REFUSED path=/etc/ai/fixtures/absurd-weight.model reason=weight_out_of_range',
+    '--require', 'AIPROBE-INFER conditions=service_failed match=true model_match=true ',
+    '--require', 'AIPROBE-INFER conditions=service_failed,scheduler_paused match=true model_match=true ',
+    '--require', 'INFERD-SERVED n=2',
+    '--forbid', 'match=false',
+    '--forbid', 'AIPROBE-INFER-TIMEOUT',
+    '--forbid', 'AIPROBE-FAILED',
+    '--forbid', 'INFERD-BAD-REQUEST',
+    '--forbid', 'RING3-PANIC',
+    '--timeout-secs', '180', '--label', 'ai-infer-bios')
+
+Write-Output '=== QEMU V0.11: the diagnostic agent on real situations (BIOS) ==='
+# AGENT11-001 and KB11-001 (ADR-0024). /bin/agent reads the view, asks inferd,
+# looks up each condition's runbook in /etc/ai/kb and prints the diagnosis and
+# the action the runbook names - it files nothing yet and holds no authority.
+# Three situations the leg constructs, each with its EXACT condition set: the
+# booted system (flapd failed), the scheduler paused, and a burst of denials
+# (sandbox-probe run with no capabilities). Without the view capability the
+# agent is refused.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B210',
+    '--send', '@pause 1500',
+    '--send', 'run /bin/agent sys_view,ipc:6-7,fs_read /etc/ai -- diagnose',
+    '--send', 'sched pause',
+    '--send', 'run /bin/agent sys_view,ipc:6-7,fs_read /etc/ai -- diagnose',
+    '--send', 'sched resume',
+    '--send', 'run /bin/sandbox-probe -',
+    '--send', 'run /bin/agent sys_view,ipc:6-7,fs_read /etc/ai -- diagnose',
+    '--send', 'run /bin/agent - /etc/ai -- diagnose',
+    '--send', 'shutdown',
+    '--require', 'AGENT-DIAGNOSIS conditions=service_failed model=e0fc6642563aba99 ',
+    '--require', 'AGENT-DIAGNOSIS conditions=service_failed,scheduler_paused model=e0fc6642563aba99 ',
+    '--require', 'AGENT-DIAGNOSIS conditions=service_failed,denial_burst model=e0fc6642563aba99 ',
+    '--require', 'AGENT-RUNBOOK id=service_failed sha=',
+    '--require', 'AGENT-RUNBOOK id=scheduler_paused sha=',
+    '--require', 'AGENT-RUNBOOK id=denial_burst sha=',
+    '--require', 'AGENT-ACTION id=service_failed action=retry-service target=flapd',
+    '--require', 'AGENT-ACTION id=scheduler_paused action=resume-scheduler',
+    '--require', 'AGENT-ACTION id=denial_burst action=none',
+    '--require', 'AGENT-VIEW-DENIED err=perm',
+    '--forbid', 'AGENT-INFER-TIMEOUT',
+    '--forbid', 'conditions=none ',
+    '--forbid', 'AGENT-RUNBOOK-MISSING',
+    '--forbid', 'RING3-PANIC',
+    '--timeout-secs', '180', '--label', 'ai-diagnose-bios')
+
+Write-Output '=== QEMU V0.11: proposals the kernel checks, and nothing executes (BIOS) ==='
+# PROP11-001 (ADR-0024). An agent holding `propose` files a record;
+# the kernel checks, in order, the record's format and vocabulary, the model
+# digest (the one it was built with), the view (the last one it served THIS
+# process, at most 5 s ago), the condition (recomputed from that view with
+# the shipped model), whether the action applies to the system now, and one
+# pending proposal per submitter - each refusal named, printed and audited.
+# Each adversarial mode runs as its own process; AIPROBE-ACCEPTED would mean
+# the kernel took one. The agent then files a real proposal; `proposals`
+# shows it with its preview; `deny` is final. There is no `approve` yet, so
+# nothing can execute.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B210',
+    '--send', '@pause 1500',
+    '--send', 'run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose forge-model',
+    '--send', 'run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose never-served',
+    '--send', 'run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose forged-view',
+    '--send', 'run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose stale',
+    '--send', 'run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose diagnosis',
+    '--send', 'run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose not-applicable',
+    '--send', 'run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose bad-field',
+    '--send', 'run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose bad-action',
+    '--send', 'run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose not-allowed',
+    '--send', 'run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose flood',
+    '--send', 'run /bin/ai-probe sys_view,fs_read /etc/ai -- propose good',
+    '--send', 'run /bin/ai-probe sys_view,propose,ipc:6-7,fs_read /etc/ai -- direct',
+    '--send', 'run /bin/agent sys_view,propose,ipc:6-7,fs_read /etc/ai -- propose',
+    '--send', 'proposals',
+    '--send', 'deny 2',
+    '--send', 'deny 2',
+    '--send', 'deny 99',
+    '--send', 'proposals',
+    '--send', 'shutdown',
+    '--require', '[ITISYOU:AI] proposal_refused pid=',
+    # Each run refused for ITS OWN reason: the kernel's refusal comes before
+    # the probe's line for that run, and after the previous run's.
+    '--require-order', 'reason=unknown_model', '--require-order', 'AIPROBE-PROPOSE mode=forge-model refused',
+    '--require-order', 'reason=snapshot_mismatch', '--require-order', 'AIPROBE-PROPOSE mode=never-served refused',
+    '--require-order', 'reason=snapshot_mismatch', '--require-order', 'AIPROBE-PROPOSE mode=forged-view refused',
+    '--require-order', 'reason=snapshot_stale', '--require-order', 'AIPROBE-PROPOSE mode=stale refused',
+    '--require-order', 'reason=diagnosis_mismatch', '--require-order', 'AIPROBE-PROPOSE mode=diagnosis refused',
+    '--require-order', 'reason=not_applicable', '--require-order', 'AIPROBE-PROPOSE mode=not-applicable refused',
+    '--require-order', 'reason=bad_field', '--require-order', 'AIPROBE-PROPOSE mode=bad-field refused',
+    '--require-order', 'reason=unknown_action', '--require-order', 'AIPROBE-PROPOSE mode=bad-action refused',
+    '--require-order', 'reason=action_not_allowed', '--require-order', 'AIPROBE-PROPOSE mode=not-allowed refused',
+    '--require-order', 'AIPROBE-PROPOSE-FILED mode=flood-first id=1',
+    '--require-order', 'reason=already_pending', '--require-order', 'AIPROBE-PROPOSE mode=flood refused',
+    '--require', 'AIPROBE-PROPOSE-FILED mode=flood-first id=1',
+    '--require', 'proposal_submitted id=1 ',
+    '--require', 'model_check=ok snapshot_check=ok diagnosis_check=ok applies=ok',
+    '--require', 'action=propose cap=0x0 result=denied',
+    '--require', 'kind=sysadmin reason=scope_denied',
+    '--require', 'AIPROBE-DIRECT-ALL-DENIED',
+    '--require', 'AGENT-PROPOSAL filed id=2 action=retry-service target=flapd',
+    '--require', '[ITISYOU:AI] proposal id=1 state=pending action=retry-service target=flapd condition=service_failed risk=low reversible=true',
+    '--require', '[ITISYOU:AI] preview id=2 ask /sbin/init to start flapd once more',
+    '--require', '[ITISYOU:AI] proposal_denied id=2 by=console',
+    '--require', 'deny: id=2 refused reason=already_decided',
+    '--require', 'deny: id=99 refused reason=no_such_proposal',
+    '--require', '[ITISYOU:AI] proposal id=2 state=denied',
+    '--require', 'action=proposal_submitted cap=0x1000 result=ok',
+    '--forbid', 'AIPROBE-ACCEPTED',
+    '--forbid', 'AIPROBE-DIRECT-ALLOWED',
+    '--forbid', 'action_executed',
+    '--forbid', 'AIPROBE-FAILED',
+    '--forbid', 'RING3-PANIC',
+    '--timeout-secs', '240', '--label', 'ai-propose-bios')
+
+Write-Output '=== QEMU V0.11: approval, execution, verification (BIOS) ==='
+# ACT11-001 (ADR-0024): resume-scheduler. `approve <id>` is the only
+# path from a proposal to an action: it re-checks the TTL and whether the
+# action still applies, executes it in kernel code, verifies it over its
+# window with the same measurement as `busy` (other processes must progress
+# at busy points), and rolls back if that fails. Deny is final; a proposal
+# the system has outgrown is refused (precondition_changed), not executed.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B210',
+    '--send', '@pause 1500',
+    '--send', 'sched pause',
+    '--send', 'run /bin/agent sys_view,propose,ipc:6-7,fs_read /etc/ai -- propose',
+    '--send', 'deny 1',
+    '--send', 'approve 1',
+    '--send', 'busy 1000',
+    '--send', 'run /bin/agent sys_view,propose,ipc:6-7,fs_read /etc/ai -- propose',
+    '--send', 'proposals',
+    '--send', 'approve 2',
+    '--send', 'busy 1000',
+    '--send', 'sched pause',
+    '--send', 'run /bin/agent sys_view,propose,ipc:6-7,fs_read /etc/ai -- propose',
+    '--send', 'sched resume',
+    '--send', 'approve 3',
+    '--send', 'approve 99',
+    '--send', 'proposals',
+    '--send', 'shutdown',
+    '--require', 'AGENT-PROPOSAL filed id=1 action=resume-scheduler target=-',
+    '--require', '[ITISYOU:AI] proposal_denied id=1 by=console',
+    '--require', 'approve: id=1 refused reason=already_decided',
+    '--require', 'busy: ms=1000 paused=true others_progressed=false other_quanta=0',
+    '--require', 'AGENT-PROPOSAL filed id=2 action=resume-scheduler target=-',
+    '--require', '[ITISYOU:AI] proposal id=2 state=pending action=resume-scheduler target=- condition=scheduler_paused risk=low reversible=true',
+    '--require', '[ITISYOU:AI] preview id=2 turn background scheduling back on',
+    '--require', '[ITISYOU:AI] proposal_approved id=2 by=console',
+    '--require', '[ITISYOU:AI] action_executed id=2 action=resume-scheduler approved_by=console',
+    '--require', '[ITISYOU:AI] action_verified id=2 result=pass',
+    '--require', 'busy: ms=1000 paused=false others_progressed=true',
+    '--require', 'AGENT-PROPOSAL filed id=3 action=resume-scheduler target=-',
+    '--require', 'approve: id=3 refused reason=precondition_changed',
+    '--require', '[ITISYOU:AI] proposal_expired id=3 reason=precondition_changed',
+    '--require', 'approve: id=99 refused reason=no_such_proposal',
+    '--require', '[ITISYOU:AI] proposal id=2 state=verified',
+    '--require', '[ITISYOU:AI] proposal id=3 state=expired',
+    '--require', 'action=proposal_approved cap=0x0 result=ok',
+    '--require', 'action=action_executed cap=0x0 result=ok',
+    '--require', 'approved_by=console model=e0fc6642563aba99 view=',
+    '--require', 'action=action_verified cap=0x0 result=ok',
+    '--forbid', 'action_executed id=1 ',
+    '--forbid', 'action_executed id=3 ',
+    '--forbid', 'action_verified id=2 result=fail',
+    '--forbid', 'action_rolled_back',
+    '--forbid', 'AGENT-INFER-TIMEOUT',
+    '--forbid', 'AGENT-PROPOSAL-REFUSED',
+    '--forbid', 'RING3-PANIC',
+    '--timeout-secs', '240', '--label', 'ai-act-bios')
+
+Write-Output '=== QEMU V0.11: retry-service through init, verified and rolled back (BIOS) ==='
+# ACT11-002 (ADR-0024). The kernel asks /sbin/init - the services'
+# supervisor - through a one-slot mailbox only init can read and acknowledge
+# (syscall 44; any other caller is refused not_init): `retry <name>` starts a
+# Failed service again with its restart count reset, `stop <name>` stops
+# supervising it and names the running instance, which the kernel kills.
+# Verification is event-driven: a restart or failure of the retried service
+# inside the window trips it and posts the stop at once, so the rollback is
+# deterministic (restarts=1). flakyd (a fixture that fails only while the
+# system is young) shows the success path; flapd (fails every time) shows
+# the rollback. The rows stay init's throughout.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B210',
+    '--send', '@pause 1500',
+    # flakyd recovers only once the system is 3 s old in GUEST time, which
+    # runs slower than the wall clock under emulation: busy waits in it.
+    '--send', 'busy 3000',
+    '--send', 'run /bin/ai-probe sys_view,propose,fs_read /etc/ai -- propose retry-flakyd',
+    '--send', 'approve 1',
+    '--send', 'run /bin/agent sys_view,propose,ipc:6-7,fs_read /etc/ai -- propose',
+    '--send', 'approve 2',
+    '--send', 'run /bin/ai-probe service - -- initctl',
+    '--send', 'svc',
+    '--send', 'proposals',
+    '--send', 'shutdown',
+    '--require', 'bg_failed name=flakyd restarts=3 supervisor=1',
+    '--require', 'AIPROBE-PROPOSE-FILED mode=retry-flakyd id=1',
+    '--require', '[ITISYOU:AI] proposal_approved id=1 by=console',
+    '--require', '[ITISYOU:INIT] mailbox post seq=1 op=retry name=flakyd',
+    '--require', 'INIT-RETRY name=flakyd pid=',
+    '--require', '[ITISYOU:INIT] mailbox ack seq=1 ok=true pid=',
+    '--require', '[ITISYOU:AI] action_executed id=1 action=retry-service target=flakyd pid=',
+    '--require', 'FLAKYD-UP',
+    '--require', '[ITISYOU:AI] action_verified id=1 result=pass target=flakyd window_ms=3000 tripped=false running_same_pid=true',
+    '--require', 'AGENT-PROPOSAL filed id=2 action=retry-service target=flapd',
+    '--require', '[ITISYOU:AI] action_executed id=2 action=retry-service target=flapd pid=',
+    '--require', 'INIT-RETRY name=flapd pid=',
+    '--require', 'op=stop name=flapd',
+    '--require', 'INIT-STOP name=flapd pid=',
+    '--require', '[ITISYOU:AI] action_verified id=2 result=fail target=flapd',
+    '--require', 'tripped=true',
+    '--require', '[ITISYOU:AI] action_rolled_back id=2 action=retry-service target=flapd stop_ack=true',
+    '--require', 'row=failed restarts=1',
+    '--require', 'AIPROBE-INITCTL-REFUSED err=perm',
+    '--require', 'init_ctl refused pid=',
+    '--require', 'reason=not_init',
+    '--require', 'flakyd  Running',
+    '--require', 'flapd  Failed { restarts: 1 }',
+    # The rollback's kill touched nothing but flapd's instance (V0.11
+    # review: the kernel had killed whatever pid init named).
+    '--require', 'tickd  Running  pid=2 restarts=0',
+    '--require', '[ITISYOU:AI] proposal id=1 state=verified',
+    '--require', '[ITISYOU:AI] proposal id=2 state=rolled_back',
+    '--require', 'action=action_rolled_back cap=0x0 result=ok',
+    '--forbid', 'rollback_kill_refused',
+    '--forbid', 'action_verified id=1 result=fail',
+    '--forbid', 'action_verified id=2 result=pass',
+    '--forbid', 'INIT-REAPED-ORPHAN',
+    '--forbid', 'svc_report refused pid=1',
+    '--forbid', 'AIPROBE-INITCTL-REACHED',
+    '--forbid', 'action_failed',
+    '--forbid', 'AGENT-PROPOSAL-REFUSED',
+    '--forbid', 'RING3-PANIC',
+    '--timeout-secs', '300', '--label', 'ai-retry-bios')
+
+Write-Output '=== QEMU V1.0: IPC channels scoped by the grant (BIOS) ==='
+# V1-SEC-006 (ADR-0025). An IPC capability names the channels it reaches.
+# Plain `ipc`, the console's default set and every other default leave out
+# the inference channels 6 and 7: only a grant naming them (`ipc:6-7`)
+# reaches inferd, so an ordinary program can neither take a diagnosis's
+# request (and read the features in it) nor answer in inferd's place. init
+# holds every channel and gives each service exactly its own (tickd 2-3,
+# inferd 6-7); the default set still reaches tickd.
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--expect', 'B210',
+    '--send', '@pause 1500',
+    '--send', 'run /bin/ai-probe -- ipc-steal',
+    '--send', 'run /bin/ai-probe ipc -- ipc-steal',
+    '--send', 'run /bin/ai-probe ipc:0-5 -- ipc-steal',
+    '--send', 'run /bin/ai-probe ipc:5-6 -- ipc-steal',
+    '--send', 'run /bin/ai-probe ipc:6-7 -- ipc-steal',
+    '--send', 'run /bin/ai-probe sys_view,ipc:6-7,fs_read /etc -- infer',
+    '--send', 'run /bin/tick-client',
+    '--send', 'svc',
+    '--send', 'shutdown',
+    '--require', 'bg_start name=tickd pid=2 caps=0xc0002 ',
+    '--require', 'bg_start name=inferd pid=4 caps=0xc00012 ',
+    # Each run's verdict, tied to that run by order.
+    '--require-order', 'run /bin/ai-probe -- ipc-steal',
+    '--require-order', 'AIPROBE-IPC request_channel=denied reply_channel=denied',
+    '--require-order', 'run /bin/ai-probe ipc -- ipc-steal',
+    '--require-order', 'AIPROBE-IPC request_channel=denied reply_channel=denied',
+    '--require-order', 'run /bin/ai-probe ipc:0-5 -- ipc-steal',
+    '--require-order', 'AIPROBE-IPC request_channel=denied reply_channel=denied',
+    # 5-6 reaches the request channel only: the scope is the named range.
+    '--require-order', 'run /bin/ai-probe ipc:5-6 -- ipc-steal',
+    '--require-order', 'AIPROBE-IPC request_channel=reached reply_channel=denied',
+    '--require-order', 'run /bin/ai-probe ipc:6-7 -- ipc-steal',
+    '--require-order', 'AIPROBE-IPC request_channel=reached reply_channel=reached',
+    '--require', 'kind=service reason=scope_denied',
+    # The forged reply the 6-7 run left on the reply channel is discarded
+    # (nonce), and the real one matches the model; the diagnosis also has
+    # denial_burst - the steal attempts above are denials.
+    '--require', 'AIPROBE-INFER-FOREIGN-REPLY',
+    '--require', 'match=true model_match=true',
+    '--require', 'TICKC-OK passes=',
+    '--require', 'tickd  Running',
+    '--require', 'inferd  Running',
+    '--forbid', 'AIPROBE-FAILED',
+    '--forbid', 'AIPROBE-INFER-TIMEOUT',
+    '--forbid', 'RING3-PANIC',
+    '--timeout-secs', '180', '--label', 'ipc-scope-bios')
+
+Write-Output '=== QEMU V1.0: long use leaves nothing behind (BIOS) ==='
+# V1-REL-003. After a warm-up that fills every bounded ring, queue and table
+# once, `leakcheck mark` records what the kernel holds; 250 more process
+# lifecycles with file writes, deletes and IPC round trips (`/bin/soak`),
+# agent diagnoses and pings follow, and `leakcheck` must find every counter
+# exactly where it was: free frames, heap (less the audit trail's own
+# strings, which spell out ever-growing numbers), processes, capability
+# handles, queued IPC messages, sockets, TCP connections, output buffers.
+$soakDisk = Join-Path $env:ITISYOU_SCRATCH 'itisyou-soak-test.img'
+Remove-Item $soakDisk -ErrorAction SilentlyContinue
+[System.IO.File]::WriteAllBytes($soakDisk, (New-Object byte[] 8192))
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $soakDisk, '--net-user',
+    '--expect', 'B210',
+    '--send', 'run /bin/soak spawn,ipc:2-3,fs_write /data -- 30',
+    '--send', 'run /bin/agent sys_view,ipc:6-7,fs_read /etc/ai -- diagnose',
+    '--send', 'ping 10.0.2.2 1',
+    '--send', 'leakcheck mark',
+    '--send', 'run /bin/soak spawn,ipc:2-3,fs_write /data -- 250',
+    '--send', 'run /bin/agent sys_view,ipc:6-7,fs_read /etc/ai -- diagnose',
+    '--send', 'run /bin/agent sys_view,ipc:6-7,fs_read /etc/ai -- diagnose',
+    '--send', 'ping 10.0.2.2 1',
+    '--send', 'ping 10.0.2.2 1',
+    '--send', 'leakcheck',
+    '--send', 'shutdown',
+    '--require', 'SOAK-OK iterations=30 lifecycles=30',
+    '--require', 'SOAK-OK iterations=250 lifecycles=250',
+    '--require', '[ITISYOU:LEAK] mark frames_free=',
+    '--require-order', '[ITISYOU:LEAK] mark frames_free=',
+    '--require-order', 'SOAK-OK iterations=250',
+    '--require-order', '[ITISYOU:LEAK] check frames=0 heap=0 processes=0 handles=0 ipc_queued=0 sockets=0 tcp=0 out_slots=0 result=clean',
+    '--forbid', 'result=leak',
+    '--forbid', 'SOAK-FAILED',
+    '--forbid', 'AGENT-INFER-TIMEOUT',
+    '--forbid', 'RING3-PANIC',
+    '--timeout-secs', '600', '--label', 'soak-bios')
+Remove-Item $soakDisk -ErrorAction SilentlyContinue
+
+# V1-REL-004: no Ring 3 syscall sequence crashes or hangs the kernel. In each
+# of three capability configurations /bin/sysfuzz issues 4 x 25 000 seeded
+# pseudo-random syscalls - every number and a few past the last, arguments
+# drawn from the shapes that find bugs (see user/sysfuzz) - and must count
+# every call it made. The kernel must not panic (the runner fails a run on
+# the panic marker) or hang: `run` waits for the fuzzer, so a syscall that
+# never returns means the next SYSFUZZ-OK never comes and the leg times out
+# (a run takes 25-45 s; tickd keeps the serial line busy, so a silence
+# watchdog would not see it - PROC1-001, the `wait(0)` hang this leg found,
+# was caught this way). Then the sanity pass: the IPC channels are drained
+# - a message outlives its sender by design, and the fuzzer's would be read
+# by the next client as an answer - and `leakcheck` must find the kernel holding exactly
+# what it held after the first run; `ps` shows only init, tickd and inferd;
+# init still supervises; programs run, including the agent's diagnosis
+# through inferd; and the audit trail saves and verifies. The seed of every
+# run is in the leg.
+Write-Output '=== QEMU V1.0: syscall fuzzer, no capabilities (BIOS) ==='
+$fuzzDisk = Join-Path $env:ITISYOU_SCRATCH 'itisyou-fuzz-test.img'
+Remove-Item $fuzzDisk -ErrorAction SilentlyContinue
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $fuzzDisk,
+    '--expect', 'B210',
+    '--send', 'run /bin/sysfuzz - -- 1001 25000',
+    '--send', 'busy 500',
+    '--send', 'run /bin/sysfuzz ipc:0-7 - -- drain',
+    '--send', 'leakcheck mark',
+    '--send', 'run /bin/sysfuzz - -- 1002 25000',
+    '--send', 'run /bin/sysfuzz - -- 1003 25000',
+    '--send', 'run /bin/sysfuzz - -- 1004 25000',
+    '--send', 'busy 500',
+    '--send', 'run /bin/sysfuzz ipc:0-7 - -- drain',
+    '--send', 'leakcheck',
+    '--send', 'ps',
+    '--send', 'svc',
+    '--send', 'run /bin/child',
+    '--send', 'run /bin/tick-client',
+    '--send', 'run /bin/agent sys_view,ipc:6-7,fs_read /etc/ai -- diagnose',
+    '--send', 'audit save',
+    '--send', 'audit verify',
+    '--send', 'shutdown',
+    '--require-order', 'SYSFUZZ-OK seed=1001 calls=25000 ',
+    '--require-order', '[ITISYOU:LEAK] mark frames_free=',
+    '--require-order', 'SYSFUZZ-OK seed=1002 calls=25000 ',
+    '--require-order', 'SYSFUZZ-OK seed=1003 calls=25000 ',
+    '--require-order', 'SYSFUZZ-OK seed=1004 calls=25000 ',
+    '--require-order', '[ITISYOU:LEAK] check frames=0 heap=0 processes=0 handles=0 ipc_queued=0 sockets=0 tcp=0 out_slots=0 result=clean',
+    '--require-order', 'ps: processes=3',
+    '--require-order', 'svc: started=3 done=2 failed=1',
+    '--require-order', 'run: /bin/child: Exit(7)',
+    '--require-order', 'TICKC-OK passes=',
+    '--require-order', 'AGENT-DIAGNOSIS conditions=',
+    '--require-order', 'trail_saved records=',
+    '--require-order', 'trail_checked status=verified reason=none',
+    '--require', 'tickd  Running',
+    '--require', 'inferd  Running',
+    '--forbid', 'SYSFUZZ-FAILED',
+    '--forbid', 'run: /bin/sysfuzz: Fault',
+    '--forbid', 'result=leak',
+    '--forbid', 'AGENT-INFER-TIMEOUT',
+    '--forbid', 'RING3-PANIC',
+    '--timeout-secs', '600', '--label', 'sysfuzz-none-bios')
+Remove-Item $fuzzDisk -ErrorAction SilentlyContinue
+
+Write-Output '=== QEMU V1.0: syscall fuzzer, the console default set in a sandbox (BIOS) ==='
+# The capabilities `run` gives by default, spelled out, confined to /data.
+$fuzzDisk = Join-Path $env:ITISYOU_SCRATCH 'itisyou-fuzz-test.img'
+Remove-Item $fuzzDisk -ErrorAction SilentlyContinue
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $fuzzDisk,
+    '--expect', 'B210',
+    '--send', 'run /bin/sysfuzz spawn,ipc,gui,dev,fs_read,audio,sys_admin,fs_write,network,proc_control /data -- 2001 25000',
+    '--send', 'busy 500',
+    '--send', 'run /bin/sysfuzz ipc:0-7 - -- drain',
+    '--send', 'leakcheck mark',
+    '--send', 'run /bin/sysfuzz spawn,ipc,gui,dev,fs_read,audio,sys_admin,fs_write,network,proc_control /data -- 2002 25000',
+    '--send', 'run /bin/sysfuzz spawn,ipc,gui,dev,fs_read,audio,sys_admin,fs_write,network,proc_control /data -- 2003 25000',
+    '--send', 'run /bin/sysfuzz spawn,ipc,gui,dev,fs_read,audio,sys_admin,fs_write,network,proc_control /data -- 2004 25000',
+    '--send', 'busy 500',
+    '--send', 'run /bin/sysfuzz ipc:0-7 - -- drain',
+    '--send', 'leakcheck',
+    '--send', 'ps',
+    '--send', 'svc',
+    '--send', 'run /bin/child',
+    '--send', 'run /bin/tick-client',
+    '--send', 'run /bin/agent sys_view,ipc:6-7,fs_read /etc/ai -- diagnose',
+    '--send', 'audit save',
+    '--send', 'audit verify',
+    '--send', 'shutdown',
+    '--require-order', 'SYSFUZZ-OK seed=2001 calls=25000 ',
+    '--require-order', '[ITISYOU:LEAK] mark frames_free=',
+    '--require-order', 'SYSFUZZ-OK seed=2002 calls=25000 ',
+    '--require-order', 'SYSFUZZ-OK seed=2003 calls=25000 ',
+    '--require-order', 'SYSFUZZ-OK seed=2004 calls=25000 ',
+    '--require-order', '[ITISYOU:LEAK] check frames=0 heap=0 processes=0 handles=0 ipc_queued=0 sockets=0 tcp=0 out_slots=0 result=clean',
+    '--require-order', 'ps: processes=3',
+    '--require-order', 'svc: started=3 done=2 failed=1',
+    '--require-order', 'run: /bin/child: Exit(7)',
+    '--require-order', 'TICKC-OK passes=',
+    '--require-order', 'AGENT-DIAGNOSIS conditions=',
+    '--require-order', 'trail_saved records=',
+    '--require-order', 'trail_checked status=verified reason=none',
+    '--require', 'tickd  Running',
+    '--require', 'inferd  Running',
+    '--forbid', 'SYSFUZZ-FAILED',
+    '--forbid', 'run: /bin/sysfuzz: Fault',
+    '--forbid', 'result=leak',
+    '--forbid', 'AGENT-INFER-TIMEOUT',
+    '--forbid', 'RING3-PANIC',
+    '--timeout-secs', '600', '--label', 'sysfuzz-default-bios')
+Remove-Item $fuzzDisk -ErrorAction SilentlyContinue
+
+Write-Output '=== QEMU V1.0: syscall fuzzer, the agent capability set (BIOS) ==='
+# The most the console grants the agent (ADR-0025): the system view,
+# proposals, the inference channels and reading /etc/ai.
+$fuzzDisk = Join-Path $env:ITISYOU_SCRATCH 'itisyou-fuzz-test.img'
+Remove-Item $fuzzDisk -ErrorAction SilentlyContinue
+& $runner @('--image', 'target/images/itisyou-kernel-bios.img',
+    '--nvme-persist', $fuzzDisk,
+    '--expect', 'B210',
+    '--send', 'run /bin/sysfuzz sys_view,propose,ipc:6-7,fs_read /etc/ai -- 3001 25000',
+    '--send', 'busy 500',
+    '--send', 'run /bin/sysfuzz ipc:0-7 - -- drain',
+    '--send', 'leakcheck mark',
+    '--send', 'run /bin/sysfuzz sys_view,propose,ipc:6-7,fs_read /etc/ai -- 3002 25000',
+    '--send', 'run /bin/sysfuzz sys_view,propose,ipc:6-7,fs_read /etc/ai -- 3003 25000',
+    '--send', 'run /bin/sysfuzz sys_view,propose,ipc:6-7,fs_read /etc/ai -- 3004 25000',
+    '--send', 'busy 500',
+    '--send', 'run /bin/sysfuzz ipc:0-7 - -- drain',
+    '--send', 'leakcheck',
+    '--send', 'ps',
+    '--send', 'svc',
+    '--send', 'run /bin/child',
+    '--send', 'run /bin/tick-client',
+    '--send', 'run /bin/agent sys_view,ipc:6-7,fs_read /etc/ai -- diagnose',
+    '--send', 'audit save',
+    '--send', 'audit verify',
+    '--send', 'shutdown',
+    '--require-order', 'SYSFUZZ-OK seed=3001 calls=25000 ',
+    '--require-order', '[ITISYOU:LEAK] mark frames_free=',
+    '--require-order', 'SYSFUZZ-OK seed=3002 calls=25000 ',
+    '--require-order', 'SYSFUZZ-OK seed=3003 calls=25000 ',
+    '--require-order', 'SYSFUZZ-OK seed=3004 calls=25000 ',
+    '--require-order', '[ITISYOU:LEAK] check frames=0 heap=0 processes=0 handles=0 ipc_queued=0 sockets=0 tcp=0 out_slots=0 result=clean',
+    '--require-order', 'ps: processes=3',
+    '--require-order', 'svc: started=3 done=2 failed=1',
+    '--require-order', 'run: /bin/child: Exit(7)',
+    '--require-order', 'TICKC-OK passes=',
+    '--require-order', 'AGENT-DIAGNOSIS conditions=',
+    '--require-order', 'trail_saved records=',
+    '--require-order', 'trail_checked status=verified reason=none',
+    '--require', 'tickd  Running',
+    '--require', 'inferd  Running',
+    '--forbid', 'SYSFUZZ-FAILED',
+    '--forbid', 'run: /bin/sysfuzz: Fault',
+    '--forbid', 'result=leak',
+    '--forbid', 'AGENT-INFER-TIMEOUT',
+    '--forbid', 'RING3-PANIC',
+    '--timeout-secs', '600', '--label', 'sysfuzz-agent-bios')
+Remove-Item $fuzzDisk -ErrorAction SilentlyContinue
 
 if ($anyFailed) { Write-Output 'TEST: FAILED'; exit 1 }
 Write-Output 'TEST: OK'

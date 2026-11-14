@@ -91,6 +91,16 @@ fn canonical(path: &str) -> Result<String, FsError> {
     Ok(key)
 }
 
+/// The absolute canonical form of `path` (`/bin/../bin//tickd` is
+/// `/bin/tickd`): what the kernel records and prints for a program, never the
+/// string a program passed (V0.11 review - a spawn path's popped components
+/// could carry a line break and a forged marker into `ps`).
+pub fn canonical_path(path: &str) -> Result<String, FsError> {
+    let mut key = canonical(path)?;
+    key.insert(0, '/');
+    Ok(key)
+}
+
 /// Read a file's full contents.
 pub fn read(path: &str) -> Result<&'static [u8], FsError> {
     let key = canonical(path)?;

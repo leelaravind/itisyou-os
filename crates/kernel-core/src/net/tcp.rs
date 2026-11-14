@@ -960,7 +960,14 @@ impl Tcb {
                 return Event::None;
             }
             if self.state == State::SynReceived && self.passive {
-                *self = Tcb::listen(self.local, self.local_port, self.iss);
+                // In place, not `*self = Tcb::listen(..)` (V1.0, NET1-003,
+                // the V1-SEC-002 review): the by-value form built an ~8 KB
+                // Tcb in a stack temporary, and this runs deep in the polled
+                // receive path (dispatch -> on_segment -> here) on the 32 KB
+                // syscall stack — the on-stack Tcb pattern ADR-0020 forbids,
+                // reachable by a remote SYN then RST.
+                let (local, port, iss) = (self.local, self.local_port, self.iss);
+                self.listen_in_place(local, port, iss);
                 return Event::None;
             }
             self.teardown();

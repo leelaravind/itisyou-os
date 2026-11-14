@@ -9,6 +9,8 @@
 //!   child must be refused (`ERR_NOENT`), not block and not collect it;
 //! * `nohang` — `wait_nohang`: no children, a running child (`ERR_AGAIN`),
 //!   collecting it, and collecting "any child";
+//! * `wait-any` — `wait(0)` blocks until a running child ends and returns
+//!   its status (V1.0, PROC1-001: it used to sleep forever);
 //! * `sleep` — `sleep(50)` lasts at least 50 ticks; `sleep(6001)` is refused;
 //! * `orphan` — spawn an orphan and exit at once;
 //! * `orphan-child` — (spawned by `orphan`) sleep 20 ticks, report, exit 0;
@@ -135,6 +137,29 @@ fn nohang() {
     write("\n");
     if st != CHILD_STATUS {
         fail("any-status");
+    }
+}
+
+/// `wait(0)` blocks until ANY child ends (PROC1-001, found by the syscall
+/// fuzzer: the wake-up matched the pid alone, so this slept forever). The
+/// child cannot have ended when the wait starts - it has not run yet, and it
+/// yields three times before it exits - so this is the blocking path.
+fn wait_any() {
+    let c = spawn("/bin/child");
+    if is_err(c) {
+        fail("wait-any-spawn");
+    }
+    let st = wait(0);
+    write("PROCPROBE-WAIT-ANY status=");
+    write_u64(st);
+    write("\n");
+    if st != CHILD_STATUS {
+        fail("wait-any-status");
+    }
+    // Delivered means collected: no child is left.
+    let mut status = 0u64;
+    if wait_nohang(0, &mut status) != ERR_NOENT {
+        fail("wait-any-collected");
     }
 }
 
@@ -296,6 +321,7 @@ extern "C" fn _start() -> ! {
         Some(b"all") => {
             sibling();
             nohang();
+            wait_any();
             sleep_check();
             orphan();
         }
@@ -304,6 +330,7 @@ extern "C" fn _start() -> ! {
             None => fail("foreign-usage"),
         },
         Some(b"nohang") => nohang(),
+        Some(b"wait-any") => wait_any(),
         Some(b"sleep") => sleep_check(),
         Some(b"orphan") => orphan(),
         Some(b"gui-foreign") => match it.next().and_then(parse_u64) {
@@ -340,6 +367,64 @@ extern "C" fn _start() -> ! {
             }
             write("PROCPROBE-GUI-QUOTA-OK windows=4\n");
         }
+        Some(b"cap-exhaust") => {
+            // V1.0 (CAP1-001): a program holding `spawn` cannot silently
+            // exhaust the global capability table and leave every later
+            // process with no authority. Spawn long-lived children, each
+            // taking several handles, until the table is full; the spawn must
+            // then be refused with ERR_AGAIN (the kernel audits
+            // capability_table_full), never admitted with a reduced set and
+            // audited as if it held them all.
+            let child_caps = ulib::CAP_IPC
+                | ulib::CAP_GUI
+                | ulib::CAP_DEV
+                | ulib::CAP_FS_READ
+                | ulib::CAP_AUDIO
+                | ulib::CAP_FS_WRITE
+                | ulib::CAP_NETWORK
+                | ulib::CAP_PROC_CONTROL;
+            let mut spawned = 0u64;
+            let mut refused = false;
+            for _ in 0..300 {
+                let r = ulib::spawn_caps("/bin/spin-forever", child_caps);
+                if r == ERR_AGAIN {
+                    refused = true;
+                    break;
+                }
+                if is_err(r) {
+                    fail("cap-exhaust-err");
+                }
+                spawned += 1;
+            }
+            if !refused {
+                fail("cap-exhaust-nolimit");
+            }
+            write("PROCPROBE-CAP-EXHAUST-OK spawned=");
+            write_u64(spawned);
+            write("\n");
+        }
+        Some(b"gui-pixels") => {
+            // V1.0 (GUI1-001): a Ring 3 owner's windows are bounded by a
+            // pixel quota (half the compositor budget), not just a window
+            // count, so one program cannot take the whole budget. Two
+            // 1024x512 windows (524288 px each) reach the quota exactly; the
+            // third is refused with ERR_AGAIN, before the 4-window cap.
+            let mut made = 0u64;
+            for _ in 0..4 {
+                let w = ulib::gui_create(1024, 512, 20, 40, "px");
+                if is_err(w) {
+                    if w != ERR_AGAIN {
+                        fail("gui-pixels-err");
+                    }
+                    break;
+                }
+                made += 1;
+            }
+            if made != 2 {
+                fail("gui-pixels-count");
+            }
+            write("PROCPROBE-GUI-PIXELS-OK windows=2\n");
+        }
         Some(b"console-read") => {
             let mut line = [0u8; 16];
             expect(
@@ -365,7 +450,7 @@ extern "C" fn _start() -> ! {
             exit(0)
         }
         _ => {
-            write("PROCPROBE-USAGE all|foreign <pid>|nohang|sleep|orphan|svc-report|svc-basic|svc-denied\n");
+            write("PROCPROBE-USAGE all|foreign <pid>|nohang|wait-any|sleep|orphan|svc-report|svc-basic|svc-denied\n");
             exit(2)
         }
     }

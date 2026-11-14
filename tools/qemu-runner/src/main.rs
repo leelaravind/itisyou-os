@@ -10,6 +10,8 @@
 //!               [--timeout-secs 60] [--label boot-smoke]
 //!               [--connect-timeout-secs 30] [--boot-timeout-secs 75]
 //!               [--stall-timeout-secs N]
+//!               [--send L]... [--require S]... [--require-order S]...
+//!               [--forbid S]...
 //!               [--artifacts artifacts/qemu] [--qemu <path>]
 //!
 //! Timeout model (deterministic, phase-attributed):
@@ -111,6 +113,12 @@ struct Options {
     send: Vec<String>,
     /// Substrings that must appear somewhere in the serial log.
     require: Vec<String>,
+    /// Substrings that must appear IN THIS ORDER, each on a line after the
+    /// one where the previous was found (`--require-order`). `--require`
+    /// cannot tie one line to another, e.g. a refusal reason to the run that
+    /// caused it; interleaving each run's own marker with the reason it must
+    /// cause can.
+    require_order: Vec<String>,
     /// Substrings that must NOT appear anywhere in the serial log.
     ///
     /// Adversarial tests need this: "the guest refused" is only provable by
@@ -220,6 +228,7 @@ fn parse_args() -> Result<Options, String> {
     let mut expect_panic = false;
     let mut send = Vec::new();
     let mut require = Vec::new();
+    let mut require_order = Vec::new();
     let mut forbid: Vec<String> = Vec::new();
     let mut monitor = false;
     let mut inject_after = None;
@@ -266,6 +275,7 @@ fn parse_args() -> Result<Options, String> {
             "--expect-panic" => expect_panic = true,
             "--send" => send.push(value("--send")?),
             "--require" => require.push(value("--require")?),
+            "--require-order" => require_order.push(value("--require-order")?),
             "--forbid" => forbid.push(value("--forbid")?),
             "--monitor" => monitor = true,
             "--inject-after" => {
@@ -356,6 +366,7 @@ fn parse_args() -> Result<Options, String> {
         expect_panic,
         send,
         require,
+        require_order,
         forbid,
         monitor,
         inject_after,
@@ -1113,6 +1124,9 @@ fn run(opts: &Options) -> RunResult {
         .filter(|needle| !serial_lines.iter().any(|l| l.contains(needle.as_str())))
         .cloned()
         .collect();
+    if let Some(needle) = first_out_of_order(&serial_lines, &opts.require_order) {
+        missing_required.push(format!("out-of-order:{needle}"));
+    }
     // A forbidden marker that DID appear is folded into the same list, so it
     // fails the run the same way a missing one does and shows up in the same
     // place in the evidence — prefixed so the two are never confused.
@@ -1386,6 +1400,64 @@ fn classify(
         // non-selftest smoke runs, anything else as unexpected.
         Some(0) => Outcome::Success,
         _ => Outcome::UnexpectedExit,
+    }
+}
+
+/// `--require-order`: the first needle that cannot be found on a line after
+/// the line where the previous needle was found (greedily, earliest match
+/// first), or `None` when the whole sequence appears in order. Greedy
+/// earliest matching is exact for a subsequence: if any in-order placement
+/// exists, the earliest-first one finds it.
+fn first_out_of_order<'a>(lines: &[String], order: &'a [String]) -> Option<&'a str> {
+    let mut from = 0;
+    for needle in order {
+        match lines[from..]
+            .iter()
+            .position(|l| l.contains(needle.as_str()))
+        {
+            Some(i) => from += i + 1,
+            None => return Some(needle),
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod order_tests {
+    use super::first_out_of_order;
+
+    fn v(s: &[&str]) -> Vec<String> {
+        s.iter().map(|x| x.to_string()).collect()
+    }
+
+    #[test]
+    fn an_ordered_sequence_ties_each_effect_to_its_cause() {
+        let log = v(&[
+            "PROBE mode=a",
+            "refused reason=x",
+            "PROBE mode=b",
+            "refused reason=y",
+        ]);
+        assert_eq!(
+            first_out_of_order(&log, &v(&["mode=a", "reason=x", "mode=b", "reason=y"])),
+            None
+        );
+        // The reasons swapped between the runs: caught, though both appear.
+        assert_eq!(
+            first_out_of_order(&log, &v(&["mode=a", "reason=y", "mode=b", "reason=x"])),
+            Some("mode=b")
+        );
+        // Each needle needs its own, later line - not the same line twice.
+        assert_eq!(
+            first_out_of_order(&log, &v(&["reason=x", "reason=x"])),
+            Some("reason=x")
+        );
+        assert_eq!(
+            first_out_of_order(&log, &v(&["mode=a", "absent"])),
+            Some("absent")
+        );
+        assert_eq!(first_out_of_order(&log, &[]), None);
+        assert_eq!(first_out_of_order(&[], &v(&["x"])), Some("x"));
     }
 }
 

@@ -264,6 +264,17 @@ pub fn slices_total() -> u64 {
     SLICES.load(Relaxed)
 }
 
+/// For the approved view (V0.11): the longest background gap since boot, and
+/// the slices given at busy points, idle points and job waits.
+pub fn view_counters() -> (u64, u64, u64, u64) {
+    (
+        MAX_GAP_MS.load(Relaxed),
+        POINT_SLICES[0].load(Relaxed),
+        POINT_SLICES[1].load(Relaxed),
+        POINT_SLICES[2].load(Relaxed),
+    )
+}
+
 /// Measures one console command: opened when the command starts, recorded
 /// when it ends.
 pub struct CommandWindow {

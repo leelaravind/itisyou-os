@@ -14,7 +14,28 @@ their live SHA256SUMS). Verified after deploy on both: `downloads.mjs verify`,
 a direct digest check of both archives, `browser-verify.mjs` (26 page loads,
 0 console errors, 0 failed requests).
 
-**Latest deploy:** 2026-09-13 23:50, disclosure of three audit-trail defects
+**Latest deploy:** 2026-09-14, from `v0.11/work` at `8cafb28` (the S11
+closure; `status/current.json` 0.11.0-dev, in development). The site shows
+V0.11 as implemented and verified on the development branch, with the
+release pending, and discloses two more defects in v0.10.0 that the V0.11
+adversarial review found (OUT11-002, a kernel marker split across output
+chunks; SEC11-002, a program-chosen path printed by `ps`) and AUDIT11-003
+for every release since v0.8.0. Deployed at staging
+`605c5872-a0a0-481b-9f4d-7f6a41291848` and production
+`5232e058-068e-4c5c-ac26-12b71b214fae`. Verified on both:
+- `downloads.mjs verify` (v0.10.0 byte-exact);
+- the v0.9.0 and v0.8.1 archives downloaded and checked with
+  `sha256sum -c` against their SHA256SUMS;
+- `browser-verify.mjs` (26 page loads, 0 console errors, 0 failed
+  requests);
+- the disclosures present on `/security`, `/download`, `/engineering` and
+  `/changelog`.
+
+The download stays v0.10.0. The staging script is
+`E:\claude-tmp\itisyou-audit\v011\stage-site-wt.sh` (it builds from the
+worktree).
+
+**Earlier deploy:** 2026-09-13 23:50, disclosure of three audit-trail defects
 in v0.10.0 and every release since v0.8.0, found during V0.11 and fixed on
 the V0.11 branch — AUDIT11-001 (an untouched trail reads as TAMPERED),
 SEC11-001 (programs can rewrite the trail or a package's commit marker),

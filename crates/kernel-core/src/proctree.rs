@@ -13,6 +13,15 @@ pub const fn may_wait(child_parent: u64, caller: u64) -> bool {
     child_parent == caller && child_parent != ORPHAN_PARENT
 }
 
+/// Does `waiter`, blocked in `wait(blocked_on)`, wake when process `ended`
+/// (whose parent is `ended_parent`) terminates? Only the parent is woken,
+/// and only if it waits for that pid or for any child (`0`). V1.0 (found by
+/// the syscall fuzzer, PROC1-001): the wake-up used to match the pid alone,
+/// so a parent blocked in `wait(0)` was never woken and slept forever.
+pub const fn wakes(blocked_on: u64, waiter: u64, ended: u64, ended_parent: u64) -> bool {
+    may_wait(ended_parent, waiter) && (blocked_on == ended || blocked_on == 0)
+}
+
 /// Where the children of a dying process go.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Adopt {
@@ -69,6 +78,18 @@ mod tests {
         );
         assert!(may_wait(0, 0));
         assert!(!may_wait(ORPHAN_PARENT, ORPHAN_PARENT));
+    }
+
+    #[test]
+    fn a_parent_waiting_for_any_child_wakes_when_one_ends() {
+        // PROC1-001: pid 6 in wait(0), its child 9 ends.
+        assert!(wakes(0, 6, 9, 6), "wait(0) is woken by any child");
+        assert!(wakes(9, 6, 9, 6), "wait(9) is woken by child 9");
+        assert!(!wakes(8, 6, 9, 6), "wait(8) is not woken by child 9");
+        // Nobody but the parent is woken, whatever it waits for.
+        assert!(!wakes(0, 7, 9, 6));
+        assert!(!wakes(9, 7, 9, 6));
+        assert!(!wakes(0, ORPHAN_PARENT, 9, ORPHAN_PARENT));
     }
 
     #[test]

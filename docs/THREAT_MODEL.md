@@ -69,7 +69,7 @@ only network this OS has ever been attached to is a test harness on localhost.
 | A process collecting or killing another's children, or claiming its services | `wait`/`wait_nohang` on a foreign pid; `svc_report` for a foreign pid or name | parent-only collection (audited `wait_foreign`); `svc_report` refuses a pid that is not the reporter's child, a reserved name and a row another live supervisor owns (audited); only the console can `kill` |
 | A program starving the system | a CPU-bound program | preemption (V0.4) plus bounded background slices at every console wait (V0.10); residual: inside a non-schedulable region (a syscall, `irq`, `xhciwait`, storage commands) the background waits, measured up to 5 s for `xhciwait` |
 | A program stealing input or another program's window | reading the console or another window's events; presenting another's window | console input has one owner, granted by the kernel; `gui_event` and `gui_present` are owner-only (V0.9's `gui_present` checked only existence); keys go to the focused window's owner only |
-| Forged kernel evidence lines | a program printing `[ITISYOU:…]` | Ring 3 output is line-atomic and the marker prefix is rewritten (`[RING3-U:…]`) before it reaches the log (OUT10-002). Residual in v0.8.0–v0.10.0, found during V0.11: the KERNEL echoes file names and file contents a program chose without escaping them — a name with a line break in it becomes a line of its own that reads as a kernel marker (AUDIT11-002, fixed on the V0.11 branch) |
+| Forged kernel evidence lines | a program printing `[ITISYOU:…]` | Ring 3 output is line-atomic and the marker prefix is rewritten (`[RING3-U:…]`) before it reaches the log (OUT10-002). Residual in v0.8.0–v0.10.0, found during V0.11: the KERNEL echoes file names and file contents a program chose without escaping them — a name with a line break in it becomes a line of its own that reads as a kernel marker (AUDIT11-002, fixed on the V0.11 branch); and a program's ESC, CR and C1 bytes reach the terminal, so it can move the cursor and redraw a line the kernel printed (OUT11-001, fixed on the V0.11 branch). Two more in v0.10.0, found by the V0.11 adversarial review: the prefix rewrite ran one output chunk at a time, so a marker split across the 256-byte buffer seam — or across two writes once all 16 line buffers were taken — reached the port whole (OUT11-002: the buffer now keeps a tail that could start a marker for the next chunk, and an unbuffered write is closed with a newline); and `ps`/`kill` printed the path string a program passed to `spawn`, whose `..`-popped component could hold a line break and a marker (SEC11-002: the kernel records the canonical path and escapes it). Both fixed on the V0.11 branch |
 | A program rolling back an application | deleting `<app>.<v>.ok` through `fs_delete` | NOT mitigated in v0.10.0 and earlier, found during V0.11: the package store shares the filesystem namespace programs write (SEC11-001, fixed on the V0.11 branch: kernel-owned names are refused to the `fs_*` syscalls) |
 
 ### Explicit non-threats — V0.8 (superseded by the V0.9 additions below)
@@ -118,3 +118,106 @@ the harness and QEMU's user-mode network, never a real LAN.
   unmapped guard pages (the syscall stack — the one that actually overflowed — does NOT, in v0.9.0; corrected after release), verified by a deliberate overflow that ends in a
   reported double fault (HARD09-001). Residual risk: heap-allocated kernel
   task stacks have no guard page.
+
+## V0.11 additions — the evidence itself
+
+V0.11 puts a proposing agent on top of the audit trail, so the trail has to
+hold up against the programs it records. Reviewing it for that found three
+defects in every release since V0.8, fixed first:
+
+| Risk | Vector | Mitigation |
+|---|---|---|
+| A program erasing or rewriting the evidence of what it did, or rolling back an application | `fs_write`/`fs_delete` on `/data/audit.log` or on a package's `.pkg`/`.ok` — v0.10.0 and earlier allowed it to any holder of `fs_write` without a sandbox | the audit trail and every name the package resolver reads are kernel-owned: refused to the `fs_*` syscalls (`ERR_PERM`, audited `reason=kernel_owned`) and not listed (SEC11-001) |
+| A program forging kernel evidence lines through the kernel's own output | a file name with a line break in it, echoed in an audit detail, by `store ls`, `pkg list` or recovery; file contents echoed by `store cat` | ITFS refuses names with control characters; every kernel echo of program- or disk-chosen text escapes control characters and rewrites `[ITISYOU:` to `[RING3-U:` (AUDIT11-002) |
+| A verifier that cries wolf | before V0.11 an untouched trail failed verification after a second boot's save, after the ring dropped a record, or after a mid-boot `audit verify` — so TAMPERED stopped meaning anything | the stored trail carries the head its first record extends and keeps the recovered records; `audit verify` no longer re-runs recovery (AUDIT11-001) |
+| A trail replaced while the system runs | a valid (for example empty) trail written under a running kernel | `audit verify` compares the file with the exact bytes this boot saved or recovered (`reason=replaced`); across a reboot, only the witness anchor catches it |
+
+Residual risks, stated: a trail from v0.8.0–v0.10.0 hit by AUDIT11-001 cannot
+be told apart from a tampered one; the disk remains writable by anyone with
+access to it offline, so everything the kernel reads back from it is treated
+as untrusted text; and the serial console is the evidence channel — a program
+can still print text that resembles a kernel marker without its prefix, which
+is why kernel verdicts are printed by the kernel itself.
+
+## V0.11 additions — the AI-native layer (in development)
+
+V0.11 adds the first component whose output is a statistical guess — a
+diagnostic model — and a program that acts on it by proposing system
+actions (ADR-0024). The design assumes the agent, inferd and anything else
+on IPC may be hostile and asks what each can make the kernel do. Everything
+below is on the V0.11 branch; no release contains it (the latest is
+v0.10.0).
+
+### New assets
+
+- The operator's approval: what `proposals` shows must be what the kernel
+  checked, and nothing a program prints may pass for it or redraw it.
+- The state an approved action changes: whether the scheduler is paused,
+  and a supervised service's row.
+- The model's provenance: claims are checked against the model the build
+  trained and pinned.
+
+### New adversary assumptions
+
+| Risk | Vector | Mitigation |
+|---|---|---|
+| A malicious or compromised agent changing the system | code running as `/bin/agent`, or any program the console starts with `propose` | it can only file proposals: no syscall resumes the scheduler or retries a service, and with the agent's authority `svc_report`, `fs_write` and `spawn` are refused (`AIPROBE-DIRECT-ALL-DENIED`); a proposal is filed only after every kernel check in the rows below passes — ten adversarial runs, each refused for exactly its own reason — and nothing filed acts until the console approves it (AGENT11-001, PROP11-001, ACT11-001). Residual: a compromised agent can still file a proposal that passes the checks, print a misleading diagnosis (Ring 3 text, unprefixed and escaped), and — holding `ipc`, whose handle is not scoped to a channel — read or write any IPC channel, as every IPC holder can |
+| A spoofed inferd or a forged reply steering the diagnosis | any IPC holder takes the request off channel 6 or writes a reply on channel 7 (since V1.0 only a holder of a grant naming channels 6–7, ADR-0025); IPC carries no sender, and the agent's nonce (uptime and pid) is predictable | the kernel never uses inferd's answer: it recomputes the conditions from the exact view bytes it served to the submitter, with its own copy of the shipped model, and refuses a proposal whose condition is not among them (`diagnosis_mismatch`; control: without the recomputation the false diagnosis is refused only as `not_applicable`) (PROP11-001, INFER11-001). Residual: a forged or withheld reply can still mislead the agent into a wrong printed diagnosis, a proposal the kernel refuses, or none at all — a program that takes the replies makes it time out (`AGENT-INFER-TIMEOUT`); and the 16 features a request carries, scaled counts from the view, are readable by any IPC holder, which needs no `sys_view` for them |
+| The operator misled at approval: a redrawn preview or lookalike console text | a program writes ESC, CR or C1 sequences to move the cursor over a kernel line, or prints `[ITISYOU:` or a line shaped like a preview; a file name or content the kernel echoes; a hostile target name in a proposal | Ring 3 control characters, and the invisible Unicode format characters that reorder or hide text (bidirectional marks, embeddings, overrides and isolates, zero-width characters, the byte-order mark), are shown escaped, never performed (OUT11-001: `AIPROBE-ANSI \x1b[2A\x1b[2K\x0dforged\u{202e}:UOYSITI]` stays one line, and the right-to-left override that would display the reversed text after it as a kernel marker is shown as `\u{202e}`); the marker prefix is rewritten (OUT10-002); the kernel escapes untrusted text it echoes (AUDIT11-002); a proposal's target is validated as `[a-z0-9-]{1,15}` before it reaches any line (`bad_field` for `[ITISYOU:AI]`), and the preview is built only from validated fields (PROP11-001). Residual: printable lookalike characters (homoglyphs) and other Unicode format characters outside the escaped set pass; a program can print a line that reads like a preview without the kernel prefix; the agent's `AGENT-PROPOSAL` lines are its own claims — what `approve <id>` acts on is the kernel's entry for that id, as `proposals` lists it |
+| Filling the proposal table | one submitter filing repeatedly; several processes holding `propose` each filing | one pending proposal per submitter (`already_pending`, `ERR_AGAIN`; QEMU leg, and the control allowing two lets `flood` in), an 8-slot table (`table_full`, `ERR_AGAIN`; host-tested), finished entries evicted oldest first, a 6000-tick (60 s) TTL (PROP11-001). Residual: eight submitters — each a process the console started with `propose`, each with a proposal that passes every check — fill it for up to 60 s: a pending proposal outlives the process that filed it, and entries past their TTL leave only when a proposal is filed or the console runs `proposals`, `approve` or `deny` (an earlier version expired them only on the console commands, so a full table stayed full until the operator acted; found in the V0.11 review and fixed; expiry is host-tested, no QEMU leg waits out the TTL) |
+| Replaying a stale or borrowed view | citing an older view, one served to another process, or one never served | the view digest must be that of the last view served to the submitting process (`snapshot_mismatch`), served at most 500 ticks (5 s) earlier (`snapshot_stale`); a process's view is forgotten when it ends (PROP11-001, VIEW11-001; control: without the binding the `forged-view` run is accepted). Residual: inside those 5 s the cited view can be out of date — applicability is checked against the kernel's own facts when the proposal is filed and again at `approve`, so an out-of-date view cannot make an action apply that does not apply now; the kernel remembers views for at most 16 processes at once, the oldest evicted first, so many processes asking can evict a submitter's view (it fails closed, `snapshot_mismatch`) |
+| Posing as init on the mailbox | a process other than the live init calling `init_ctl` to read a command or acknowledge one | syscall 44 needs Service ADMIN and the caller must be the live init (`initd::is_init`); anyone else is refused `not_init`, printed and audited; an acknowledgement must name the command init fetched (ACT11-002; control: without the check a non-init process reaches the mailbox). On a rollback the kernel kills the pid init's `stop` acknowledgement names only if it is a live child of the live init running the program `/etc/init.conf` gives that service; anything else is refused (`rollback_kill_refused ... reason=not_an_instance`, audited) — found in the V0.11 review: the kernel had killed whatever pid init named, which gave init kill authority it does not hold (ACT11-002). Residual: init is still trusted to name the right instance of that program, and an init that ignores `stop` leaves the service restarting (control: `Failed { restarts: 3 }`) |
+| A command reaching a restarted init | init dies with a command outstanding and its successor fetches it | the mailbox is cleared when init dies, before the next init starts (`initd::supervise`); the waiter times out after 3 s and fails safe — an unacknowledged `retry` is withdrawn and reported `init_unresponsive` (the dead init's services end with it); if the live init had fetched it before going quiet, the kernel does not assume nothing started and rolls the retry back (`stop`, then the instance init names); an unacknowledged `stop` kills nothing (`stop_ack=false killed_pid=0`) (ACT11-002). Residual: this path is code only — no QEMU leg kills init with a command outstanding |
+| A poisoned training set | editing `ai/scenarios.txt` so the model fires, or stays silent, when it should not | the model is trained only at build time, from repository files, by host-tested code, and its bytes are pinned: moving one scenario bound by 1 changes the digest and fails both the host pin test and the kernel build (MODEL11-001). The model is also outside the authority path: a condition lets a proposal be filed only for that condition's one action, only when the action applies by the kernel's own facts, and only the console approves. Residual: whoever can change the repository can change the scenarios and the pin together — the pin catches drift, not a malicious commit, which only review catches; a poisoned model can suppress a diagnosis, or produce proposals for actions that do apply |
+| Tampering with the model file | replacing `/etc/ai/diag.model` with a malformed or a different model | the model lives in the initramfs embedded in the kernel image, which the `fs_*` syscalls never write; at boot the kernel compares its SHA-256 with the digest compiled in and keeps a copy for recomputation only when they match — without one no proposal passes (the recomputation step refuses it `unknown_model`), and a proposal citing any other model is refused `unknown_model` first; inferd refuses a malformed file by name, each of four hostile fixtures for its own reason (MODEL11-001, INFER11-001; control: the decoder without its magic check accepts the bad-magic fixture). Residual: the model and the digest it is checked against ship in the same unauthenticated boot image, so an attacker who can rewrite the image replaces both (the V0.9 boot-image residual); inferd does not check the pin itself; the mismatch branch at boot has no QEMU leg |
+| An approved action that does harm or does not hold | an action approved after the system changed, or one whose effect does not take | two actions only, both reversible and both kernel code; `approve` re-checks the TTL and applicability from fresh facts (`precondition_changed`); each is verified against a post-condition — other processes progress during a 100-tick busy-point window; no restart or failure of the service for 300 ticks and its row Running with the acknowledged instance — and rolled back on failure (ACT11-001, ACT11-002; controls: an executor that does nothing fails verification and is rolled back; a verification that always passes lets the flapd retry pass). Residual: verification checks one post-condition over a short window, not the system's health afterwards; the rollback of `retry-service` depends on init (above) |
+| The view or `propose` reaching a program the operator did not name | `run` or `rsh` without a caps list, desktop apps, `pkg launch`, a child through `spawn`, a service in `/etc/init.conf` | both bits are outside `CAP_LEGACY_FULL`, dropped by `caps::delegate`, refused in `/etc/init.conf` (`console_only_capability`), and not implied by ADMIN (rights are exact); the view is refused with no capabilities (`no_handle`) and to a caps-less `run` (`scope_denied`) (VIEW11-001, PROP11-001; controls: the gate removed, or the legacy set carrying the view, prints the forbidden `AIPROBE-VIEW-LEAK`). Residual: the console grants them to whatever program the operator names |
+
+Residual risks, stated: the model's measured accuracy — exact-match 10000
+bp on 150 held-out synthetic examples — equals a one-rule baseline for every
+condition, because the scenarios define each condition by essentially one
+feature: it shows that the designed distributions are separable, not that
+the model diagnoses real systems (MODEL11-001), and the QEMU legs show three
+constructed situations diagnosed exactly, nothing more general
+(AGENT11-001). The kernel's checks establish that a proposal is consistent
+with the shipped model and applies now, not that acting is wise; the
+operator's approval is that judgement, and whoever can type at the serial
+console is the operator.
+
+## V1.0 additions — the whole surface reviewed against this model
+
+For V1.0 the whole attack surface was reviewed against this document by a
+multi-agent adversarial pass, every finding checked by an independent
+refuter (criterion V1-SEC-002; method, full table and dispositions in
+`docs/V1_SECURITY_REVIEW.md`). It confirmed 37 defects — 3 high, 15 medium,
+19 low. The highs were all denial-of-service or trust-scope breaks reachable
+without crossing a privilege boundary, now fixed:
+
+- Any Ring 3 program, with no capabilities, could panic the kernel with one
+  instruction: a divide by zero, a single step or a non-canonical stack push
+  raised a CPU exception whose vector had no IDT gate, which escalated to a
+  double fault. Every vector now contains a Ring-3 fault (SEC1-001); this
+  closes a hole in the crash-isolation assumption (`user fault ≠ kernel
+  panic`) that had only ever been exercised for `#GP` and `#PF`.
+- A hostile disk (an in-scope attacker) could run a package signed for a
+  `hello-*` name under another app's name, so the signing key's scope did not
+  apply at launch (SEC1-004), and could name an app `..` (sandbox `/apps/..`
+  → `/`) or a version that overflow-panicked the next install (SEC1-005).
+- A hostile network peer could panic the kernel: an ICMP echo responder that
+  resolved ARP inside the receive poll recursed into the syscall stack's
+  guard page (NET1-001), and could freeze it with a frame flood held under a
+  masked-interrupt drain (NET1-004).
+
+Two cross-cutting CPU-state gaps the per-subsystem reviews did not own were
+also closed: x87/SSE registers were never switched between processes — a
+storage channel no capability gated, now removed by disabling the FPU for
+programs (SEC1-002) — and `sysret` returned the kernel's scratch registers to
+Ring 3 (SEC1-003). The accepted mediums are all availability limits a
+capability holder or a hostile disk can impose on this single-user VM, listed
+with their reasons in `docs/KNOWN_LIMITATIONS.md`; none corrupts kernel memory
+or crosses a privilege boundary. Two residuals sharpen rows above: a holder of
+the console-only Service ADMIN capability reaches the inference channels
+whatever its `ipc:` range (its handle is unscoped by design, ADR-0025 §5), and
+the audit window can be rotated on demand by any program flooding denials —
+the evicted records survive on the serial console, the declared evidence
+channel, and under the chain head.

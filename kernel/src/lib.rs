@@ -11,6 +11,7 @@
 extern crate alloc;
 
 pub mod acpi;
+pub mod ai;
 pub mod apic;
 pub mod audit;
 pub mod bootstage;
@@ -29,6 +30,7 @@ pub mod initd;
 pub mod input;
 pub mod interrupts;
 pub mod ipc;
+pub mod leakcheck;
 pub mod memory;
 pub mod net;
 pub mod platform;
@@ -178,6 +180,8 @@ pub fn init_subsystems(boot_info: &'static mut BootInfo) {
     // B110: VFS + embedded initramfs.
     let (files, dirs) = fs::init();
     serial_println!("[ITISYOU:INFO] initramfs files={files} dirs={dirs}");
+    // V0.11: the model in the initramfs is the one this kernel was built with.
+    ai::boot_check();
     bootstage::emit(Stage::B110VfsReady);
 
     // B120: input path (polled serial RX).
@@ -345,6 +349,18 @@ pub fn store_name(path: &str) -> Option<&str> {
         return None;
     }
     Some(name)
+}
+
+/// Text a program or a disk chose, made safe to echo on the console: one
+/// line, control characters escaped, no kernel marker prefix in it (V0.11,
+/// AUDIT11-002). For every file name, application name read back from the
+/// store and file content the kernel prints — the console is the evidence
+/// channel, and before V0.11 a name with a line break in it could print a
+/// line of its own that read as a kernel marker.
+pub fn untrusted(text: &str) -> alloc::string::String {
+    let mut out = alloc::string::String::with_capacity(text.len());
+    let _ = kernel_core::audit_chain::escape_untrusted(text, &mut out);
+    out
 }
 
 /// Filesystem-persistence boot logic (invoked by `itisyou-fs-persist`): if a

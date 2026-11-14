@@ -457,6 +457,15 @@ pub fn poll() -> usize {
     poll_inner()
 }
 
+/// Frames one `poll` drains before it returns, even if the card has more.
+/// V1.0 (NET1-004, the V1-SEC-002 review): the drain used to run until the
+/// ring was empty, so a sustained frame flood from a remote peer kept the
+/// single CPU inside one syscall — interrupts masked, no scheduling, no TCP
+/// timers — for as long as it lasted. A bound turns a flood into many short
+/// polls (the caller polls again from its own slice) instead of one that
+/// never returns. Two ring-fulls per poll keeps normal bursts single-pass.
+const DRAIN_MAX: usize = 2 * e1000::RING_LEN;
+
 fn poll_inner() -> usize {
     let mut processed = 0;
     let mut buf = [0u8; MAX_FRAME];
@@ -464,16 +473,17 @@ fn poll_inner() -> usize {
     // touches no device state, so this is where the cause register is retired
     // — without it the card would raise one message and then go quiet.
     e1000::with(|nic| nic.clear_interrupt_cause());
-    loop {
+    while processed < DRAIN_MAX {
         let Some(Some(n)) = e1000::with(|nic| nic.receive(&mut buf)) else {
-            // Every drain also runs the TCP timers: this polled stack has no
-            // background timer, so whoever polls is what retransmits.
-            tcp::tick();
-            return processed;
+            break;
         };
         processed += 1;
         dispatch(&buf[..n]);
     }
+    // Every drain also runs the TCP timers: this polled stack has no
+    // background timer, so whoever polls is what retransmits.
+    tcp::tick();
+    processed
 }
 
 fn dispatch(frame: &[u8]) {
@@ -541,8 +551,21 @@ fn on_ipv4(payload: &[u8]) {
         IFACE.lock().stats.rx_unwanted += 1;
         return;
     }
+    // A source that is broadcast or multicast is spoofed: no host sends from
+    // one, and a reply to it (a TCP RST or SYN-ACK, an ICMP echo reply) would
+    // go to the whole link as a reflection amplifier (V1.0, NET1-002).
+    if packet.header.src.is_broadcast() || packet.header.src.is_multicast() {
+        IFACE.lock().stats.rx_unwanted += 1;
+        return;
+    }
+    // An echo request must be addressed to this host, not broadcast: a ping
+    // to the link broadcast that we answered would make the guest a reflector
+    // with a spoofable source (V1.0, NET1-002, the V1-SEC-002 review). UDP
+    // still accepts broadcast — DHCP's reply is a broadcast datagram.
+    let to_us = packet.header.dst == our_ip;
     match packet.header.protocol {
-        ipv4::proto::ICMP => on_icmp(packet.header.src, packet.payload),
+        ipv4::proto::ICMP if to_us => on_icmp(packet.header.src, packet.payload),
+        ipv4::proto::ICMP => IFACE.lock().stats.rx_unwanted += 1,
         // The UDP checksum covers the destination address actually in the
         // header. Passing our own address here (as V0.8 did) made every
         // BROADCAST datagram fail its checksum and be dropped as malformed —
@@ -580,7 +603,15 @@ fn on_icmp(src: Ipv4Addr, payload: &[u8]) {
             ) else {
                 return;
             };
-            if send_ipv4(src, ipv4::proto::ICMP, &msg[..n]) {
+            // Non-blocking (V1.0, NET1-001, the V1-SEC-002 review): this runs
+            // inside `poll`, and the blocking `send_ipv4` would resolve ARP by
+            // calling `poll` again — one stack frame deeper per unanswered
+            // ping, which a flood of pings from an unresolved on-subnet source
+            // drove into the guard page and a kernel double fault. The next
+            // hop is answered from the cache, as the IPv6 responder does; a
+            // peer that pinged us has just ARP-resolved us, so it is usually
+            // warm. If it is not, the reply is dropped rather than waited for.
+            if try_send_ipv4(src, ipv4::proto::ICMP, &msg[..n]).is_ok() {
                 IFACE.lock().stats.icmp_replies_sent += 1;
             }
         }

@@ -130,6 +130,15 @@ pub const SYS_CONSOLE_READ: u64 = 40;
 /// (V0.10). The Gui capability; one 8-byte record (`kernel_core::wm`), or
 /// the caller waits for one.
 pub const SYS_GUI_EVENT: u64 = 41;
+/// sys_view(buf, len) (V0.11, ADR-0024): the approved system view, a
+/// `kernel_core::sysview` record. SystemAdministration READ (`sys_view`).
+pub const SYS_SYS_VIEW: u64 = 42;
+/// propose(record, len) (V0.11, ADR-0024): file a proposal for the console to
+/// approve. SystemAdministration USE (`propose`).
+pub const SYS_PROPOSE: u64 = 43;
+/// init_ctl(op, buf, len) (V0.11): the kernel -> init mailbox; only the live
+/// init (Service ADMIN, and `initd::is_init`).
+pub const SYS_INIT_CTL: u64 = 44;
 
 pub const ERR_NOSYS: u64 = u64::MAX;
 pub const ERR_FAULT: u64 = u64::MAX - 1;
@@ -403,6 +412,18 @@ unsafe extern "C" fn syscall_entry() {
         "pop qword ptr [rip + SYSCALL_USER_RSP]",
         "pop r11",
         "pop rcx",
+        // V1.0 (SEC1-003, found by the V1-SEC-002 review): the dispatcher is
+        // an ordinary function, so the argument and scratch registers hold
+        // whatever it left - kernel addresses and values. sysret changes
+        // only rcx and r11, so clear the rest the syscall ABI does not
+        // return (rax carries the result; rbx, rbp and r12-r15 are the
+        // program's own, preserved by the dispatcher).
+        "xor edi, edi",
+        "xor esi, esi",
+        "xor edx, edx",
+        "xor r8d, r8d",
+        "xor r9d, r9d",
+        "xor r10d, r10d",
         "mov rsp, [rip + SYSCALL_USER_RSP]",
         "sysretq",
         dispatch = sym syscall_dispatch,
@@ -457,6 +478,24 @@ extern "C" fn syscall_dispatch(a1: u64, a2: u64, a3: u64, nr: u64) -> u64 {
         SYS_CONSOLE_READ => crate::console::sys_console_read(a1, a2),
         SYS_GUI_EVENT => match require_any(CapabilityKind::Gui, rights::USE, "gui_event") {
             Ok(()) => sys_gui_event(a1, a2, a3),
+            Err(e) => e,
+        },
+        SYS_SYS_VIEW => match require_any(
+            CapabilityKind::SystemAdministration,
+            rights::READ,
+            "sys_view",
+        ) {
+            Ok(()) => sys_view(a1, a2),
+            Err(e) => e,
+        },
+        SYS_PROPOSE => {
+            match require_any(CapabilityKind::SystemAdministration, rights::USE, "propose") {
+                Ok(()) => crate::ai::sys_propose(a1, a2),
+                Err(e) => e,
+            }
+        }
+        SYS_INIT_CTL => match require_any(CapabilityKind::Service, rights::ADMIN, "init_ctl") {
+            Ok(()) => crate::initd::sys_init_ctl(a1, a2, a3),
             Err(e) => e,
         },
         SYS_SVC_REPORT => match require_any(CapabilityKind::Service, rights::ADMIN, "svc_report") {
@@ -1064,6 +1103,19 @@ fn sandbox_allows(path: &str, action: &'static str, cap: u64) -> bool {
     allowed
 }
 
+/// Refuse, and audit, a program's access to a store file the kernel owns —
+/// the audit trail and the package store (V0.11, SEC11-001). Holding
+/// `fs_read`/`fs_write` is authority over the program's files in the store,
+/// not over the evidence of what programs did or over which version of an
+/// application runs.
+fn refuse_kernel_owned(name: &str, action: &'static str, cap: u64) -> bool {
+    let owned = kernel_core::update::kernel_owned(name);
+    if owned {
+        crate::audit::denied_reason(action, cap, "kernel_owned");
+    }
+    owned
+}
+
 /// Copy a path argument out of user memory.
 fn user_path(ptr: u64, len: u64) -> Result<alloc::string::String, u64> {
     let bytes = copy_from_user(ptr, len, 256)?;
@@ -1090,6 +1142,9 @@ fn sys_fs_write(path_ptr: u64, path_len: u64, req_ptr: u64) -> u64 {
     let Some(name) = crate::store_name(&path) else {
         return ERR_INVAL;
     };
+    if refuse_kernel_owned(name, "fs_write", kernel_core::caps::CAP_FS_WRITE) {
+        return ERR_PERM;
+    }
     let req = match copy_from_user(req_ptr, 16, 16) {
         Ok(b) => b,
         Err(e) => return e,
@@ -1132,6 +1187,9 @@ fn sys_fs_delete(path_ptr: u64, path_len: u64) -> u64 {
     let Some(name) = crate::store_name(&path) else {
         return ERR_INVAL;
     };
+    if refuse_kernel_owned(name, "fs_delete", kernel_core::caps::CAP_FS_WRITE) {
+        return ERR_PERM;
+    }
     let result = crate::with_persistent_store(|fs| fs.remove(name));
     match result {
         Some(Ok(())) => {
@@ -1157,9 +1215,19 @@ fn sys_fs_list(buf_ptr: u64, buf_len: u64) -> u64 {
     ) {
         return ERR_PERM;
     }
-    let Some(listing) = crate::with_persistent_store(|fs| {
+    // Never format: a read-only syscall must not write the disk (V1.0,
+    // FS1-001) — a `fs_read`/`fs_list` holder has only READ rights, and a
+    // blank or unmountable disk that `with_persistent_store` would format is
+    // read as "no entries" instead.
+    let Some(listing) = crate::with_mounted_store(|fs| {
         let mut out = alloc::string::String::new();
-        for name in fs.list() {
+        // Kernel-owned files are not part of the namespace programs see
+        // (SEC11-001), so they are not listed either.
+        for name in fs
+            .list()
+            .into_iter()
+            .filter(|n| !kernel_core::update::kernel_owned(n))
+        {
             out.push_str(name);
             out.push('\n');
         }
@@ -1204,7 +1272,12 @@ fn sys_fs_read(path_ptr: u64, path_len: u64, req_ptr: u64) -> u64 {
     // anything else is the read-only initramfs. One syscall, two backing
     // stores, so a program does not need to know which it is talking to.
     let data = match crate::store_name(path) {
-        Some(name) => match crate::with_persistent_store(|fs| fs.read(name)) {
+        Some(name) if refuse_kernel_owned(name, "fs_read", kernel_core::caps::CAP_FS_READ) => {
+            return ERR_PERM;
+        }
+        // Never format on a read (V1.0, FS1-001): with_mounted_store, so a
+        // READ right can never cause the destructive write a format is.
+        Some(name) => match crate::with_mounted_store(|fs| fs.read(name)) {
             Some(Ok(d)) => d,
             _ => return ERR_NOENT,
         },
@@ -1428,6 +1501,27 @@ fn sys_gui_present(win: u64) -> u64 {
     }
     crate::gfx::compositor::composite();
     0
+}
+
+/// sys_view(buf, len) (V0.11): build the approved view, copy all of it or
+/// none of it, and only then remember it as served to this process (the
+/// provenance a proposal must cite).
+fn sys_view(buf: u64, len: u64) -> u64 {
+    let n = kernel_core::sysview::LEN as u64;
+    if len < n {
+        return ERR_2BIG;
+    }
+    if let Err(e) = validate_user_write(buf, n) {
+        return e;
+    }
+    let bytes = crate::ai::build_view().encode();
+    match copy_to_user(buf, &bytes) {
+        Ok(copied) => {
+            crate::ai::served(CURRENT_PID.load(Ordering::SeqCst), &bytes);
+            copied
+        }
+        Err(e) => e,
+    }
 }
 
 /// gui_event(win, buf, len): the next event for a window the caller owns, as

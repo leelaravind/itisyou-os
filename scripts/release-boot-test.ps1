@@ -30,6 +30,9 @@ $console = @('--expect', 'B010', '--expect', 'B020', '--expect', 'B030', '--expe
     '--require', "itisyou-os $Version", '--require', 'shutting down (QEMU exit)',
     # Since v0.10.0 the userspace init runs as pid 1 on every boot.
     '--require', 'pid=1 ppid=0 path=/sbin/init', '--require', 'path=/bin/tickd state=',
+    # Since v0.11.0 the image carries the pinned model (checked at boot) and
+    # init starts the Ring 3 inference service.
+    '--require', 'initramfs_match=true decode=ok', '--require', 'path=/bin/inferd state=',
     '--timeout-secs', '120')
 
 Write-Output "=== release ${Version}: UEFI boot to the console ==="

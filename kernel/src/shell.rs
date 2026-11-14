@@ -129,6 +129,20 @@ fn execute(line: &str) {
         "busy" => cmd_busy(args),
         "pkg" => cmd_pkg(args),
         "audit" => cmd_audit(args),
+        // V1.0 (V1-REL-003): resource accounting for the soak leg.
+        "leakcheck" => crate::leakcheck::console(args),
+        // V0.11 (ADR-0024): the operator decides on an agent's proposals here,
+        // and only here - the kernel console reads no input while a Ring 3
+        // shell holds it.
+        "proposals" => crate::ai::console_list(),
+        "approve" => match args.first().and_then(|a| a.parse::<u64>().ok()) {
+            Some(id) => crate::ai::console_approve(id),
+            None => crate::serial_println!("approve: usage: approve <id>"),
+        },
+        "deny" => match args.first().and_then(|a| a.parse::<u64>().ok()) {
+            Some(id) => crate::ai::console_deny(id),
+            None => crate::serial_println!("deny: usage: deny <id>"),
+        },
         "lsdev" => cmd_lsdev(),
         "beep" => cmd_beep(),
         "usbwait" => cmd_usbwait(),
@@ -149,7 +163,7 @@ fn execute(line: &str) {
 
 fn cmd_help() {
     crate::serial_println!(
-        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path> [caps|-] [prefix|-] [-- args...]  run a Ring 3 ELF (optionally sandboxed, with arguments)\n  bg <path> [caps|-] [-- args...]  run a Ring 3 ELF co-scheduled with the background services\n  svc               supervise the on-demand services; show all service state\n  sched [last|pause|resume]  always-on scheduling: counters, the last command's window, pause/resume\n  busy <ms>         keep the console busy for <ms> (safe points only): does the background still run?\n  ps                processes: pid, parent, program, state\n  rsh [caps|-]      the Ring 3 shell (/bin/sh) with the console's input; `exit` returns here\n  kill <pid>        terminate a process\n  pkg <op> ...      app packages: install/stage/launch/rollback/recover/list\n  xhciwait          wait for USB HID input through the xHCI controller\n  harden            CPU-enforced kernel/user separation (SMEP/SMAP/UMIP)\n  irq               interrupt routing (I/O APIC), delivery proofs and counters\n  acpi              ACPI tables found: MADT routes, FADT, S5\n  store <op> ...    persistent store: ls | put <name> <text> | cat <name> | rm <name> | df\n  net               interface address, counters and bound sockets\n  ping <ip> [n]     ICMP echo the given IPv4 address\n  resolve <name>    DNS A lookup through the configured server\n  dhcp              obtain and apply an address from a DHCP server\n  ipv6              bring up IPv6: link-local, router solicitation, SLAAC\n  ping6 <addr> [n]  ICMPv6 echo\n  tcp [drop <n>]    TCP connections and counters; drop <n> discards the next n data segments (test)\n  audit [save|verify|anchor <ip> <port>|check-anchor <ip> <port>]  privileged-action trail\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  usbwait           wait for USB HID input (keyboard/mouse)\n  desktop [app]     enter the graphical desktop (PS/2 input), optionally with a Ring 3 app on it\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU (test-exit device)\n  poweroff          ACPI S5 soft power-off\n  reboot            8042 CPU reset"
+        "commands:\n  help              this list\n  version           kernel version\n  system            platform summary\n  cpu               CPU identification\n  memory            physical + heap statistics\n  tasks             kernel task list\n  uptime            seconds since timer start\n  ls [path]         list directory\n  cat <path>        print file\n  echo <args...>    print arguments\n  run <path> [caps|-] [prefix|-] [-- args...]  run a Ring 3 ELF (optionally sandboxed, with arguments)\n  bg <path> [caps|-] [-- args...]  run a Ring 3 ELF co-scheduled with the background services\n  svc               supervise the on-demand services; show all service state\n  sched [last|pause|resume]  always-on scheduling: counters, the last command's window, pause/resume\n  busy <ms>         keep the console busy for <ms> (safe points only): does the background still run?\n  ps                processes: pid, parent, program, state\n  rsh [caps|-]      the Ring 3 shell (/bin/sh) with the console's input; `exit` returns here\n  kill <pid>        terminate a process\n  pkg <op> ...      app packages: install/stage/launch/rollback/recover/list\n  xhciwait          wait for USB HID input through the xHCI controller\n  harden            CPU-enforced kernel/user separation (SMEP/SMAP/UMIP)\n  irq               interrupt routing (I/O APIC), delivery proofs and counters\n  acpi              ACPI tables found: MADT routes, FADT, S5\n  store <op> ...    persistent store: ls | put <name> <text> | cat <name> | rm <name> | df\n  net               interface address, counters and bound sockets\n  ping <ip> [n]     ICMP echo the given IPv4 address\n  resolve <name>    DNS A lookup through the configured server\n  dhcp              obtain and apply an address from a DHCP server\n  ipv6              bring up IPv6: link-local, router solicitation, SLAAC\n  ping6 <addr> [n]  ICMPv6 echo\n  tcp [drop <n>]    TCP connections and counters; drop <n> discards the next n data segments (test)\n  audit [save|verify|anchor <ip> <port>|check-anchor <ip> <port>]  privileged-action trail\n  proposals         an agent's proposals, with previews (V0.11)\n  approve <id>      execute a proposal, verify it, roll back if it fails\n  deny <id>         refuse a proposal (final)\n  lsdev             list detected hardware devices\n  beep              play a test tone (AC97 audio)\n  usbwait           wait for USB HID input (keyboard/mouse)\n  desktop [app]     enter the graphical desktop (PS/2 input), optionally with a Ring 3 app on it\n  clear             clear screen\n  panic-test confirm  trigger a kernel panic (development)\n  shutdown          exit QEMU (test-exit device)\n  poweroff          ACPI S5 soft power-off\n  reboot            8042 CPU reset"
     );
 }
 
@@ -600,7 +614,7 @@ fn cmd_irq() {
 fn cmd_store(args: &[&str]) {
     let Some(&sub) = args.first() else {
         crate::serial_println!(
-            "store: subcommands: ls | put <name> <text> | cat <name> | rm <name> | df"
+            "store: subcommands: ls | put <name> <text> | import <path> <name> | cat <name> | rm <name> | df"
         );
         return;
     };
@@ -631,7 +645,9 @@ fn cmd_store(args: &[&str]) {
         }) {
             Some((names, count, generation)) => {
                 for name in &names {
-                    crate::serial_println!("  {name}");
+                    // Names come from the disk: V0.10 let a program create
+                    // one with a line break in it, and a disk can be edited.
+                    crate::serial_println!("  {}", crate::untrusted(name));
                 }
                 crate::serial_println!("store: files={count} generation={generation}");
             }
@@ -655,9 +671,32 @@ fn cmd_store(args: &[&str]) {
                 None => crate::serial_println!("store: no persistent storage attached"),
             }
         }
+        // V1.0: copy a boot-image file into the store byte for byte - how a
+        // leg plants a store only a disk edited outside the OS could hold
+        // (a package filed under another app's name). Trusted console, as
+        // `put` is.
+        ("import", Some(path)) => match (args.get(2), crate::fs::read(path)) {
+            (Some(name), Ok(data)) => {
+                let data = data.to_vec();
+                match crate::with_persistent_store(|fs| fs.write(name, &data)) {
+                    Some(Ok(())) => crate::serial_println!(
+                        "store: import path={path} name={name} bytes={}",
+                        data.len()
+                    ),
+                    Some(Err(e)) => {
+                        crate::serial_println!("store: import name={name} failed: {e:?}")
+                    }
+                    None => crate::serial_println!("store: no persistent storage attached"),
+                }
+            }
+            (None, _) => crate::serial_println!("store: import <path> <name>"),
+            (_, Err(e)) => crate::serial_println!("store: import path={path} failed: {e:?}"),
+        },
         ("cat", Some(name)) => match crate::with_persistent_store(|fs| fs.read(name)) {
             Some(Ok(data)) => match core::str::from_utf8(&data) {
-                Ok(text) => crate::serial_println!("store: {name} = {text}"),
+                // A program may have written the contents: one line, no
+                // marker prefix (a line break shows as `\x0a`).
+                Ok(text) => crate::serial_println!("store: {name} = {}", crate::untrusted(text)),
                 Err(_) => {
                     crate::serial_println!("store: {name} is not UTF-8 ({} bytes)", data.len())
                 }
@@ -671,7 +710,7 @@ fn cmd_store(args: &[&str]) {
             None => crate::serial_println!("store: no persistent storage attached"),
         },
         _ => crate::serial_println!(
-            "store: subcommands: ls | put <name> <text> | cat <name> | rm <name> | df"
+            "store: subcommands: ls | put <name> <text> | import <path> <name> | cat <name> | rm <name> | df"
         ),
     }
 }
@@ -1094,7 +1133,9 @@ fn cmd_audit(args: &[&str]) {
             return;
         }
         Some("verify") => {
-            crate::audit::recover();
+            // Read-only since V0.11: re-running boot recovery here dropped
+            // this boot's unsaved records from the chain (AUDIT11-001).
+            crate::audit::check();
             return;
         }
         Some(sub @ ("anchor" | "check-anchor")) => {
@@ -1139,14 +1180,16 @@ fn cmd_audit(args: &[&str]) {
             );
         }
     });
-    let (head, boot, saved) = crate::audit::chain_state();
+    let (head, boot, saved, window) = crate::audit::chain_state();
     let mut buf = [0u8; 64];
     let head_text = kernel_core::audit_chain::format_head(&head, &mut buf);
     crate::serial_println!("audit: total={total} denials={denials} (ring keeps the newest 64)");
     // The chain head covers every record ever pushed, including ones the
     // bounded ring has already dropped — which is the point of keeping it
-    // separately from the ring.
-    crate::serial_println!("audit: chain boot={boot} saved_records={saved} head={head_text}");
+    // separately from the ring. `window` is what the next save stores.
+    crate::serial_println!(
+        "audit: chain boot={boot} saved_records={saved} window={window} head={head_text}"
+    );
 }
 
 fn cmd_pkg(args: &[&str]) {
@@ -1226,7 +1269,8 @@ fn cmd_pkg(args: &[&str]) {
             for app in crate::platform::apps(&fs) {
                 let st = crate::platform::state(&fs, &app);
                 crate::serial_println!(
-                    "  {app}: active={:?} previous={:?} staged={:?}",
+                    "  {}: active={:?} previous={:?} staged={:?}",
+                    crate::untrusted(&app),
                     st.active,
                     st.previous,
                     st.orphan_staged
@@ -1291,6 +1335,8 @@ fn cmd_ps() {
             ProcState::Faulted { vector } => alloc::format!("faulted:{vector}"),
             ProcState::Killed => String::from("killed"),
         };
+        // Canonical since the V0.11 review, and escaped all the same.
+        let path = crate::untrusted(path);
         crate::serial_println!("  pid={pid} ppid={ppid} path={path} state={st}");
     });
     crate::serial_println!("ps: processes={n}");
@@ -1343,7 +1389,10 @@ fn cmd_kill(args: &[&str]) {
     match crate::proc::kill(pid) {
         crate::proc::KillResult::Killed { path } => {
             crate::audit::allowed("console_kill", 0, Some(alloc::format!("pid={pid} {path}")));
-            crate::serial_println!("kill: pid={pid} path={path} state=killed");
+            crate::serial_println!(
+                "kill: pid={pid} path={} state=killed",
+                crate::untrusted(&path)
+            );
         }
         crate::proc::KillResult::NoSuch => {
             crate::serial_println!("kill: pid={pid}: no such process")

@@ -169,12 +169,80 @@ focus and input routed to the focused window.
 
 ## V0.11 — AI-Native System Layer
 
+*(In development as `0.11.0-dev` — NOT released: there is no `v0.11.0` tag
+and no release yet; v0.10.0 is the latest release. Every scope item below is
+IMPLEMENTED+VERIFIED in `docs/REQUIREMENTS.md` with QEMU and host evidence
+and a recorded negative control for every row; the design is
+ADR-0024.)*
+
 A local inference service **outside** the kernel (a small model running in
 Ring 3, trained reproducibly from the repository), system knowledge over an
 approved, read-only view of local state, a diagnostic agent, policy-controlled
 system actions with preview and explicit approval, provenance and audit, and
 post-action verification with rollback. The invariant is unchanged: the agent
 has intelligence, not authority.
+
+Scope item by item, with the rows that deliver it (all IMPLEMENTED+VERIFIED;
+none BLOCKED or NOT APPLICABLE):
+
+- **Local inference service outside the kernel** — `/bin/inferd`,
+  `/sbin/init`'s third service, runs the model in Ring 3 and answers over IPC
+  (INFER11-001). The kernel also evaluates the same model, but only to check
+  the condition a proposal cites, never to act on it (PROP11-001).
+- **A small model, trained reproducibly from the repository** — three
+  integer yes/no detectors, trained at build time by an averaged perceptron
+  and pinned by SHA-256; the build refuses a stale pin (MODEL11-001). It is a
+  linear classifier trained on synthetic examples, and its measured accuracy
+  equals a one-rule baseline.
+- **System knowledge over an approved, read-only view of local state** —
+  syscall 42 `sys_view`, a fixed allow-listed record served only to a
+  process the console granted it (VIEW11-001), and one runbook per condition
+  cited by id and digest (KB11-001). The knowledge is a fixed map of three
+  runbooks, not retrieval.
+- **A diagnostic agent** — `/bin/agent`, deterministic, with no authority to
+  act (AGENT11-001).
+- **Policy-controlled system actions with preview and explicit approval** —
+  syscall 43 `propose`, which files a proposal only after the kernel checks
+  it against its own facts (PROP11-001); the console's `proposals`,
+  `approve` and `deny` (ACT11-001); two actions, `resume-scheduler`
+  (ACT11-001) and `retry-service` through `/sbin/init` (ACT11-002).
+- **Provenance and audit** — every filed or refused proposal, decision,
+  execution, verification and rollback is audited; the filing and the
+  execution records carry the model and view digests the proposal cited,
+  the others its id or the refusal's reason (PROP11-001, ACT11-001,
+  ACT11-002), on an audit trail first made trustworthy for it (AUDIT11-001,
+  AUDIT11-002, SEC11-001).
+- **Post-action verification with rollback** — `resume-scheduler` verified
+  by the busy-point measurement and paused again on failure (ACT11-001; that
+  rollback is exercised by the row's mutation control, not by a shipped
+  leg); `retry-service` verified by init's own reports and rolled back
+  deterministically, exercised in `ai-retry-bios` (ACT11-002).
+- **Intelligence, not authority** — the view and `propose` capabilities are
+  granted only by the console and cannot be delegated, the agent's direct
+  attempts to act are refused, and only the console's `approve` executes
+  anything (VIEW11-001, AGENT11-001, PROP11-001, ACT11-001).
+
+Added during V0.11 beyond this scope: OUT11-001 (Ring 3 output can no longer
+drive the operator's terminal — found by the threat review of the approval
+path), and the three audit-trail defects present since v0.8.0, fixed before
+any agent code (AUDIT11-001, AUDIT11-002, SEC11-001). The adversarial review
+of the finished V0.11 code then found two more console-evidence defects in
+v0.10.0 (OUT11-002, a marker split across output chunks; SEC11-002, a
+program-chosen path printed by `ps`) and made a crafted trail unable to
+crash recovery (AUDIT11-003); all fixed with legs and controls.
+
+Deliberately NOT delivered, and recorded as such rather than reworded:
+retrieval over local state (the implementation plan's "system
+knowledge/RAG" — the knowledge is a fixed map); a model beyond the three
+detectors — no language model, no text generation, no planning and no
+learning at run time; any measure of diagnostic accuracy beyond the
+synthetic test set and the three situations the QEMU legs construct (the
+model is trained and tested only on synthetic scenarios);
+actions beyond the two — no action for `denial_burst`, no action that stops
+an arbitrary process and no "runaway process" condition (there is no
+per-process CPU accounting); proposals that survive a reboot; approval from
+anywhere but the kernel console. Current limits:
+`docs/KNOWN_LIMITATIONS.md`.
 
 ## V1.0 — Experimental Personal OS
 

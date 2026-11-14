@@ -1,0 +1,17 @@
+cargo-features = ["per-package-target"]
+
+[package]
+name = "user-soak"
+version.workspace = true
+edition.workspace = true
+description = "/bin/soak: a repeatable workload for the V1.0 leak check (process lifecycles, file writes, IPC)."
+forced-target = "x86_64-unknown-none"
+
+[dependencies]
+ulib = { path = "../ulib" }
+
+[[bin]]
+name = "user-soak"
+path = "src/main.rs"
+test = false
+bench = false

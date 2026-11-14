@@ -1,6 +1,10 @@
 # Normalize line endings; explicit binary handling for design evidence.
 * text=auto
 *.ps1 text eol=crlf
+# The model's training data and pin (V0.11): LF on every checkout, so the
+# build reads the same bytes on Windows and Linux (the parser also accepts
+# CRLF, and the training digest covers the examples, not the file).
+ai/** text eol=lf
 *.png binary
 *.zip binary
 *.img binary
