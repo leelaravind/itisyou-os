@@ -74,10 +74,27 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+      # QEMU is built from a pinned, checksummed release instead of taken
+      # from the distribution. Ubuntu 24.04 ships QEMU 8.2.2, which does not
+      # implement the one-byte `int1` instruction (it raises #UD; QEMU 9.1.0
+      # and later raise #DB, as hardware does), so `fault-contain-bios`
+      # cannot pass on it. The pin is the QEMU the project develops against,
+      # so this matrix and the Windows gate run the same emulator. The build
+      # is cached; the key changes when the script (version, checksum,
+      # configure flags) does.
+      - name: Cache the pinned QEMU
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/itisyou-qemu
+          key: qemu-${{ runner.os }}-${{ hashFiles('scripts/ci-install-qemu.sh') }}
+
       - name: Install QEMU + OVMF
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf
+          sudo apt-get install -y --no-install-recommends ovmf \
+            build-essential ninja-build pkg-config python3-venv flex bison \
+            libglib2.0-dev libpixman-1-dev libslirp-dev xz-utils curl
+          bash scripts/ci-install-qemu.sh
 
       - name: QEMU boot smoke (BIOS)
         run: |

@@ -15,10 +15,15 @@ Usage:
   python3 scripts/run-ci-local.py --from 13 --to 20     # by step index
   python3 scripts/run-ci-local.py --list
 
-Prerequisites for the `kernel` job (Ubuntu 24.04 names):
-  rustup (the pinned toolchain installs itself), qemu-system-x86, ovmf, PyYAML.
-Steps that only install those are skipped with --skip-install (the default
-when not running as root).
+Prerequisites for the `kernel` job: rustup (the pinned toolchain installs
+itself) and PyYAML. The workflow's own "Install QEMU + OVMF" step installs
+the rest (apt packages, and the pinned QEMU through
+scripts/ci-install-qemu.sh). It needs root, so it is skipped with
+--skip-install (the default when not running as root): then install OVMF and
+the build dependencies yourself, run scripts/ci-install-qemu.sh, and put its
+bin directory first on PATH. A step that appends to $GITHUB_PATH takes effect
+for the following steps of the same invocation only, so a partial run
+(--from/--only) that leaves the install step out needs that PATH too.
 
 Exit status: 0 if every executed step passed, 1 otherwise.
 """
@@ -63,6 +68,12 @@ def main() -> int:
 
     log_dir = pathlib.Path(args.log_dir) / args.job
     log_dir.mkdir(parents=True, exist_ok=True)
+    # GITHUB_PATH, as on a runner: a step appends directories to this file and
+    # every later step finds them at the front of PATH.
+    github_path = log_dir / "github_path"
+    github_path.write_text("", encoding="utf-8")
+    base_env["GITHUB_PATH"] = str(github_path)
+    seen_paths = 0
     results = []
     for index, step in enumerate(steps):
         name = step.get("name") or step.get("uses") or f"step {index}"
@@ -92,6 +103,10 @@ def main() -> int:
                 cwd=cwd, env=env, stdout=out, stderr=subprocess.STDOUT,
             ).returncode
         took = time.time() - started
+        added = [l.strip() for l in github_path.read_text(encoding="utf-8").splitlines() if l.strip()]
+        for directory in added[seen_paths:]:
+            base_env["PATH"] = directory + os.pathsep + base_env.get("PATH", "")
+        seen_paths = len(added)
         status = "PASS" if rc == 0 else f"FAIL({rc})"
         results.append((index, status, took, name))
         print(f"{index:3d}  {status:12s} {took:7.1f}s  {name}", flush=True)
