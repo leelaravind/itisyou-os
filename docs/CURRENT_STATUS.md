@@ -23,7 +23,7 @@ published v1.0.0 images are unchanged.
 
 **Open, in the order they block each other:**
 
-1. **The matrix is green on Linux locally; it has not run on GitHub.** The
+1. **The matrix is green on Linux, locally and in one GitHub run.** The
    workflow's steps were run on Linux for the first time on 2026-11-14
    (`docs/LOCAL_LINUX_RUN.md`, not a GitHub run). At v1.0.0 the QEMU matrix
    passed 55 of 58 steps. The three failures are fixed on the branch:
@@ -33,9 +33,14 @@ published v1.0.0 images are unchanged.
    workflow now builds the pinned QEMU 11.1.0 and the assertion is
    unchanged). Result: **58 of 58 QEMU steps**, 556 host tests, lint, the
    website job and the two-clean-builds reproducibility job pass.
-2. **V1-REL-001, V1-REL-002 and V1-REP-004 are BLOCKED** on a GitHub CI run
-   (billing, or a short public window) and stay BLOCKED until that run
-   exists. Nothing known now stands in its way.
+   The repository was then made public and pull request #3 ran the
+   workflow on GitHub: run `43651248948`, all four jobs green.
+2. **V1-REL-001, V1-REL-002 and V1-REP-004 are still BLOCKED.** They ask
+   for CI on the release commit, three consecutive clean runs, and the
+   `v1.0.0` tag on a green-CI commit. The one GitHub run is on a commit
+   after v1.0.0 with a kernel change; the tagged commit itself cannot be
+   green (its workflow has the three defects above). The owner decides what
+   to stamp: in practice the next version, released from this branch.
 3. **`main` has not been given v1.0.0.**
 4. **The commit hashes cited in the documents do not exist on `origin`**
    (`docs/COMMIT_HASHES.md`).

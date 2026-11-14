@@ -28,8 +28,12 @@ deployed, no pull request opened).
     (`scripts/ci-install-qemu.sh`, SHA-256 pinned and checked against the
     release signature), the version the Windows gate uses.
 - **After the fixes:** QEMU matrix **58 of 58 steps** on QEMU 11.1.0, 556
-  host tests, website job and reproducibility job pass. Locally; no GitHub
-  run yet.
+  host tests, website job and reproducibility job pass locally.
+- **First GitHub run since v0.10.0: green.** The owner made the repository
+  public and asked for a pull request: **PR #3**
+  (`claude/gifted-cori-vzs71o` → `main`), run `43651248948`, all four jobs
+  success on head `d810a32`. Not merged — merging is the owner's step. The
+  repository is still public.
 - **The branch is no longer the v1.0.0 code** (one kernel fix) but still
   reports `itisyou-os 1.0.0`. It must get the next version before any
   release; the published v1.0.0 images were not rebuilt.
@@ -368,8 +372,9 @@ no-pie.
 
 ## Blockers
 
-- **External: GitHub Actions billing** (or a short public window). Blocks
-  every GitHub CI run and therefore V1-REL-001, V1-REL-002 and V1-REP-004.
+- **External: GitHub Actions billing** (or a public window; the repository
+  is public as of 2026-11-14 and CI runs). The V1 rows V1-REL-001,
+  V1-REL-002 and V1-REP-004 are BLOCKED on what to stamp, not on CI.
   (As written on 2026-09-13 this entry named the V0.9 release; v0.9.0,
   v0.10.0 and v1.0.0 have all been released since.)
 - **Owner review: the changes made on 2026-11-14** (the `--firmware` line,
@@ -417,27 +422,26 @@ what it needs.
    several times on its own (the 2026-09-14 checkpoint used a
    `run-legs.ps1`, which is not in the repository).
 
-4. **Restore GitHub CI** — only you can: GitHub → Settings → Billing & plans
-   (the message was "recent account payments have failed or your spending
-   limit needs to be increased"), or make the repository public for a short
-   window as for v0.9.0 and v0.10.0 (scan the history for secrets first; the
-   signing keys must stay on the offline USB drive).
+4. **GitHub CI works while the repository is public.** It is public now
+   (your decision, 2026-11-14). Make it private again when you are done, as
+   after v0.9.0 and v0.10.0 — then CI needs the billing fix (GitHub →
+   Settings → Billing & plans; the message was "recent account payments
+   have failed or your spending limit needs to be increased"). The signing
+   keys must stay on the offline USB drive.
 
-5. **Get a green CI run and stamp it.** Push the branch, open the pull
-   request to `main` (the workflow runs on pull requests and on pushes to
-   `main`), and require all four jobs green. The first run builds QEMU
-   (several minutes; later runs use the cache). That build step has only
-   ever run on this session's Linux host — if it fails on the runner, the
-   error is in `scripts/ci-install-qemu.sh`, not in a test. Then, in `docs/REQUIREMENTS.md`,
-   move V1-REL-001 and V1-REP-004 from BLOCKED with the run id; V1-REL-002
-   needs three consecutive clean runs. Record the CI-built (Linux) SHA-256
-   beside the Windows-built ones — they differ by design. For comparison,
-   `docs/LOCAL_LINUX_RUN.md` lists the digests this session's Linux build
-   gave for the v1.0.0 code and for the branch; a CI build of the same tree
-   should match the latter until the version is changed.
+5. **Stamp a green CI run.** PR #3 has one: run `43651248948`, all four
+   jobs, head `d810a32` (`docs/LOCAL_LINUX_RUN.md`). It is on a commit after
+   v1.0.0, so decide what it certifies: the honest route is the next
+   version (step 2), released from this branch, with V1-REL-001 and
+   V1-REP-004 stamped for that version's commit and tag; V1-REL-002 needs
+   three consecutive clean runs. Record the CI-built SHA-256 beside the
+   Windows-built ones — they differ, and they also differ from a build on
+   another Linux host (the digests depend on the build host's paths), so
+   only a CI build re-derives a CI digest.
 
-6. **Merge to `main`.** `main` is an ancestor of this branch, so it is a
-   fast-forward: `git switch main`, `git merge --ff-only <branch>`,
+6. **Merge to `main`.** PR #3 is open and mergeable; `main` is an ancestor
+   of this branch, so it is a fast-forward. Merge it on GitHub, or:
+   `git switch main`, `git merge --ff-only <branch>`,
    `git push origin main`. Then delete the merged branches you no longer
    need (`v0.11/work`, `v1.0/ipc`, `v0.10/integration` are all contained in
    it).

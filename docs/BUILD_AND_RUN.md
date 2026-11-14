@@ -117,5 +117,7 @@ Two things differ from the Windows gate and are not hidden by the script:
   V1-REP-004).
 - **Images built on Linux have different digests from images built on
   Windows** (path separators in panic locations), so a Linux build never
-  reproduces the published Windows-built bytes. Two Linux builds do
-  reproduce each other.
+  reproduces the published Windows-built bytes. Two builds on the same
+  Linux host reproduce each other; a build on another Linux host (GitHub's
+  runner, for one) gives different digests again
+  (`docs/LOCAL_LINUX_RUN.md`).

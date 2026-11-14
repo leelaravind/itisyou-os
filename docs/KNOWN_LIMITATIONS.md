@@ -529,8 +529,16 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
   the owner chose to keep the assertion and change the emulator: the
   workflow now builds a pinned QEMU 11.1.0 (`scripts/ci-install-qemu.sh`),
   the version the Windows gate uses. With all three, a local Linux run
-  passes 58 of 58; no GitHub run exists yet, and the QEMU build step has
-  never executed on a GitHub runner.
+  passes 58 of 58 and the first GitHub run since v0.10.0 is green
+  (`43651248948`, pull request #3, all four jobs). That is one run on a
+  commit after v1.0.0, so V1-REL-001, V1-REL-002 and V1-REP-004 are still
+  BLOCKED.
+- **Image digests depend on the build host, not only on the source.** Two
+  clean builds agree on one host, but the same tree built on GitHub's
+  runner and on another Linux host gives different digests for every image
+  (2026-11-14, `docs/LOCAL_LINUX_RUN.md`), as Windows and Linux builds
+  already did. Cause not isolated; probably absolute toolchain and registry
+  paths in panic locations.
 - **QEMU 8.2.2 is no longer a tested emulator.** Earlier releases' CI ran on
   it; from this change both the Linux matrix and the Windows gate run QEMU
   11.1.0, so one emulator version is exercised, not two. On 8.2.2 the

@@ -1,6 +1,7 @@
 # Local Linux run of the CI workflow — 2026-11-14
 
-**This is not a GitHub Actions run.** It is the `run:` steps of
+**Runs 1 to 3 below are not GitHub Actions runs** (the one GitHub run that
+followed them has its own section near the end). It is the `run:` steps of
 `.github/workflows/ci.yml`, executed unchanged and in order by
 `scripts/run-ci-local.py` on one Linux machine. It changes the state of no
 requirement: V1-REL-001, V1-REL-002 and V1-REP-004 need a GitHub CI run and
@@ -93,9 +94,55 @@ itisyou-kernel-bios.img            6784000  0ceeff44726f65c97ec0a7f2ce2a46938a37
 itisyou-kernel-uefi.img            6356992  980c1920d38f1126c4d7216e9f47dedb01ca06aa762fee599dede44d42824e95
 ```
 
+## The GitHub Actions run that followed
+
+After run 3 the owner made the repository public and asked for a pull
+request, so the workflow ran on GitHub for the first time since v0.10.0.
+This section is the only part of this file that is a GitHub run.
+
+| | |
+|---|---|
+| Run | `43651248948` — https://github.com/leelaravind/itisyou-os/actions/runs/43651248948 |
+| Trigger | pull request #3, `claude/gifted-cori-vzs71o` into `main`, head `d810a32` |
+| Kernel build, tests, QEMU boot matrix | success (23:03:12–23:23:05 UTC, including the first, uncached build of QEMU 11.1.0) |
+| Reproducible boot images (two clean builds) | success — identical digests for every image |
+| Website check + build | success |
+| Secret scan (Gitleaks) | success |
+
+It is one run, on a pull-request head that is not the v1.0.0 release commit
+and carries a kernel change after it. It therefore does not by itself
+satisfy V1-REL-001 (the matrix on the release commit), V1-REL-002 (three
+consecutive clean runs) or V1-REP-004 (the tag on a green-CI commit); those
+rows stay BLOCKED until the owner decides which commit and version to stamp.
+
+CI-built digests (the `reproducibility` job's manifest):
+
+```
+itisyou-kernel-bios.img            6784000  fdcc8edb087a56df595428c369ee2bb5419361e087a3944488b66ab52f31c48b
+itisyou-kernel-uefi.img            6356992  d433c5a9bcfd7c1aa9bd4e9f028bba79f26d205cd42a9d3a3144b7c1b2f435ff
+itisyou-kernel-selftest-bios.img   6784000  7cb60889656a3ea8af22fd93704a00157f850bf10d8cd8aff629a4bad164f1f5
+itisyou-kernel-selftest-uefi.img   6356992  a079735182fd9fef0e8fc1128f5a07b1b49dc9caa9463f6eb64480fc650fb25f
+itisyou-kernel-panictest-bios.img  2589696  c6f4e0c1a87c9e22971b96efefb7afc8ef960733e93a9cfc4913beb007a58ffb
+itisyou-kernel-panictest-uefi.img  2162688  0e0068159b6bfb814f2338560b8502ecb9c68bb1e56ee2eab3fdad46df6547f9
+itisyou-fs-persist-bios.img        5735424  893cccff652c300ca0756341f8f3979b47c4c1238cf6f15faa658266e686dab3
+itisyou-fs-persist-uefi.img        5308416  cb769f123e6048730f829bc613109aff8f49b410cdbe7231ceebfc77156547de
+```
+
+**These differ from the digests this host built from the same tree** (run
+2/3 above), for every image. Each host reproduces its own bytes — two clean
+builds agree on GitHub, and two agree here, from different checkout
+directories — but the two hosts do not agree with each other. The cause was
+not isolated. The likely one is the mechanism the project already records
+for Windows against Linux: absolute paths in panic locations, here the
+toolchain and cargo registry under `/root` on this host and `/home/runner`
+on GitHub's. So "reproducible" currently means "on the same host layout",
+and a published digest can only be re-derived on a host laid out like the
+one that built it.
+
 ## What was not done
 
-- No GitHub Actions run, so no CI run id and no CI-built digest to stamp.
+- No requirement row was stamped with the GitHub run: which commit and
+  version it should certify is the owner's decision.
 - The Windows gate (`scripts/verify.ps1`, `scripts/test.ps1`,
   `release-boot-test.ps1`) was not run; PowerShell is not on this host.
 - The published v1.0.0 images were not downloaded or boot-tested.
@@ -105,8 +152,8 @@ itisyou-kernel-uefi.img            6356992  980c1920d38f1126c4d7216e9f47dedb01ca
   against the kernel fix: their scripts are not in the repository. The
   host test covers the decision for those inputs; the kernel path was
   exercised only by `ai-retry-bios`.
-- The workflow's QEMU build and cache steps have never executed on a
-  GitHub runner; the script was run on this host only (same distribution).
+- The workflow's QEMU cache has only been written, not yet restored: the
+  one GitHub run built QEMU from scratch.
 - Only QEMU 8.2.2 and 11.1.0 were run. "From 9.1.0" is read from QEMU's
   sources.
 - The version was not changed: the branch's kernel differs from v1.0.0 and
