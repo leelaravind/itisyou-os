@@ -22,9 +22,17 @@ contained and the system went on; every other assertion of the leg held.
 The emulator, not the kernel. `int1` is the one-byte opcode `0xF1` (ICEBP).
 In QEMU 8.2.2, `target/i386/tcg/translate.c` handles `0xf1` only inside
 `#ifdef WANT_ICEBP`, which is not defined, so the opcode is undefined and
-raises `#UD`. QEMU 10.0's decoder (`decode-new.c.inc`) has an `INT1` entry
-for `0xF1` and raises `#DB`. Read from the QEMU sources at tags `v8.2.2` and
-`v10.0.0`; the first version that implements it was not determined.
+raises `#UD`. From QEMU 9.1.0 the decoder (`decode-new.c.inc`) has an
+`INT1` entry for `0xF1` and raises `#DB`. Read from the QEMU sources at each
+release tag:
+
+| QEMU | `0xF1` |
+|---|---|
+| 8.2.2, 9.0.0 | only under `#ifdef WANT_ICEBP` (undefined) in `translate.c` → `#UD` |
+| 9.1.0, 9.2.0, 10.0.0 | `X86_OP_ENTRY0(INT1, svm(ICEBP))` in `decode-new.c.inc` → `#DB` |
+
+So the leg needs **QEMU 9.1.0 or later**. This is read from source, not
+observed: no QEMU newer than 8.2.2 was run in the session.
 
 The leg was written against QEMU 11.1.0 on Windows. Ubuntu 24.04 — the host
 of this run, and GitHub's `ubuntu-24.04` runner, which installs the same
@@ -37,8 +45,8 @@ stands.**
 There are two ways to make the leg pass, and neither could be done in the
 session that found it:
 
-1. **Change the environment, keep the assertion.** Have the workflow use a
-   QEMU that implements `int1` instead of the distribution's 8.2.2. Ubuntu
+1. **Change the environment, keep the assertion.** Have the workflow use
+   QEMU 9.1.0 or later instead of the distribution's 8.2.2. Ubuntu
    24.04 has no newer QEMU package, so this means building QEMU in the
    workflow (several minutes per run, cacheable) or another runner image. It
    was not written because it could not be verified: building a newer QEMU
