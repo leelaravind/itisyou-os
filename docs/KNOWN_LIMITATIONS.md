@@ -74,15 +74,16 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
   `/etc/init.conf` gives that service (anything else is refused
   `not_an_instance`, ACT11-002), so init gains no kill authority over the
   rest of the system; which instance of that program it names is still its
-  claim. That check races with the instance itself: a service that exits by
-  itself (the fixture `flapd` always does) can end before the kernel reads
-  init's acknowledgement, and the kernel then prints and audits
-  `rollback_kill_refused ... reason=not_an_instance` for a process that was
-  an instance and is merely gone — about every other run of `ai-retry-bios`
-  (3 of 5 on an idle Linux host, 2026-11-14). Nothing wrong is killed and
-  the rollback completes; the refusal line and its denied audit record are
-  false. Present in v1.0.0; a fix is proposed, not applied
-  (`docs/proposed/README.md`).
+  claim. In the published v1.0.0 images that check races with the instance
+  itself: a service that exits by itself (the fixture `flapd` always does)
+  can end before the kernel acts on init's acknowledgement, and the kernel
+  then prints and audits `rollback_kill_refused ... reason=not_an_instance`
+  for a process that was an instance and is merely gone — about every other
+  run of `ai-retry-bios`. Nothing wrong is killed and the rollback
+  completes; the refusal line and its denied audit record are false. Fixed
+  after v1.0.0 (not in any release yet): an instance that has already ended
+  is reported `rollback_instance_gone`; anything the kernel cannot confirm
+  as an instance is still refused.
 - **Ring 3 shell** (V0.10): `/bin/sh` runs only when the kernel console's
   `rsh` lends it the console's input, and the kernel console waits until it
   exits; the kernel console is still where the system is administered
@@ -517,13 +518,16 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
 
 ## Project process
 
-- **v1.0.0 has no GitHub CI run, and the workflow as written cannot be
-  green.** Running the workflow's steps on Linux (2026-11-14,
-  `docs/LOCAL_LINUX_RUN.md`) passed 55 of 58 QEMU steps. `fault-contain-uefi`
-  cannot start (the step lacks `--firmware`); `fault-contain-bios` asserts a
-  `#DB` from `int1`, which QEMU 8.2 — the version Ubuntu 24.04 and GitHub's
-  runner install — does not implement; `ai-retry-bios` hits the race above.
-  Fixes are proposed in `docs/proposed/`, none applied.
+- **v1.0.0 has no GitHub CI run, and the workflow at v1.0.0 could not have
+  been green.** Running its steps on Linux (2026-11-14,
+  `docs/LOCAL_LINUX_RUN.md`) passed 55 of 58 QEMU steps. Two failures are
+  fixed after v1.0.0: `fault-contain-uefi` could not start (the step lacked
+  `--firmware`) and `ai-retry-bios` hit the rollback race described under
+  init. One is open: `fault-contain-bios` asserts a `#DB` from `int1`,
+  which QEMU 8.2 — the version Ubuntu 24.04 and GitHub's runner install —
+  does not implement, so that step fails there until the owner decides
+  between a newer QEMU in the workflow and a different assertion
+  (`docs/proposed/README.md`).
 - **The commit hashes cited throughout the documents do not exist on
   `origin`** — the history there carries the same commits under other
   hashes. `docs/COMMIT_HASHES.md` maps the release tags and release commits;

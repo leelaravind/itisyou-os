@@ -189,7 +189,9 @@ back. See boundary 6.
   kill: on a rollback the kernel kills the instance init's `stop`
   acknowledgement names, and only if it is a live child of init running the
   program `/etc/init.conf` gives that service (anything else
-  `rollback_kill_refused ... reason=not_an_instance`, audited), so the
+  `rollback_kill_refused ... reason=not_an_instance`, audited; such a child
+  that has already ended by itself is `rollback_instance_gone`, audited —
+  post-v1.0.0, v1.0.0 reported it as a refusal), so the
   mailbox gives init no kill authority over anything else. Which instance
   of that program it names is still init's claim.
 - **Process output cannot drive the operator's terminal** (V0.11, in

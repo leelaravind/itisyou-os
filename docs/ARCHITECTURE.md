@@ -313,7 +313,10 @@ pid. On `stop` init stops supervising the service, reports it Failed and
 names the still-running instance, which the kernel kills (init has no
 kill) — only if that pid is a live child of init running the program
 `/etc/init.conf` gives the service; anything else is refused
-`not_an_instance`. The kernel waits 3 s for each acknowledgement and
+`not_an_instance`. Such a child that has already ended by itself is
+reported `rollback_instance_gone` (audited): nothing is left to kill and
+nothing was refused (post-v1.0.0; in v1.0.0 it was reported as a refusal).
+The kernel waits 3 s for each acknowledgement and
 withdraws the command if none comes; if init had already fetched a `retry`
 it did not acknowledge, the kernel rolls it back as for a failed check. The
 mailbox is cleared when init dies, so a command never reaches its
