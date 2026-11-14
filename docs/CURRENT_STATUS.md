@@ -1,18 +1,61 @@
-# Current status — V0.11 in development (latest release v0.10.0)
+# Current status — v1.0.0 released (V1.0 — Experimental Personal OS, VM-verified)
 
-**Timestamp:** 2026-09-14 (Europe/London)
-**Branch:** `main` (release) · `v0.11/work` (development) · **Repository:** `E:\Project\itisyou-os`
-**Latest release:** `v0.10.0` — V0.10 Userspace System. Release commit
-`c936bc7` (CI run `34782271250`, all jobs green, images reproduced
-bit-for-bit by the run's two clean builds); download live at
-https://os.itisyou.app/download (UEFI
-`f98f5cbe89dc295699f75231bc71766eb6c129a60baa41d028f5ac0f315da792`, BIOS
-`d8416a58f367d835a6755662d8d9322b0ba042d7362179030f0a0ea24f44f098`). The
-earlier releases `v0.9.0` and `v0.8.1` stay downloadable.
-**Now:** V0.11 — AI-Native System Layer, on branch `v0.11/work` (not yet
-released).
+**Timestamp:** 2026-11-14 (revised from a clone of `origin`; the release itself is 2026-09-14)
+**Latest release:** `v1.0.0` — tag on commit `702119e` of branch `v1.0/ipc`.
+Released **without a GitHub CI run** (private repository, Actions billing
+unresolved), on the local Windows gate: the full QEMU matrix (74 legs), two
+clean builds with identical digests, and UEFI and BIOS boot tests of the
+published bytes. Published at https://os.itisyou.app/download (as recorded
+at release; not re-checked on 2026-11-14) — UEFI
+`64bb08cf5298b37d2bd4fb43fb2b016a3854e6477c2462867a6bf35032cc2ba3`, BIOS
+`9dbe74b0fd5497adaab69e084b6dcd5194a5fb6089762943d9d338df3e104f33`
+(`website/src/data/downloads.json`). V0.11 was folded into v1.0.0 and never
+tagged on its own.
 
-## V0.11 (in development)
+**Where the code is.** `main` is still at v0.10.0 (`510dd5e`). V0.11 and
+V1.0 are on `v1.0/ipc` (37 commits ahead of `main`, `main` is its ancestor,
+so the merge is a fast-forward). Branch `claude/gifted-cori-vzs71o` is
+`v1.0/ipc` plus the 2026-11-14 documentation and `scripts/run-ci-local.py`.
+
+**Open, in the order they block each other:**
+
+1. **CI cannot be green as the workflow stands.** The workflow's steps were
+   run on Linux for the first time on 2026-11-14
+   (`docs/LOCAL_LINUX_RUN.md`, not a GitHub run): lint, 555 host tests, the
+   website job and the two-clean-builds reproducibility job pass; the QEMU
+   matrix passes 55 of 58 steps. The three failures — `fault-contain-bios`
+   (QEMU 8.2 has no `int1`), `fault-contain-uefi` (step lacks `--firmware`),
+   `ai-retry-bios` (a race in the ACT11-002 rollback, about every other run)
+   — have root causes and proposed fixes in `docs/proposed/`, **not
+   applied**: they need the owner's decision.
+2. **V1-REL-001, V1-REL-002 and V1-REP-004 are BLOCKED** on a GitHub CI run
+   (billing, or a short public window) and stay BLOCKED. Item 1 comes first:
+   a CI window opened now would produce a red run.
+3. **`main` has not been given v1.0.0.**
+4. **The commit hashes cited in the documents do not exist on `origin`**
+   (`docs/COMMIT_HASHES.md`).
+5. Draft PR #1 (`w0-01-freeze-normative-inputs`) is a separate, owner-gated
+   track, untouched: it waits for the two accepted DOCX files.
+
+The exact steps for the owner's machine are the last section of
+`docs/SESSION_CHECKPOINT.md`.
+
+## V1.0 (released as v1.0.0)
+
+Acceptance criteria were written before any acceptance run
+(`docs/V1_ACCEPTANCE.md`); the rows are in `docs/REQUIREMENTS.md` § V1.0.
+Delivered for V1.0, each with a QEMU leg and a mutation control unless the
+row says otherwise: soak and leak accounting (V1-REL-003), a Ring 3 syscall
+fuzzer over three capability sets (V1-REL-004), a decoder mutation fuzzer
+(V1-REL-005), CI parity with the local matrix (V1-REL-006), a mechanical
+unsafe inventory (V1-SEC-005), IPC channel scoping (V1-SEC-006, ADR-0025),
+and a whole-attack-surface review (V1-SEC-002, `docs/V1_SECURITY_REVIEW.md`):
+37 findings — 3 high, 15 medium, 19 low — of which 18 were fixed, including
+all three highs, and 7 mediums are recorded as accepted in
+`docs/KNOWN_LIMITATIONS.md`.
+
+## V0.11 (folded into v1.0.0; never released on its own)
+
 
 Every V0.11 row in `docs/REQUIREMENTS.md` is IMPLEMENTED+VERIFIED on
 `v0.11/work` with QEMU and host evidence, each with a negative control.

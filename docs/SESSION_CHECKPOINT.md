@@ -1,5 +1,42 @@
 # Session checkpoint — resumable state
 
+**2026-11-14 — cloud session (Linux), read first.** Work done from a fresh
+clone of `origin`, on branch `claude/gifted-cori-vzs71o` (= `v1.0/ipc` plus
+this session's commits; nothing was pushed to `main`, no tag moved, nothing
+deployed, no pull request opened). No kernel, user-program, harness or
+workflow file was changed.
+
+- **State found:** v1.0.0 is released (tag `v1.0.0` → `702119e`) and lives on
+  `v1.0/ipc`; `main` is still v0.10.0; the last commit anywhere before this
+  session was 2026-09-14.
+- **The CI workflow was run on Linux for the first time**
+  (`scripts/run-ci-local.py`, new; results in `docs/LOCAL_LINUX_RUN.md`; NOT
+  a GitHub run). Lint, 555 host tests, image build, the website job and the
+  reproducibility job pass. QEMU matrix: **55 of 58 steps pass.**
+- **Three legs fail, each with a root cause** (`docs/proposed/README.md`):
+  `fault-contain-uefi` — the workflow step lacks `--firmware`;
+  `fault-contain-bios` — QEMU 8.2 (Ubuntu 24.04, GitHub's runner) does not
+  implement `int1`; `ai-retry-bios` — a race in the ACT11-002 rollback, the
+  real cause of the "flaky under load" leg, failing about every other run.
+  Two fixes are written, tested here and saved as patches in
+  `docs/proposed/`; **none is applied** — they touch the workflow and what
+  the kernel reports on a security path, which is the owner's decision.
+- **Commit hashes:** none of the hashes cited in these documents exists on
+  `origin` (`docs/COMMIT_HASHES.md`). Read every hash below with that file.
+- **Docs brought to the v1.0.0 state:** `README.md`,
+  `docs/CURRENT_STATUS.md`, `docs/BUILD_AND_RUN.md` (Linux section),
+  `docs/KNOWN_LIMITATIONS.md` (the findings above).
+- V1-REL-001, V1-REL-002 and V1-REP-004 are still BLOCKED.
+
+What the owner has to do next is the last section of this file,
+**"Resume on the real system"**.
+
+---
+
+*Everything below is the checkpoint as written on 2026-09-14 on the Windows
+machine, unchanged except for the corrected blocker list and the new last
+section.*
+
 **Timestamp:** 2026-09-14 Europe/London (session 5, V1.0 build)
 **Repository:** `E:\Project\itisyou-os` · remote
 https://github.com/leelaravind/itisyou-os (private)
@@ -309,5 +346,90 @@ no-pie.
 
 ## Blockers
 
-- **External: GitHub Actions billing.** Blocks CI, and therefore the V0.9
-  release and tag. Nothing else is blocked.
+- **External: GitHub Actions billing** (or a short public window). Blocks
+  every GitHub CI run and therefore V1-REL-001, V1-REL-002 and V1-REP-004.
+  (As written on 2026-09-13 this entry named the V0.9 release; v0.9.0,
+  v0.10.0 and v1.0.0 have all been released since.)
+- **Owner decision: the three failing CI legs** (`docs/proposed/README.md`).
+  Until they are decided, a CI window produces a red run.
+- **Owner decision: which history is authoritative** if the local repository
+  still has the hashes the documents cite (`docs/COMMIT_HASHES.md`).
+- **Owner input: the two accepted DOCX files** for draft PR #1 (W0-01).
+
+## Resume on the real system
+
+Written 2026-11-14 for the owner's Windows machine. In order; each step says
+what it needs.
+
+1. **Get this branch.**
+   `git fetch origin` then `git switch claude/gifted-cori-vzs71o`.
+   Before pulling into `E:\Project\itisyou-os`, run
+   `git cat-file -e 5593e50^{commit}` there. If it succeeds, your local
+   history is not the one on GitHub (same commits, different hashes — see
+   `docs/COMMIT_HASHES.md`): do not push from that repository until you have
+   decided which history to keep. A fresh clone avoids the question.
+
+2. **Decide the three failing legs** — read `docs/proposed/README.md`.
+   - `0001-ci-fault-contain-uefi-firmware.patch`: one flag in the workflow.
+     `git apply docs/proposed/0001-ci-fault-contain-uefi-firmware.patch`.
+   - `0002-act11-002-rollback-instance-gone.patch`: kernel + host test.
+     Review the "what the owner should weigh" paragraph, then
+     `git apply docs/proposed/0002-act11-002-rollback-instance-gone.patch`,
+     and re-run the ACT11-002 mutation controls
+     (`E:\claude-tmp\itisyou-audit\v011\`).
+   - `fault-contain-bios`: choose between installing a newer QEMU in the
+     workflow and asserting `int1` without its vector. No patch was written.
+   - Applying 0002 changes the kernel, so it is a new build, not v1.0.0:
+     the published v1.0.0 images are never rebuilt in place. It ships as the
+     next version (for example v1.0.1), with its own rows.
+
+3. **Run the Windows gate** on the result: `scripts\verify.ps1`
+   (QEMU 11.1.0). `ai-retry-bios` should now pass every time; run that leg
+   several times on its own (the 2026-09-14 checkpoint used a
+   `run-legs.ps1`, which is not in the repository).
+
+4. **Restore GitHub CI** — only you can: GitHub → Settings → Billing & plans
+   (the message was "recent account payments have failed or your spending
+   limit needs to be increased"), or make the repository public for a short
+   window as for v0.9.0 and v0.10.0 (scan the history for secrets first; the
+   signing keys must stay on the offline USB drive).
+
+5. **Get a green CI run and stamp it.** Push the branch, open the pull
+   request to `main` (the workflow runs on pull requests and on pushes to
+   `main`), and require all four jobs green. Then, in `docs/REQUIREMENTS.md`,
+   move V1-REL-001 and V1-REP-004 from BLOCKED with the run id; V1-REL-002
+   needs three consecutive clean runs. Record the CI-built (Linux) SHA-256
+   beside the Windows-built ones — they differ by design. For comparison,
+   this session's Linux build gave BIOS `191af423…2aba`, UEFI `b8ceb748…74a3`
+   (`docs/LOCAL_LINUX_RUN.md`); a CI build of the same tree should match
+   them, and of a tree with patch 0002 will not.
+
+6. **Merge to `main`.** `main` is an ancestor of this branch, so it is a
+   fast-forward: `git switch main`, `git merge --ff-only <branch>`,
+   `git push origin main`. Then delete the merged branches you no longer
+   need (`v0.11/work`, `v1.0/ipc`, `v0.10/integration` are all contained in
+   it).
+
+7. **Deploy the site** only if something on it changed (a new version, or
+   the disclosures from step 2): `docs/DEPLOYMENT.md` — stage the release
+   images first (`node website/scripts/downloads.mjs stage <dir>`), staging,
+   verify, production, verify. Every static-assets deploy that does not
+   stage the images deletes the live download.
+
+8. **Correct the cited hashes at the next stamp.** `status/current.json`,
+   `website/src/data/downloads.json` and `website/src/lib/releases.ts` name
+   `5593e50` as the v1.0.0 release commit; on `origin` that commit is
+   `00c9ad5` and the tag is on `702119e`. Cite hashes read from
+   `git ls-remote origin` after the push.
+
+9. **Draft PR #1 (W0-01)**, independent of everything above: import the two
+   accepted DOCX files at the paths the PR names, with SHA-256
+   `a08e0454c3022097021c941273dc91581b37702888efffaa89ef5d00c38f8324`
+   (Architecture Baseline v1.0) and
+   `f2bd50ac8767e1d96fc692143ef73620a8f890319da96e6c13cab10c6be739bd`
+   (Implementation Plan v1.1). The branch is 63 commits behind `main` and
+   needs rebasing first. It stays STARTED until you accept it.
+
+Not waiting on anything, and deliberately not started: the second block
+driver (STORE-2ND, NOT APPLICABLE (deferred)) and everything under "After
+V1.0" in `docs/ROADMAP.md`.
