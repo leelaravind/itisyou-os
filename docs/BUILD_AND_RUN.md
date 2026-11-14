@@ -77,12 +77,24 @@ Prerequisites:
 # Rust: rustup; the pinned nightly, components and target install themselves
 # from rust-toolchain.toml on the first cargo command.
 sudo apt-get update
-sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf python3-yaml
+sudo apt-get install -y --no-install-recommends ovmf python3-yaml \
+    build-essential ninja-build pkg-config python3-venv flex bison \
+    libglib2.0-dev libpixman-1-dev libslirp-dev xz-utils curl
+bash scripts/ci-install-qemu.sh          # builds the pinned QEMU, ~10 min once
+export PATH="$HOME/.cache/itisyou-qemu/11.1.0/bin:$PATH"
 ```
 
-Ubuntu 24.04 ships QEMU 8.2.2 and OVMF at `/usr/share/OVMF/OVMF_CODE_4M.fd`
-(the path the workflow passes with `--firmware`). KVM is not needed; the
-matrix runs under TCG.
+The matrix runs on a pinned QEMU 11.1.0 — the version the Windows gate
+uses — built by `scripts/ci-install-qemu.sh` from the checksummed release
+tarball. The distribution's QEMU is not enough: Ubuntu 24.04 ships 8.2.2,
+which does not implement the `int1` instruction that `fault-contain-bios`
+asserts (57 of the 58 QEMU steps pass on it). OVMF comes from the
+distribution, at `/usr/share/OVMF/OVMF_CODE_4M.fd` (the path the workflow
+passes with `--firmware`). KVM is not needed; the matrix runs under TCG.
+
+Run as root, `run-ci-local.py` executes the workflow's own install step,
+which does all of the above; otherwise it skips that step and uses the
+`qemu-system-x86_64` it finds on `PATH`.
 
 ```sh
 python3 scripts/run-ci-local.py --list              # every step, with its index

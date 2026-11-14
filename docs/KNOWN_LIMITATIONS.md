@@ -520,14 +520,24 @@ milestone; the sequence lives in `docs/ROADMAP.md`.
 
 - **v1.0.0 has no GitHub CI run, and the workflow at v1.0.0 could not have
   been green.** Running its steps on Linux (2026-11-14,
-  `docs/LOCAL_LINUX_RUN.md`) passed 55 of 58 QEMU steps. Two failures are
-  fixed after v1.0.0: `fault-contain-uefi` could not start (the step lacked
-  `--firmware`) and `ai-retry-bios` hit the rollback race described under
-  init. One is open: `fault-contain-bios` asserts a `#DB` from `int1`,
-  which QEMU 8.2 — the version Ubuntu 24.04 and GitHub's runner install —
-  does not implement, so that step fails there until the owner decides
-  between a newer QEMU in the workflow and a different assertion
-  (`docs/proposed/README.md`).
+  `docs/LOCAL_LINUX_RUN.md`) passed 55 of 58 QEMU steps. All three failures
+  are dealt with after v1.0.0, none of them in a release yet:
+  `fault-contain-uefi` could not start (the step lacked `--firmware`);
+  `ai-retry-bios` hit the rollback race described under init; and
+  `fault-contain-bios` asserts a `#DB` from `int1`, which the QEMU 8.2.2 of
+  Ubuntu 24.04 does not implement (QEMU 9.1.0 and later do). For the last
+  the owner chose to keep the assertion and change the emulator: the
+  workflow now builds a pinned QEMU 11.1.0 (`scripts/ci-install-qemu.sh`),
+  the version the Windows gate uses. With all three, a local Linux run
+  passes 58 of 58; no GitHub run exists yet, and the QEMU build step has
+  never executed on a GitHub runner.
+- **QEMU 8.2.2 is no longer a tested emulator.** Earlier releases' CI ran on
+  it; from this change both the Linux matrix and the Windows gate run QEMU
+  11.1.0, so one emulator version is exercised, not two. On 8.2.2 the
+  matrix passes 57 of 58 steps (2026-11-14) and `fault-contain-bios` cannot
+  pass. `docs/V1_ACCEPTANCE.md` V1-ENV-001 still names "QEMU 8.2.2 on
+  Ubuntu 24.04" as a tested environment; that criterion has not been
+  amended and is the owner's to amend.
 - **The commit hashes cited throughout the documents do not exist on
   `origin`** — the history there carries the same commits under other
   hashes. `docs/COMMIT_HASHES.md` maps the release tags and release commits;

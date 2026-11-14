@@ -21,11 +21,15 @@ deployed, no pull request opened).
     tested): an instance that has already ended is `rollback_instance_gone`;
     everything the kernel cannot confirm as an instance is refused as
     before. 8 of 8 runs after.
-  - `fault-contain-bios` — QEMU 8.2 (Ubuntu 24.04, GitHub's runner) does
-    not implement `int1`. **Not fixed: needs the owner**
-    (`docs/proposed/README.md`).
-- **After the fixes:** QEMU matrix **57 of 58 steps**, 556 host tests,
-  website job and reproducibility job pass.
+  - `fault-contain-bios` — QEMU 8.2.2 (Ubuntu 24.04, GitHub's runner) does
+    not implement `int1`; QEMU 9.1.0 and later do. **Fixed by the owner's
+    decision** (asked and answered in the session): the assertion is
+    unchanged and the workflow builds a pinned QEMU 11.1.0
+    (`scripts/ci-install-qemu.sh`, SHA-256 pinned and checked against the
+    release signature), the version the Windows gate uses.
+- **After the fixes:** QEMU matrix **58 of 58 steps** on QEMU 11.1.0, 556
+  host tests, website job and reproducibility job pass. Locally; no GitHub
+  run yet.
 - **The branch is no longer the v1.0.0 code** (one kernel fix) but still
   reports `itisyou-os 1.0.0`. It must get the next version before any
   release; the published v1.0.0 images were not rebuilt.
@@ -368,10 +372,10 @@ no-pie.
   every GitHub CI run and therefore V1-REL-001, V1-REL-002 and V1-REP-004.
   (As written on 2026-09-13 this entry named the V0.9 release; v0.9.0,
   v0.10.0 and v1.0.0 have all been released since.)
-- **Owner decision: `fault-contain-bios`** (`docs/proposed/README.md`).
-  Until it is decided, a CI window produces a red run at that step.
-- **Owner review: the two fixes made on 2026-11-14** (one workflow line, one
-  kernel change), and the version the branch should carry.
+- **Owner review: the changes made on 2026-11-14** (the `--firmware` line,
+  the pinned-QEMU install step, one kernel change), the version the branch
+  should carry, and V1-ENV-001, which still names QEMU 8.2.2 on Ubuntu as a
+  tested environment.
 - **Owner decision: which history is authoritative** if the local repository
   still has the hashes the documents cite (`docs/COMMIT_HASHES.md`).
 - **Owner input: the two accepted DOCX files** for draft PR #1 (W0-01).
@@ -389,17 +393,18 @@ what it needs.
    `docs/COMMIT_HASHES.md`): do not push from that repository until you have
    decided which history to keep. A fresh clone avoids the question.
 
-2. **Review the two fixes and decide the third leg.**
-   - Read the two commits named in the process note at the top of this
-     file. The kernel one changes what is printed and audited in the
-     ACT11-002 rollback; re-run the ACT11-002 mutation controls against it
-     (`E:\claude-tmp\itisyou-audit\v011\` — they are not in the
-     repository and were not run on Linux). If you do not want either
+2. **Review what changed.**
+   - Read the commits named in the process note at the top of this file,
+     and "ci: run the matrix on the pinned QEMU 11.1.0 instead of the
+     distribution's 8.2.2". The kernel one changes what is printed and
+     audited in the ACT11-002 rollback; re-run the ACT11-002 mutation
+     controls against it (`E:\claude-tmp\itisyou-audit\v011\` — they are
+     not in the repository and were not run on Linux). If you do not want a
      change, `git revert` that commit; the leg it fixes fails again.
-   - `fault-contain-bios`: choose between a newer QEMU in the workflow and
-     asserting `int1` without its vector (`docs/proposed/README.md`). The
-     leg passes on your QEMU 11.1.0 either way; the choice is about GitHub's
-     runner.
+   - **Amend V1-ENV-001** in `docs/V1_ACCEPTANCE.md` if you keep the pinned
+     QEMU: it names "QEMU 8.2.2 on Ubuntu 24.04" as a tested environment,
+     and CI on Ubuntu now runs 11.1.0. That file's own rule is that a change
+     is recorded there with its reason; it was left for you.
    - **Give the branch its version.** The kernel differs from v1.0.0 and
      still says `itisyou-os 1.0.0`. Before releasing anything from it, set
      the next version (for example 1.0.1) in `Cargo.toml`/`Cargo.lock`,
@@ -420,7 +425,10 @@ what it needs.
 
 5. **Get a green CI run and stamp it.** Push the branch, open the pull
    request to `main` (the workflow runs on pull requests and on pushes to
-   `main`), and require all four jobs green. Then, in `docs/REQUIREMENTS.md`,
+   `main`), and require all four jobs green. The first run builds QEMU
+   (several minutes; later runs use the cache). That build step has only
+   ever run on this session's Linux host — if it fails on the runner, the
+   error is in `scripts/ci-install-qemu.sh`, not in a test. Then, in `docs/REQUIREMENTS.md`,
    move V1-REL-001 and V1-REP-004 from BLOCKED with the run id; V1-REL-002
    needs three consecutive clean runs. Record the CI-built (Linux) SHA-256
    beside the Windows-built ones — they differ by design. For comparison,

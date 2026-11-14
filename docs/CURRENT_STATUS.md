@@ -16,27 +16,26 @@ tagged on its own.
 V1.0 are on `v1.0/ipc` (37 commits ahead of `main`, `main` is its ancestor,
 so the merge is a fast-forward). Branch `claude/gifted-cori-vzs71o` is
 `v1.0/ipc` plus the 2026-11-14 work: documentation,
-`scripts/run-ci-local.py`, one workflow line and one kernel fix. **That
+`scripts/run-ci-local.py`, the workflow changes and one kernel fix. **That
 branch is no longer the v1.0.0 code** — it still reports `itisyou-os 1.0.0`
 and must be given the next version before anything is released from it; the
 published v1.0.0 images are unchanged.
 
 **Open, in the order they block each other:**
 
-1. **One CI leg cannot pass on GitHub's runner.** The workflow's steps were
-   run on Linux for the first time on 2026-11-14
+1. **The matrix is green on Linux locally; it has not run on GitHub.** The
+   workflow's steps were run on Linux for the first time on 2026-11-14
    (`docs/LOCAL_LINUX_RUN.md`, not a GitHub run). At v1.0.0 the QEMU matrix
-   passed 55 of 58 steps. Two failures are fixed on the branch:
-   `fault-contain-uefi` (the step lacked `--firmware`) and `ai-retry-bios`
-   (a race in the ACT11-002 rollback, the real cause of the "flaky" leg).
-   With them the matrix passes 57 of 58, and lint, 556 host tests, the
-   website job and the two-clean-builds reproducibility job pass. The one
-   left, `fault-contain-bios`, asserts a `#DB` from `int1`, which QEMU 8.2
-   (Ubuntu 24.04, GitHub's runner) does not implement: it needs the owner's
-   decision (`docs/proposed/README.md`).
+   passed 55 of 58 steps. The three failures are fixed on the branch:
+   `fault-contain-uefi` (the step lacked `--firmware`), `ai-retry-bios` (a
+   race in the ACT11-002 rollback, the real cause of the "flaky" leg), and
+   `fault-contain-bios` (QEMU 8.2 has no `int1`; by the owner's decision the
+   workflow now builds the pinned QEMU 11.1.0 and the assertion is
+   unchanged). Result: **58 of 58 QEMU steps**, 556 host tests, lint, the
+   website job and the two-clean-builds reproducibility job pass.
 2. **V1-REL-001, V1-REL-002 and V1-REP-004 are BLOCKED** on a GitHub CI run
-   (billing, or a short public window) and stay BLOCKED. Item 1 comes first:
-   a CI window opened now would produce a red run.
+   (billing, or a short public window) and stay BLOCKED until that run
+   exists. Nothing known now stands in its way.
 3. **`main` has not been given v1.0.0.**
 4. **The commit hashes cited in the documents do not exist on `origin`**
    (`docs/COMMIT_HASHES.md`).

@@ -8,8 +8,10 @@ stay BLOCKED.
 
 It is, however, the first time every step of the V1.0 workflow has been
 executed on Linux at all — v1.0.0 was released on the Windows gate alone —
-and it found three legs that fail there. Two were then fixed on the branch
-and the whole job was run again; one is left for the owner.
+and it found three legs that fail there. Two were fixed on the branch and
+the whole job was run again (run 2); the third was put to the owner, who
+chose to keep its assertion and change the emulator, and the whole job was
+run a third time (run 3): every step passes.
 
 ## Environment
 
@@ -17,26 +19,26 @@ and the whole job was run again; one is left for the owner.
 |---|---|
 | Host | a cloud container: Ubuntu 24.04.5 LTS, kernel 6.18, 4 CPUs, 15 GiB RAM, no KVM (TCG only) |
 | Rust | rustc 1.99.0-nightly (ad3d0bc14 2026-07-31), i.e. the pinned `nightly-2026-08-01` |
-| QEMU | 8.2.2 (`qemu-system-x86` 1:8.2.2+ds-0ubuntu1.18) — the project develops against 11.1.0 on Windows |
+| QEMU | Runs 1 and 2: 8.2.2 (`qemu-system-x86` 1:8.2.2+ds-0ubuntu1.18). Run 3: **11.1.0**, built from the release tarball by `scripts/ci-install-qemu.sh` (SHA-256 `6ee1d1a6…a858`, release signature by key `CEACC9E15534EBABB82D3FA03353C9CEF108B584` checked) — the version the project develops against on Windows. Verified from `/proc/<pid>/exe` that the legs ran that binary. |
 | OVMF | `ovmf` 2024.02-2ubuntu0.10, `/usr/share/OVMF/OVMF_CODE_4M.fd` |
 | Node | v22.23.4 |
-| Trees | **Run 1** — the v1.0.0 code: the tip of `v1.0/ipc` (`bcfd83b`, one documentation commit after the `v1.0.0` tag `702119e`) plus documentation and `scripts/run-ci-local.py` only (kernel job at `8c9cf07`, reproducibility at `bd379de`). **Run 2** — the same plus the two fixes below (`555da18`). |
+| Trees | **Run 1** — the v1.0.0 code: the tip of `v1.0/ipc` (`bcfd83b`, one documentation commit after the `v1.0.0` tag `702119e`) plus documentation and `scripts/run-ci-local.py` only (kernel job at `8c9cf07`, reproducibility at `bd379de`). **Run 2** — the same plus the two fixes below (`555da18`). **Run 3** — run 2 plus the pinned-QEMU install step in the workflow (`e5b48e9`); the kernel and the images are those of run 2. |
 
 ## Results
 
-| Job / step | Run 1 (v1.0.0 code) | Run 2 (with the two fixes) |
-|---|---|---|
-| CI parity (`check-ci-parity.py`) | `CI-PARITY: OK 74 legs` | the same |
-| Unsafe inventory | `OK 196 sites in 29 files, 49 rows` | the same |
-| `cargo fmt --all -- --check` | pass | pass |
-| Clippy, host packages, `-D warnings` | pass | pass |
-| Clippy, kernel, `-D warnings` | pass | pass |
-| Host unit tests (`kernel-core`, `image-builder`, `qemu-runner`) | 555 passed, 0 failed, 48 ignored | 556 passed, 0 failed, 48 ignored |
-| Build bootable images | pass (8 images) | pass (8 images) |
-| QEMU matrix, 58 workflow steps | **55 passed, 3 failed** | **57 passed, 1 failed** |
-| `website` job (`npm ci`, `npm run verify`) | pass: consistency check, `astro check`, 22 pages built | pass (re-run after the documentation changes) |
-| `reproducibility` job (two clean builds from two fresh checkouts) | identical digests for all 8 images | identical digests for all 8 images |
-| `secret-scan` job (Gitleaks action) | not run — the action is not available outside GitHub. The patterns of `scripts/secret-scan.ps1` were run over every tracked text file before each push instead: no match. | the same |
+| Job / step | Run 1 (v1.0.0 code, QEMU 8.2.2) | Run 2 (two fixes, QEMU 8.2.2) | Run 3 (two fixes, QEMU 11.1.0) |
+|---|---|---|---|
+| CI parity (`check-ci-parity.py`) | `CI-PARITY: OK 74 legs` | the same | the same |
+| Unsafe inventory | `OK 196 sites in 29 files, 49 rows` | the same | the same |
+| `cargo fmt --all -- --check` | pass | pass | pass |
+| Clippy, host packages, `-D warnings` | pass | pass | pass |
+| Clippy, kernel, `-D warnings` | pass | pass | pass |
+| Host unit tests (`kernel-core`, `image-builder`, `qemu-runner`) | 555 passed, 0 failed, 48 ignored | 556 passed, 0 failed, 48 ignored | 556 passed, 0 failed, 48 ignored |
+| Build bootable images | pass (8 images) | pass (8 images) | pass (the digests of run 2) |
+| QEMU matrix, 58 workflow steps | **55 passed, 3 failed** | **57 passed, 1 failed** | **58 passed, 0 failed** |
+| `website` job (`npm ci`, `npm run verify`) | pass: consistency check, `astro check`, 22 pages built | pass | pass (re-run after the last documentation change) |
+| `reproducibility` job (two clean builds from two fresh checkouts) | identical digests for all 8 images | identical digests for all 8 images | not re-run: the kernel and builder are unchanged since run 2 and the build gave run 2's digests |
+| `secret-scan` job (Gitleaks action) | not run — the action is not available outside GitHub. The patterns of `scripts/secret-scan.ps1` were run over every tracked text file before each push instead: no match. | the same | the same |
 
 ### The three legs that failed in run 1
 
@@ -44,12 +46,10 @@ and the whole job was run again; one is left for the owner.
 |---|---|---|---|
 | 46 | `fault-contain-uefi` | the workflow step passed `--uefi` without `--firmware`; the runner stopped before QEMU started (`scripts/test.ps1` gets the path from `OVMF_CODE`, which the workflow does not set) | **fixed**: one line in the workflow, no assertion changed, parity still OK; passes |
 | 65 | `ai-retry-bios` | `rollback_kill_refused ... not_an_instance` for an instance that had already exited by itself: a race in the ACT11-002 rollback. 3 failures in 5 further isolated runs on the idle host | **fixed** in the kernel (`kernel_core::initctl::rollback_kill`, host-tested): 8 passes in 8 isolated runs, six through `rollback_instance_gone` and two through the kill; passes in run 2 |
-| 45 | `fault-contain-bios` | `int1` (opcode 0xF1) raised `#UD`, not `#DB`: QEMU 8.2.2 compiles the instruction out. The program was contained | **still failing** — emulator version, the kernel is correct; needs the owner (`docs/proposed/README.md`) |
+| 45 | `fault-contain-bios` | `int1` (opcode 0xF1) raised `#UD`, not `#DB`: QEMU 8.2.2 compiles the instruction out (behind `WANT_ICEBP` up to 9.0.0; decoded as `INT1` from 9.1.0 — read from QEMU's sources at five release tags). The program was contained; the kernel is correct | **fixed by changing the emulator, by the owner's decision**: the workflow builds the pinned QEMU 11.1.0. The assertion is unchanged, and on that QEMU the leg prints `exception=debug vector=1 cs_rpl=3` and `Fault { vector: 1 }`; passes in run 3 |
 
-Leg 45 will fail in the same way on GitHub's `ubuntu-24.04` runner, which
-installs the same QEMU package and runs the same step. **A green GitHub CI
-run is therefore not possible until it is decided**, whatever happens to
-billing.
+Step numbers are those of runs 1 and 2; the workflow has one more step since
+(the QEMU cache), so each QEMU step's index is one higher in run 3.
 
 The `ai-retry-bios` fix keeps every refusal it could not rule out: a live
 process that is not an instance, an ended process that is not an instance,
@@ -58,8 +58,14 @@ denials. Only a process the kernel can confirm as an instance — still in the
 table, a child of the live init, running the service's program — and that
 has already ended is reported as gone, with its own audit record.
 
+The emulator change has a cost: QEMU 8.2.2, which earlier releases' CI ran
+on, is no longer exercised by anything. On it the matrix passes 57 of 58.
+`docs/V1_ACCEPTANCE.md` V1-ENV-001 still names it as a tested environment
+and was not amended.
+
 `net-ipv6-responder-bios`, the other leg the V1.0 checkpoint recorded as
-flaky, passed in both runs (twice is not evidence it is stable).
+flaky, passed in all three runs (three passes are not evidence it is
+stable).
 
 ### Linux-built image digests
 
@@ -99,8 +105,10 @@ itisyou-kernel-uefi.img            6356992  980c1920d38f1126c4d7216e9f47dedb01ca
   against the kernel fix: their scripts are not in the repository. The
   host test covers the decision for those inputs; the kernel path was
   exercised only by `ai-retry-bios`.
-- `fault-contain-bios` was not tried on a newer QEMU, so "it passes on QEMU
-  10 or later" is read from QEMU's source, not observed.
+- The workflow's QEMU build and cache steps have never executed on a
+  GitHub runner; the script was run on this host only (same distribution).
+- Only QEMU 8.2.2 and 11.1.0 were run. "From 9.1.0" is read from QEMU's
+  sources.
 - The version was not changed: the branch's kernel differs from v1.0.0 and
   still reports `itisyou-os 1.0.0`.
 - Nothing was deployed, tagged, merged or pushed to `main`.
@@ -108,7 +116,10 @@ itisyou-kernel-uefi.img            6356992  980c1920d38f1126c4d7216e9f47dedb01ca
 ## Reproduce
 
 ```sh
-sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf python3-yaml
+# Run as root (as in a container), the workflow's own install step installs
+# OVMF and the build dependencies and builds the pinned QEMU. As a normal
+# user that step is skipped: follow docs/BUILD_AND_RUN.md, "Linux host".
+apt-get install -y --no-install-recommends python3-yaml
 python3 scripts/run-ci-local.py                 # kernel job
 python3 scripts/run-ci-local.py --job website
 ```
