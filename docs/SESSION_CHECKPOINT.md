@@ -2,12 +2,14 @@
 
 **2026-11-14 — cloud session (Linux), read first.** Work done from a fresh
 clone of `origin`, on branch `claude/gifted-cori-vzs71o` (= `v1.0/ipc` plus
-this session's commits; nothing was pushed to `main`, no tag moved, nothing
-deployed, no pull request opened).
+this session's commits). The owner then made the repository public, asked
+for a pull request and **merged it: `main` is at `4e337d2` and holds
+everything below.** The agent pushed nothing to `main` itself, moved no tag
+and deployed nothing.
 
 - **State found:** v1.0.0 is released (tag `v1.0.0` → `702119e`) and lives on
-  `v1.0/ipc`; `main` is still v0.10.0; the last commit anywhere before this
-  session was 2026-09-14.
+  `v1.0/ipc`; `main` was still v0.10.0; the last commit anywhere before
+  this session was 2026-09-14.
 - **The CI workflow was run on Linux for the first time**
   (`scripts/run-ci-local.py`, new; results in `docs/LOCAL_LINUX_RUN.md`; NOT
   a GitHub run). At v1.0.0: lint, 555 host tests, image build, the website
@@ -32,9 +34,13 @@ deployed, no pull request opened).
 - **First GitHub run since v0.10.0: green.** The owner made the repository
   public and asked for a pull request: **PR #3**
   (`claude/gifted-cori-vzs71o` → `main`), run `43651248948`, all four jobs
-  success on head `d810a32`. Not merged — merging is the owner's step. The
-  repository is still public.
-- **The branch is no longer the v1.0.0 code** (one kernel fix) but still
+  success on head `d810a32`.
+- **PR #3 is merged** (by the owner, 2026-11-14 23:34 UTC, merge commit
+  `4e337d2`). Two more runs of the same tree followed and are green:
+  `43653136859` (the pull request's last head, `4a08a99`) and
+  `43653887781` (`main` at the merge commit) — three consecutive green
+  runs in all. The repository is still public.
+- **`main` is no longer the v1.0.0 code** (one kernel fix) but still
   reports `itisyou-os 1.0.0`. It must get the next version before any
   release; the published v1.0.0 images were not rebuilt.
 - **Commit hashes:** none of the hashes cited in these documents exists on
@@ -390,8 +396,8 @@ no-pie.
 Written 2026-11-14 for the owner's Windows machine. In order; each step says
 what it needs.
 
-1. **Get this branch.**
-   `git fetch origin` then `git switch claude/gifted-cori-vzs71o`.
+1. **Get `main`.** `git fetch origin` then `git switch main` and
+   `git pull --ff-only` — everything is merged there (`4e337d2`).
    Before pulling into `E:\Project\itisyou-os`, run
    `git cat-file -e 5593e50^{commit}` there. If it succeeds, your local
    history is not the one on GitHub (same commits, different hashes — see
@@ -404,13 +410,14 @@ what it needs.
      distribution's 8.2.2". The kernel one changes what is printed and
      audited in the ACT11-002 rollback; re-run the ACT11-002 mutation
      controls against it (`E:\claude-tmp\itisyou-audit\v011\` — they are
-     not in the repository and were not run on Linux). If you do not want a
-     change, `git revert` that commit; the leg it fixes fails again.
+     not in the repository and were not run on Linux). The changes are
+     already on `main`; if you do not want one, `git revert` that commit
+     there — the leg it fixes fails again.
    - **Amend V1-ENV-001** in `docs/V1_ACCEPTANCE.md` if you keep the pinned
      QEMU: it names "QEMU 8.2.2 on Ubuntu 24.04" as a tested environment,
      and CI on Ubuntu now runs 11.1.0. That file's own rule is that a change
      is recorded there with its reason; it was left for you.
-   - **Give the branch its version.** The kernel differs from v1.0.0 and
+   - **Give `main` its version.** The kernel differs from v1.0.0 and
      still says `itisyou-os 1.0.0`. Before releasing anything from it, set
      the next version (for example 1.0.1) in `Cargo.toml`/`Cargo.lock`,
      `status/current.json`, and the shell legs' version marker in
@@ -429,22 +436,19 @@ what it needs.
    have failed or your spending limit needs to be increased"). The signing
    keys must stay on the offline USB drive.
 
-5. **Stamp a green CI run.** PR #3 has one: run `43651248948`, all four
-   jobs, head `d810a32` (`docs/LOCAL_LINUX_RUN.md`). It is on a commit after
-   v1.0.0, so decide what it certifies: the honest route is the next
-   version (step 2), released from this branch, with V1-REL-001 and
-   V1-REP-004 stamped for that version's commit and tag; V1-REL-002 needs
-   three consecutive clean runs. Record the CI-built SHA-256 beside the
-   Windows-built ones — they differ, and they also differ from a build on
-   another Linux host (the digests depend on the build host's paths), so
-   only a CI build re-derives a CI digest.
+5. **Stamp a green CI run.** The runs so far are listed in
+   `docs/LOCAL_LINUX_RUN.md` ("The GitHub Actions runs that followed"). All
+   of them are on commits after v1.0.0, so decide what they certify: the
+   honest route is the next version (step 2), released from `main`, with
+   V1-REL-001 and V1-REP-004 stamped for that version's commit and tag;
+   V1-REL-002 needs three consecutive clean runs of that commit. Record the
+   CI-built SHA-256 beside the Windows-built ones — they differ, and they
+   also differ from a build on another Linux host (the digests depend on
+   the build host's paths), so only a CI build re-derives a CI digest.
 
-6. **Merge to `main`.** PR #3 is open and mergeable; `main` is an ancestor
-   of this branch, so it is a fast-forward. Merge it on GitHub, or:
-   `git switch main`, `git merge --ff-only <branch>`,
-   `git push origin main`. Then delete the merged branches you no longer
-   need (`v0.11/work`, `v1.0/ipc`, `v0.10/integration` are all contained in
-   it).
+6. **`main` is merged — clean up.** PR #3 is merged and its branch
+   deleted. `v0.11/work`, `v1.0/ipc` and `v0.10/integration` are all
+   contained in `main` and can be deleted when you no longer need them.
 
 7. **Deploy the site** only if something on it changed (a new version, or
    the disclosures from step 2): `docs/DEPLOYMENT.md` — stage the release
